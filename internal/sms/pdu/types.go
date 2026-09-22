@@ -29,6 +29,18 @@ type PDU struct {
 	TotalParts int
 }
 
+// DecodedSMS represents a decoded incoming SMS (SMS-DELIVER).
+type DecodedSMS struct {
+	From       string
+	Text       string
+	Timestamp  time.Time
+	Encoding   Encoding
+	HasUDH     bool
+	Reference  byte
+	PartNumber int
+	TotalParts int
+}
+
 // StatusReport represents a parsed SMS-STATUS-REPORT (+CDS).
 type StatusReport struct {
 	MessageRef  byte
