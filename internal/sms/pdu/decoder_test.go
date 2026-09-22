@@ -14,11 +14,11 @@ func TestDecodeSMS_GSM7(t *testing.T) {
 		t.Fatal("expected non-nil decoded SMS")
 	}
 
-	if sms.Text != "hello" {
-		t.Errorf("expected text 'hello', got %q", sms.Text)
+	if sms.Text != "Hello" {
+		t.Errorf("expected text 'Hello', got %q", sms.Text)
 	}
-	if sms.From != "+7921436587" {
-		t.Errorf("expected sender '+7921436587', got %q", sms.From)
+	if sms.From != "+79214365879" {
+		t.Errorf("expected sender '+79214365879', got %q", sms.From)
 	}
 	if sms.Encoding != EncodingGSM7 {
 		t.Errorf("expected EncodingGSM7, got %v", sms.Encoding)

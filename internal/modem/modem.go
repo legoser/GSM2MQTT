@@ -17,10 +17,33 @@ type Driver interface {
 
 	SMSSender
 	SMSReader
+	StorageManager
 	Caller
 	StatusProvider
 	USSDSender
 	RawCommander
+}
+
+// StoredMessage represents an SMS stored in modem or SIM memory.
+type StoredMessage struct {
+	Index  int
+	Status int
+	PDUHex string
+}
+
+// StorageStatus contains usage and capacity information for a storage area.
+type StorageStatus struct {
+	Name  string
+	Used  int
+	Total int
+}
+
+// StorageManager manages modem message storage (AT+CPMS).
+type StorageManager interface {
+	SelectStorage(mem string) (*StorageStatus, error)
+	ListMessages() ([]StoredMessage, error)
+	DeleteMessage(index int) error
+	StorageCapacity() (*StorageStatus, error)
 }
 
 // SMSSender sends SMS messages.

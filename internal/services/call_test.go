@@ -63,6 +63,23 @@ func TestCallService_Dial(t *testing.T) {
 	}
 }
 
+func TestCallService_Answer(t *testing.T) {
+	mock := &mockCaller{}
+	svc := NewCallService("siemens_tc35", mock, nil)
+
+	ctx := context.Background()
+	err := svc.Answer(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	if !mock.answered {
+		t.Errorf("expected answered = true")
+	}
+}
+
 func TestCallService_Hangup(t *testing.T) {
 	mock := &mockCaller{}
 	svc := NewCallService("siemens_tc35", mock, nil)
@@ -77,6 +94,23 @@ func TestCallService_Hangup(t *testing.T) {
 	defer mock.mu.Unlock()
 	if !mock.hungup {
 		t.Errorf("expected hungup = true")
+	}
+}
+
+func TestCallService_SendDTMF(t *testing.T) {
+	mock := &mockCaller{}
+	svc := NewCallService("siemens_tc35", mock, nil)
+
+	ctx := context.Background()
+	err := svc.SendDTMF(ctx, "5")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	if len(mock.dtmfDigits) != 1 || mock.dtmfDigits[0] != "5" {
+		t.Errorf("expected dtmf digit '5', got %v", mock.dtmfDigits)
 	}
 }
 
@@ -124,5 +158,26 @@ func TestCallService_DTMF_URC(t *testing.T) {
 	}
 	if receivedEvent.Digit != "9" {
 		t.Errorf("expected digit '9', got %q", receivedEvent.Digit)
+	}
+}
+
+func TestCallService_EndedURC(t *testing.T) {
+	mock := &mockCaller{}
+	var receivedEvent *CallEvent
+
+	svc := NewCallService("siemens_tc35", mock, func(event CallEvent) {
+		receivedEvent = &event
+	})
+
+	svc.HandleURC("NO CARRIER")
+
+	if receivedEvent == nil {
+		t.Fatal("expected ended call event")
+	}
+	if receivedEvent.Type != "ended" {
+		t.Errorf("expected event type 'ended', got %q", receivedEvent.Type)
+	}
+	if receivedEvent.ModemID != "siemens_tc35" {
+		t.Errorf("expected ModemID 'siemens_tc35', got %q", receivedEvent.ModemID)
 	}
 }

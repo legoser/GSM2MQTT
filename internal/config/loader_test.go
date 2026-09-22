@@ -183,6 +183,15 @@ modems:
 `,
 			wantErrMsg: "modems[0].id is required",
 		},
+		{
+			name: "invalid_pool_strategy",
+			yamlContent: `
+pool:
+  enabled: true
+  strategy: "invalid_strat"
+`,
+			wantErrMsg: "pool.strategy must be one of",
+		},
 	}
 
 	for _, tt := range tests {
@@ -216,3 +225,54 @@ func searchSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+func TestLoad_PoolDefaultsAndOverrides(t *testing.T) {
+	cfg, err := Load("/non/existent")
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	if cfg.Pool.Strategy != "round-robin" {
+		t.Errorf("expected default pool strategy 'round-robin', got %s", cfg.Pool.Strategy)
+	}
+
+	t.Setenv("GSM2MQTT_POOL_ENABLED", "true")
+	t.Setenv("GSM2MQTT_POOL_STRATEGY", "failover")
+	t.Setenv("GSM2MQTT_POOL_DEFAULT_MODEM", "modem1")
+
+	cfg2, err := Load("/non/existent")
+	if err != nil {
+		t.Fatalf("load with env failed: %v", err)
+	}
+	if !cfg2.Pool.Enabled {
+		t.Errorf("expected pool enabled true")
+	}
+	if cfg2.Pool.Strategy != "failover" {
+		t.Errorf("expected pool strategy failover, got %s", cfg2.Pool.Strategy)
+	}
+	if cfg2.Pool.DefaultModem != "modem1" {
+		t.Errorf("expected default modem modem1, got %s", cfg2.Pool.DefaultModem)
+	}
+}
+
+func TestLoad_ModemPortOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgFile := filepath.Join(tmpDir, "config.yaml")
+	yamlContent := `
+modems:
+  - id: "m1"
+    port: "/dev/ttyUSB0"
+`
+	if err := os.WriteFile(cfgFile, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	t.Setenv("MODEM_DEVICE", "/dev/ttyACM0")
+	cfg, err := Load(cfgFile)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	if len(cfg.Modems) != 1 || cfg.Modems[0].Port != "/dev/ttyACM0" {
+		t.Errorf("expected port /dev/ttyACM0, got %v", cfg.Modems[0].Port)
+	}
+}
+
