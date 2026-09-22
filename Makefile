@@ -40,6 +40,14 @@ lint:
 docker:
 	docker build -t $(APP_NAME):$(VERSION) -f deployments/docker/Dockerfile .
 
+## docker-up: Start services with Docker Compose
+docker-up:
+	docker compose up -d --build
+
+## docker-down: Stop Docker Compose services
+docker-down:
+	docker compose down
+
 ## clean: Remove build artifacts
 clean:
 	rm -rf bin/ coverage.out coverage.html

@@ -125,6 +125,9 @@ func applyEnvOverrides(cfg *Config) {
 		"GSM2MQTT_POOL_ENABLED":       func(v string) { cfg.Pool.Enabled = v == "true" || v == "1" },
 		"GSM2MQTT_POOL_STRATEGY":      func(v string) { cfg.Pool.Strategy = v },
 		"GSM2MQTT_POOL_DEFAULT_MODEM": func(v string) { cfg.Pool.DefaultModem = v },
+		"GSM2MQTT_API_ENABLED":        func(v string) { cfg.API.Enabled = v == "true" || v == "1" },
+		"GSM2MQTT_API_HOST":           func(v string) { cfg.API.Host = v },
+		"GSM2MQTT_API_PORT":           func(v string) { cfg.API.Port = atoi(v, cfg.API.Port) },
 	}
 
 	for env, setter := range overrides {

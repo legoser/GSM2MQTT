@@ -119,3 +119,31 @@ security:
 status:
   interval: 30s
   signal_interval: 60s
+
+# -------------------------------------------------------
+# Tariff & Accounting
+# -------------------------------------------------------
+tariff:
+  enabled: true
+  operator_preset: "generic"          # mts, megafon, beeline, tele2, generic
+  balance_ussd: "*100#"
+  check_interval: 24h
+  min_balance_alert: 50.0
+  sms_limit: 100
+  reset_day_of_month: 1
+
+# -------------------------------------------------------
+# Embedded Web UI Dashboard & REST API
+# -------------------------------------------------------
+api:
+  enabled: true
+  host: "0.0.0.0"                     # 0.0.0.0 for Docker access
+  port: 8080
+
+# -------------------------------------------------------
+# Multi-Modem Pool (Load Balancing & Failover)
+# -------------------------------------------------------
+pool:
+  enabled: false                      # Enable when 2+ modems are configured
+  strategy: "round-robin"             # round-robin, failover, best-signal, operator-match
+  default_modem: "modem1"
