@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/legoser/gsm2mqtt/internal/metrics"
 	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/modem/at"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
@@ -74,11 +76,13 @@ func (r *ModemRunner) wireServices(
 		Transliterate:  r.cfg.SMS.Encoding == "translit",
 		DeliveryReport: r.cfg.SMS.DeliveryReport.Enabled,
 	}, sender, filter, limiter, smsTracker, assembler, func(msg *sms.AssembledSMS) {
+		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_received_total", map[string]string{"modem": r.mCfg.ID})
 		payload, _ := json.Marshal(msg)
 		_ = r.mqttClient.Publish(topics.SMSReceived(), 1, false, payload)
 	})
 
 	callSvc := NewCallService(r.mCfg.ID, driver, func(e CallEvent) {
+		metrics.DefaultRegistry.IncCounter("gsm2mqtt_calls_total", map[string]string{"modem": r.mCfg.ID, "type": e.Type})
 		payload, _ := json.Marshal(e)
 		if e.Type == "incoming" || e.Type == "ended" {
 			_ = r.mqttClient.Publish(topics.CallIncoming(), 1, false, payload)
@@ -91,10 +95,17 @@ func (r *ModemRunner) wireServices(
 		ModemID:  r.mCfg.ID,
 		Interval: r.cfg.Status.Interval,
 	}, driver, func(rssi, dbm int) {
+		metrics.DefaultRegistry.SetGauge("gsm2mqtt_signal_rssi", map[string]string{"modem": r.mCfg.ID}, float64(rssi))
+		metrics.DefaultRegistry.SetGauge("gsm2mqtt_signal_dbm", map[string]string{"modem": r.mCfg.ID}, float64(dbm))
 		payload := fmt.Sprintf(`{"rssi":%d,"dbm":%d}`, rssi, dbm)
 		_ = r.mqttClient.Publish(topics.SignalStrength(), 1, false, []byte(payload))
 	}, func(h ModemHealth) {
 		r.updateHealth(h)
+		stVal := 0.0
+		if h.Status == "ready" {
+			stVal = 1.0
+		}
+		metrics.DefaultRegistry.SetGauge("gsm2mqtt_modem_status", map[string]string{"modem": r.mCfg.ID}, stVal)
 		payload, _ := json.Marshal(h)
 		_ = r.mqttClient.Publish(topics.Health(), 1, false, payload)
 	})
@@ -118,6 +129,7 @@ func (r *ModemRunner) subscribeMQTT(
 		if err := json.Unmarshal(payload, &req); err == nil {
 			refs, err := smsSvc.Send(context.Background(), req)
 			if err != nil {
+				metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "failed"})
 				slog.Error("sms send failure", slog.String("modem", r.mCfg.ID), slog.Any("error", err))
 				if r.cfg.Tariff.AutoCheckOnError {
 					rep, _ := diagSvc.RunDiagnostic(context.Background(), "sms_send_failure")
@@ -127,6 +139,7 @@ func (r *ModemRunner) subscribeMQTT(
 					}
 				}
 			} else {
+				metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "sent"})
 				tariffMgr.RecordSMS(len(refs))
 				st := tariffMgr.Status()
 				stPayload, _ := json.Marshal(st)
@@ -153,6 +166,7 @@ func (r *ModemRunner) subscribeMQTT(
 			Code string `json:"code"`
 		}
 		if err := json.Unmarshal(payload, &req); err == nil && req.Code != "" {
+			metrics.DefaultRegistry.IncCounter("gsm2mqtt_ussd_requests_total", map[string]string{"modem": r.mCfg.ID})
 			_, _ = ussdSvc.Send(context.Background(), req.Code)
 		}
 	})
@@ -227,9 +241,39 @@ func (r *ModemRunner) checkBalance(
 	bal, err := operator.ParseBalance(resp.Message, r.cfg.Tariff.BalanceRegex)
 	if err == nil {
 		tariffMgr.UpdateBalance(bal, "RUB")
+		metrics.DefaultRegistry.SetGauge("gsm2mqtt_balance_rub", map[string]string{"modem": r.mCfg.ID}, bal)
 		_ = r.mqttClient.Publish(topics.Balance(), 1, false, []byte(fmt.Sprintf("%.2f", bal)))
 		st := tariffMgr.Status()
+		metrics.DefaultRegistry.SetGauge("gsm2mqtt_tariff_sms_used", map[string]string{"modem": r.mCfg.ID}, float64(st.SMSMonthCount))
+		metrics.DefaultRegistry.SetGauge("gsm2mqtt_tariff_sms_limit", map[string]string{"modem": r.mCfg.ID}, float64(st.SMSLimit))
 		stPayload, _ := json.Marshal(st)
 		_ = r.mqttClient.Publish(topics.AccountingStatus(), 1, false, stPayload)
 	}
+}
+
+type atPDUSender struct {
+	engine *at.Engine
+}
+
+func (s *atPDUSender) SendPDU(cmdLength int, pduHex string) (byte, error) {
+	cmd := fmt.Sprintf("AT+CMGS=%d\r%s\x1A", cmdLength, pduHex)
+	resp, err := s.engine.Send(cmd, 15*time.Second)
+	if err != nil {
+		return 0, err
+	}
+	if resp.Error {
+		return 0, fmt.Errorf("PDU send returned error: %v", resp.Lines)
+	}
+	for _, line := range resp.Lines {
+		if strings.HasPrefix(line, "+CMGS:") {
+			parts := strings.Fields(line)
+			if len(parts) > 1 {
+				ref, err := strconv.Atoi(parts[1])
+				if err == nil {
+					return byte(ref), nil
+				}
+			}
+		}
+	}
+	return 0, nil
 }

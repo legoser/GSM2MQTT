@@ -145,3 +145,20 @@ func TestServer_RootUI(t *testing.T) {
 		t.Errorf("expected HTML title mentioning GSM2MQTT, got: %s", w.Body.String())
 	}
 }
+
+func TestServer_Metrics(t *testing.T) {
+	mock := &mockModemManager{}
+	server := NewServer(ServerConfig{Port: 8080}, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200 on /metrics, got %d", w.Code)
+	}
+	contentType := w.Header().Get("Content-Type")
+	if !bytes.Contains([]byte(contentType), []byte("text/plain")) {
+		t.Errorf("expected text/plain content type, got %s", contentType)
+	}
+}

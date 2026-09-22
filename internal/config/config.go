@@ -29,6 +29,9 @@ type Config struct {
 
 	// API holds embedded HTTP server settings.
 	API APIConfig `yaml:"api"`
+
+	// Pool holds multi-modem load balancing and failover settings.
+	Pool PoolConfig `yaml:"pool"`
 }
 
 // MQTTConfig holds MQTT broker connection parameters.
@@ -127,4 +130,11 @@ type APIConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	Host    string `yaml:"host"`
 	Port    int    `yaml:"port"`
+}
+
+// PoolConfig holds settings for multi-modem load balancing and failover.
+type PoolConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	Strategy     string `yaml:"strategy"` // round-robin, failover, best-signal, operator-match
+	DefaultModem string `yaml:"default_modem"`
 }

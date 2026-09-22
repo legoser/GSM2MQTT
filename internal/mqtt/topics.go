@@ -116,3 +116,28 @@ func (t *Topics) AccountingAlert() string {
 func (t *Topics) LWT() string {
 	return fmt.Sprintf("%s/status", t.prefix)
 }
+
+// PoolStatus returns the cluster pool status topic.
+func (t *Topics) PoolStatus() string {
+	return fmt.Sprintf("%s/pool/status", t.prefix)
+}
+
+// PoolSMSSend returns the common pool SMS send topic.
+func (t *Topics) PoolSMSSend() string {
+	return fmt.Sprintf("%s/sms/send", t.prefix)
+}
+
+// PoolCallDial returns the common pool call dial topic.
+func (t *Topics) PoolCallDial() string {
+	return fmt.Sprintf("%s/call/dial", t.prefix)
+}
+
+// PoolCallHangup returns the common pool call hangup topic.
+func (t *Topics) PoolCallHangup() string {
+	return fmt.Sprintf("%s/call/hangup", t.prefix)
+}
+
+// PoolUSSDSend returns the common pool USSD send topic.
+func (t *Topics) PoolUSSDSend() string {
+	return fmt.Sprintf("%s/ussd/send", t.prefix)
+}

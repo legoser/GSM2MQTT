@@ -69,12 +69,16 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 
 	opener := transport.NewSerialOpener()
 	manager := services.NewGatewayManager()
+	modemPool := initPool(ctx, cfg, mqttClient, logger)
 	var wg sync.WaitGroup
 
 	for _, mCfg := range cfg.Modems {
 		wg.Add(1)
 		runner := services.NewModemRunner(mCfg, cfg, opener, mqttClient)
 		manager.Register(runner)
+		if modemPool != nil {
+			modemPool.Register(runner)
+		}
 
 		go func(m config.ModemConfig) {
 			defer wg.Done()

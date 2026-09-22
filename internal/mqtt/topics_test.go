@@ -110,6 +110,31 @@ func TestTopics_Generation(t *testing.T) {
 			actual:   topics.AccountingAlert(),
 			expected: "gsm2mqtt/modem/siemens_tc35/accounting/alert",
 		},
+		{
+			name:     "PoolStatus topic",
+			actual:   topics.PoolStatus(),
+			expected: "gsm2mqtt/pool/status",
+		},
+		{
+			name:     "PoolSMSSend topic",
+			actual:   topics.PoolSMSSend(),
+			expected: "gsm2mqtt/sms/send",
+		},
+		{
+			name:     "PoolCallDial topic",
+			actual:   topics.PoolCallDial(),
+			expected: "gsm2mqtt/call/dial",
+		},
+		{
+			name:     "PoolCallHangup topic",
+			actual:   topics.PoolCallHangup(),
+			expected: "gsm2mqtt/call/hangup",
+		},
+		{
+			name:     "PoolUSSDSend topic",
+			actual:   topics.PoolUSSDSend(),
+			expected: "gsm2mqtt/ussd/send",
+		},
 	}
 
 	for _, tt := range tests {

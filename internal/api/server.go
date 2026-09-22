@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/legoser/gsm2mqtt/internal/metrics"
 	"github.com/legoser/gsm2mqtt/internal/services"
 )
 
@@ -78,6 +79,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+	s.mux.Handle("GET /metrics", metrics.DefaultRegistry.Handler())
 	s.mux.HandleFunc("GET /api/modems", s.handleGetModems)
 	s.mux.HandleFunc("POST /api/sms/send", s.handleSendSMS)
 	s.mux.HandleFunc("POST /api/ussd/send", s.handleSendUSSD)

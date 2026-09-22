@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/config"
 	"github.com/legoser/gsm2mqtt/internal/modem"
@@ -37,6 +35,7 @@ type ModemRunner struct {
 	lastHealth ModemHealth
 	smsSvc     *SMSService
 	ussdSvc    *USSDService
+	callSvc    *CallService
 	tariffMgr  *tariff.Manager
 }
 
@@ -91,6 +90,7 @@ func (r *ModemRunner) Run(ctx context.Context) error {
 	r.mu.Lock()
 	r.smsSvc = smsSvc
 	r.ussdSvc = ussdSvc
+	r.callSvc = callSvc
 	r.tariffMgr = tariffMgr
 	r.mu.Unlock()
 
@@ -213,29 +213,53 @@ func (r *ModemRunner) urcLoop(
 	}
 }
 
-type atPDUSender struct {
-	engine *at.Engine
+// ID returns the configured identifier of the modem.
+func (r *ModemRunner) ID() string {
+	return r.mCfg.ID
 }
 
-func (s *atPDUSender) SendPDU(cmdLength int, pduHex string) (byte, error) {
-	cmd := fmt.Sprintf("AT+CMGS=%d\r%s\x1A", cmdLength, pduHex)
-	resp, err := s.engine.Send(cmd, 15*time.Second)
-	if err != nil {
-		return 0, err
+// Status returns the operational status of the modem.
+func (r *ModemRunner) Status() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.lastHealth.Status == "" {
+		return "ready"
 	}
-	if resp.Error {
-		return 0, fmt.Errorf("PDU send returned error: %v", resp.Lines)
+	return r.lastHealth.Status
+}
+
+// Signal returns the CSQ signal strength RSSI.
+func (r *ModemRunner) Signal() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.lastHealth.Signal
+}
+
+// Operator returns the detected network operator name.
+func (r *ModemRunner) Operator() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.lastHealth.Operator
+}
+
+// Dial initiates a voice call on this modem.
+func (r *ModemRunner) Dial(ctx context.Context, number string) error {
+	r.mu.RLock()
+	svc := r.callSvc
+	r.mu.RUnlock()
+	if svc == nil {
+		return fmt.Errorf("call service not initialized")
 	}
-	for _, line := range resp.Lines {
-		if strings.HasPrefix(line, "+CMGS:") {
-			parts := strings.Fields(line)
-			if len(parts) > 1 {
-				ref, err := strconv.Atoi(parts[1])
-				if err == nil {
-					return byte(ref), nil
-				}
-			}
-		}
+	return svc.Dial(ctx, number)
+}
+
+// Hangup terminates any active voice call on this modem.
+func (r *ModemRunner) Hangup(ctx context.Context) error {
+	r.mu.RLock()
+	svc := r.callSvc
+	r.mu.RUnlock()
+	if svc == nil {
+		return fmt.Errorf("call service not initialized")
 	}
-	return 0, nil
+	return svc.Hangup(ctx)
 }

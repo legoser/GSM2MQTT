@@ -86,6 +86,11 @@ func Defaults() *Config {
 			Host:    "127.0.0.1",
 			Port:    8080,
 		},
+		Pool: PoolConfig{
+			Enabled:      false,
+			Strategy:     "round-robin",
+			DefaultModem: "",
+		},
 	}
 }
 
@@ -111,12 +116,15 @@ func loadFromFile(cfg *Config, path string) error {
 // Pattern: GSM2MQTT_<SECTION>_<FIELD> in uppercase.
 func applyEnvOverrides(cfg *Config) {
 	overrides := map[string]func(string){
-		"GSM2MQTT_LOG_LEVEL":      func(v string) { cfg.LogLevel = v },
-		"GSM2MQTT_MQTT_BROKER":    func(v string) { cfg.MQTT.Broker = v },
-		"GSM2MQTT_MQTT_PORT":      func(v string) { cfg.MQTT.Port = atoi(v, cfg.MQTT.Port) },
-		"GSM2MQTT_MQTT_USERNAME":  func(v string) { cfg.MQTT.Username = v },
-		"GSM2MQTT_MQTT_PASSWORD":  func(v string) { cfg.MQTT.Password = v },
-		"GSM2MQTT_MQTT_CLIENT_ID": func(v string) { cfg.MQTT.ClientID = v },
+		"GSM2MQTT_LOG_LEVEL":          func(v string) { cfg.LogLevel = v },
+		"GSM2MQTT_MQTT_BROKER":        func(v string) { cfg.MQTT.Broker = v },
+		"GSM2MQTT_MQTT_PORT":          func(v string) { cfg.MQTT.Port = atoi(v, cfg.MQTT.Port) },
+		"GSM2MQTT_MQTT_USERNAME":      func(v string) { cfg.MQTT.Username = v },
+		"GSM2MQTT_MQTT_PASSWORD":      func(v string) { cfg.MQTT.Password = v },
+		"GSM2MQTT_MQTT_CLIENT_ID":     func(v string) { cfg.MQTT.ClientID = v },
+		"GSM2MQTT_POOL_ENABLED":       func(v string) { cfg.Pool.Enabled = v == "true" || v == "1" },
+		"GSM2MQTT_POOL_STRATEGY":      func(v string) { cfg.Pool.Strategy = v },
+		"GSM2MQTT_POOL_DEFAULT_MODEM": func(v string) { cfg.Pool.DefaultModem = v },
 	}
 
 	for env, setter := range overrides {
@@ -159,6 +167,18 @@ func validate(cfg *Config) error {
 		}
 		if m.Port == "" {
 			return fmt.Errorf("modems[%d].port is required", i)
+		}
+	}
+
+	if cfg.Pool.Enabled && cfg.Pool.Strategy != "" {
+		validStrategies := map[string]bool{
+			"round-robin":    true,
+			"failover":       true,
+			"best-signal":    true,
+			"operator-match": true,
+		}
+		if !validStrategies[cfg.Pool.Strategy] {
+			return fmt.Errorf("pool.strategy must be one of: round-robin, failover, best-signal, operator-match; got %q", cfg.Pool.Strategy)
 		}
 	}
 
