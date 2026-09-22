@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -52,10 +53,14 @@ func (s *USSDService) Send(ctx context.Context, code string) (*ussd.Response, er
 
 	if strings.Contains(out, "+CUSD:") {
 		s.clearPending()
-		return parseInlineCUSD(out)
+		resp, err := parseInlineCUSD(out)
+		if err == nil {
+			slog.Info("USSD inline response received", slog.String("modem", s.modemID), slog.String("message", resp.Message))
+		}
+		return resp, err
 	}
 
-	timeout := 15 * time.Second
+	timeout := 30 * time.Second
 	if deadline, ok := ctx.Deadline(); ok {
 		if remaining := time.Until(deadline); remaining > 0 && remaining < timeout {
 			timeout = remaining
@@ -64,12 +69,14 @@ func (s *USSDService) Send(ctx context.Context, code string) (*ussd.Response, er
 
 	select {
 	case resp := <-respCh:
+		slog.Info("USSD response received", slog.String("modem", s.modemID), slog.String("message", resp.Message))
 		return resp, nil
 	case <-ctx.Done():
 		s.clearPending()
 		return nil, ctx.Err()
 	case <-time.After(timeout):
 		s.clearPending()
+		slog.Warn("USSD request timed out", slog.String("modem", s.modemID), slog.String("code", code), slog.Duration("timeout", timeout))
 		return nil, ussd.ErrUSSDTimeout
 	}
 }

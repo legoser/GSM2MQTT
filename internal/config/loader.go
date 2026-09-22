@@ -81,7 +81,9 @@ func Defaults() *Config {
 			AutoCheckOnError: true,
 			CheckInterval:    24 * time.Hour,
 			MinBalanceAlert:  50.0,
+			SMSLimit:         100,
 			ResetDayOfMonth:  1,
+			StorageDir:       "data",
 		},
 		API: APIConfig{
 			Enabled: false,
@@ -114,11 +116,6 @@ func loadFromFile(cfg *Config, path string) error {
 	return nil
 }
 
-// applyEnvOverrides applies environment variable overrides to the config.
-func applyEnvOverrides(cfg *Config) {
-	applyHierarchicalOverrides(cfg, nil)
-}
-
 // applyHierarchicalOverrides applies configuration overrides with priority: OS Env > .env > YAML.
 func applyHierarchicalOverrides(cfg *Config, dotEnv map[string]string) {
 	overrides := []struct {
@@ -137,6 +134,7 @@ func applyHierarchicalOverrides(cfg *Config, dotEnv map[string]string) {
 		{[]string{"GSM2MQTT_API_ENABLED", "API_ENABLED"}, func(v string) { cfg.API.Enabled = v == "true" || v == "1" }},
 		{[]string{"GSM2MQTT_API_HOST", "API_HOST"}, func(v string) { cfg.API.Host = v }},
 		{[]string{"GSM2MQTT_API_PORT", "API_PORT"}, func(v string) { cfg.API.Port = atoi(v, cfg.API.Port) }},
+		{[]string{"GSM2MQTT_TARIFF_STORAGE_DIR", "TARIFF_STORAGE_DIR"}, func(v string) { cfg.Tariff.StorageDir = v }},
 		{[]string{"GSM2MQTT_MODEM_PORT", "MODEM_DEVICE", "MODEM_PORT"}, func(v string) {
 			if len(cfg.Modems) > 0 {
 				cfg.Modems[0].Port = v

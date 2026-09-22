@@ -3,6 +3,7 @@ package services
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"github.com/legoser/gsm2mqtt/internal/modem"
@@ -34,17 +35,35 @@ func NewCallService(modemID string, caller modem.Caller, onEvent func(event Call
 
 // Dial initiates an outgoing voice call.
 func (s *CallService) Dial(ctx context.Context, number string) error {
-	return s.caller.Dial(number)
+	slog.Info("modem dialing voice call", slog.String("modem", s.modemID), slog.String("number", number))
+	if err := s.caller.Dial(number); err != nil {
+		slog.Error("modem voice call dial failed", slog.String("modem", s.modemID), slog.String("number", number), slog.Any("error", err))
+		return err
+	}
+	slog.Info("modem voice call dial command accepted", slog.String("modem", s.modemID), slog.String("number", number))
+	return nil
 }
 
 // Answer answers an active incoming call.
 func (s *CallService) Answer(ctx context.Context) error {
-	return s.caller.Answer()
+	slog.Info("modem answering voice call", slog.String("modem", s.modemID))
+	if err := s.caller.Answer(); err != nil {
+		slog.Error("modem voice call answer failed", slog.String("modem", s.modemID), slog.Any("error", err))
+		return err
+	}
+	slog.Info("modem voice call answered", slog.String("modem", s.modemID))
+	return nil
 }
 
 // Hangup terminates the current call.
 func (s *CallService) Hangup(ctx context.Context) error {
-	return s.caller.Hangup()
+	slog.Info("modem terminating voice call", slog.String("modem", s.modemID))
+	if err := s.caller.Hangup(); err != nil {
+		slog.Error("modem voice call hangup failed", slog.String("modem", s.modemID), slog.Any("error", err))
+		return err
+	}
+	slog.Info("modem voice call terminated", slog.String("modem", s.modemID))
+	return nil
 }
 
 // SendDTMF transmits a DTMF tone during an active call.
@@ -62,6 +81,7 @@ func (s *CallService) HandleURC(urc string) {
 	switch {
 	case strings.HasPrefix(trimmed, "+CLIP:"):
 		from := parseClipNumber(trimmed)
+		slog.Info("modem incoming call ringing", slog.String("modem", s.modemID), slog.String("from", from))
 		s.onEvent(CallEvent{
 			Type:    "incoming",
 			From:    from,
@@ -77,6 +97,7 @@ func (s *CallService) HandleURC(urc string) {
 		})
 
 	case trimmed == "NO CARRIER" || trimmed == "BUSY":
+		slog.Info("modem call ended event", slog.String("modem", s.modemID), slog.String("event", trimmed))
 		s.onEvent(CallEvent{
 			Type:    "ended",
 			ModemID: s.modemID,

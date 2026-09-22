@@ -137,3 +137,56 @@ func TestModemRunner_Lifecycle(t *testing.T) {
 		t.Fatal("runner did not terminate on cancel")
 	}
 }
+
+func TestModemRunner_ApplyParsedBalance(t *testing.T) {
+	port := newMockGatewayPort()
+	opener := &mockGatewayOpener{port: port}
+	mqttClient := mqtt.NewMockClient()
+	_ = mqttClient.Connect()
+
+	cfg := &config.Config{
+		LogLevel: "info",
+		MQTT: config.MQTTConfig{
+			TopicPrefix: "gsm2mqtt",
+			Discovery:   false,
+		},
+		Modems: []config.ModemConfig{
+			{
+				ID:       "modem1",
+				Port:     "/dev/ttyUSB0",
+				BaudRate: 115200,
+				Type:     "generic",
+			},
+		},
+		Tariff: config.TariffConfig{
+			Enabled:        true,
+			OperatorPreset: "megafon",
+		},
+	}
+
+	runner := NewModemRunner(cfg.Modems[0], cfg, opener, mqttClient)
+
+	// 1. Initial balance is 0
+	if bal := runner.Summary().Balance; bal != 0 {
+		t.Fatalf("expected initial balance 0, got %v", bal)
+	}
+
+	// 2. Parse positive balance
+	runner.applyParsedBalance("Ваш баланс: 150.50 руб.")
+	if bal := runner.Summary().Balance; bal != 150.50 {
+		t.Errorf("expected balance 150.50, got %v", bal)
+	}
+
+	// 3. Promotional message without balance must NOT overwrite or reset balance
+	runner.applyParsedBalance("Подключите супер тариф по номеру 0500")
+	if bal := runner.Summary().Balance; bal != 150.50 {
+		t.Errorf("expected balance to remain 150.50 after promo ad, got %v", bal)
+	}
+
+	// 4. Parse debt (negative balance)
+	runner.applyParsedBalance("Задолженность: 1.78 руб.")
+	if bal := runner.Summary().Balance; bal != -1.78 {
+		t.Errorf("expected balance -1.78, got %v", bal)
+	}
+}
+

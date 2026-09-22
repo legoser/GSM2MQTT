@@ -49,34 +49,25 @@ func (d *HuaweiDriver) Init(ctx context.Context) error {
 		}
 	}
 
-	_, _ = d.runner.Send("AT^CURC=0", 2*time.Second) // Disable proprietary URC spam
-	_, _ = d.runner.Send("AT+CLIP=1", 3*time.Second) // Enable caller ID presentation
+	_, _ = d.runner.Send("AT^CURC=1", 2*time.Second)   // Enable URC notifications on PCUI port
+	_, _ = d.runner.Send("AT+CLIP=1", 3*time.Second)   // Enable caller ID presentation
+	_, _ = d.runner.Send("AT^CVOICE=0", 2*time.Second) // Enable digital voice calls in Huawei firmware
+	_, _ = d.runner.Send("AT+COLP=1", 2*time.Second)   // Enable connected line identification
 	return nil
 }
 
-// SendUSSD submits a USSD code request with Huawei-specific plain text and 7-bit PDU fallback.
+// SendUSSD submits a USSD code request with Huawei-specific 7-bit PDU encoding first, then plain text fallback.
 func (d *HuaweiDriver) SendUSSD(code string) (string, error) {
-	// 1. Try plain text with DCS 15
-	cmd := fmt.Sprintf("AT+CUSD=1,%q,15", code)
-	resp, err := d.runner.Send(cmd, 10*time.Second)
-	if err == nil && !resp.Error {
-		return strings.Join(resp.Lines, "\n"), nil
-	}
+	// 0. Terminate any dangling previous USSD session
+	_, _ = d.runner.Send("AT+CUSD=2", 2*time.Second)
 
-	// 2. Try plain text without DCS
-	cmdNoDCS := fmt.Sprintf("AT+CUSD=1,%q", code)
-	resp, err = d.runner.Send(cmdNoDCS, 10*time.Second)
-	if err == nil && !resp.Error {
-		return strings.Join(resp.Lines, "\n"), nil
-	}
-
-	// 3. Encode into 7-bit GSM packed hex (required by Huawei E1550/E173)
+	// 1. Encode into 7-bit GSM packed hex (native requirement for Huawei E1550/E173)
 	septets := pdu.EncodeGSM7(code)
 	packed := pdu.PackSeptets(septets, 0)
 	pduHex := strings.ToUpper(hex.EncodeToString(packed))
 
 	cmdPDU := fmt.Sprintf("AT+CUSD=1,%q,15", pduHex)
-	resp, err = d.runner.Send(cmdPDU, 10*time.Second)
+	resp, err := d.runner.Send(cmdPDU, 10*time.Second)
 	if err == nil && !resp.Error {
 		return strings.Join(resp.Lines, "\n"), nil
 	}
@@ -87,10 +78,36 @@ func (d *HuaweiDriver) SendUSSD(code string) (string, error) {
 		return strings.Join(resp.Lines, "\n"), nil
 	}
 
+	// 2. Fallback to plain text with DCS 15
+	cmd := fmt.Sprintf("AT+CUSD=1,%q,15", code)
+	resp, err = d.runner.Send(cmd, 10*time.Second)
+	if err == nil && !resp.Error {
+		return strings.Join(resp.Lines, "\n"), nil
+	}
+
+	// 3. Fallback to plain text without DCS
+	cmdNoDCS := fmt.Sprintf("AT+CUSD=1,%q", code)
+	resp, err = d.runner.Send(cmdNoDCS, 10*time.Second)
+	if err == nil && !resp.Error {
+		return strings.Join(resp.Lines, "\n"), nil
+	}
+
 	if err != nil {
 		return "", err
 	}
 	return "", fmt.Errorf("USSD request failed: %v", resp.Lines)
+}
+
+// Dial places an outgoing voice call, verifying first if voice is supported by the firmware.
+func (d *HuaweiDriver) Dial(number string) error {
+	resp, err := d.runner.Send("AT^CVOICE?", 2*time.Second)
+	if err == nil && !resp.Error && len(resp.Lines) > 0 {
+		line := strings.Join(resp.Lines, " ")
+		if strings.Contains(line, "^CVOICE:1") || strings.Contains(line, "^CVOICE:(1)") {
+			return fmt.Errorf("voice calls are not supported by this modem firmware (CVOICE=1)")
+		}
+	}
+	return d.BaseDriver.Dial(number)
 }
 
 var _ modem.Driver = (*HuaweiDriver)(nil)

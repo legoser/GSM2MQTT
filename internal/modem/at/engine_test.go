@@ -247,4 +247,246 @@ func TestEngine_SendCommand(t *testing.T) {
 	}
 }
 
+func TestEngine_Send_CREG_PreservedAsResponse(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		port.FeedResponse("\r\n+CREG: 0,1\r\n\r\nOK\r\n")
+	}()
+
+	resp, err := engine.Send("AT+CREG?", 1*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.OK {
+		t.Errorf("expected OK = true")
+	}
+	if len(resp.Lines) != 1 || resp.Lines[0] != "+CREG: 0,1" {
+		t.Fatalf("expected lines to contain '+CREG: 0,1', got: %v", resp.Lines)
+	}
+}
+
+func TestEngine_Dial_CallFailureResponses(t *testing.T) {
+	testCases := []struct {
+		name     string
+		response string
+	}{
+		{"NoCarrier", "NO CARRIER"},
+		{"Busy", "BUSY"},
+		{"NoAnswer", "NO ANSWER"},
+		{"NoDialtone", "NO DIALTONE"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			port := newMockPort()
+			engine := NewEngine(port)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			go func() {
+				_ = engine.Start(ctx)
+			}()
+
+			go func() {
+				time.Sleep(10 * time.Millisecond)
+				port.FeedResponse("\r\n" + tc.response + "\r\n")
+			}()
+
+			resp, err := engine.Send("ATD+79991112233;", 200*time.Millisecond)
+			if err != nil {
+				t.Fatalf("unexpected error (likely timeout waiting for response): %v", err)
+			}
+			if !resp.Error {
+				t.Fatalf("expected resp.Error to be true, got false")
+			}
+			if len(resp.Lines) == 0 || resp.Lines[0] != tc.response {
+				t.Fatalf("expected lines to contain %q, got: %v", tc.response, resp.Lines)
+			}
+		})
+	}
+}
+
+func TestEngine_NoCarrier_AsURCWhenIdle(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		port.FeedResponse("\r\nNO CARRIER\r\n")
+	}()
+
+	select {
+	case urc := <-engine.URC():
+		if urc != "NO CARRIER" {
+			t.Errorf("expected NO CARRIER URC, got: %q", urc)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for NO CARRIER URC")
+	}
+}
+
+func TestEngine_HuaweiURC_DuringInFlight(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		port.FeedResponse("\r\n^ORIG: 1, 0\r\n")
+		time.Sleep(10 * time.Millisecond)
+		port.FeedResponse("\r\nOK\r\n")
+	}()
+
+	resp, err := engine.Send("ATD+79991112233;", 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected resp.OK to be true")
+	}
+
+	select {
+	case urc := <-engine.URC():
+		if urc != "^ORIG: 1, 0" {
+			t.Errorf("expected ^ORIG: 1, 0, got %q", urc)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for Huawei URC")
+	}
+}
+
+func TestEngine_SendPDU_Success(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	go func() {
+		// Wait until port has received "AT+CMGS=15\r"
+		for {
+			port.mu.Lock()
+			hasCmd := strings.Contains(port.inBuf.String(), "AT+CMGS=15\r")
+			port.mu.Unlock()
+			if hasCmd {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		// Feed prompt
+		port.FeedResponse("\r\n> ")
+
+		// Wait until port has received PDU with \x1A
+		for {
+			port.mu.Lock()
+			hasPDU := strings.Contains(port.inBuf.String(), "0011000B91\x1A")
+			port.mu.Unlock()
+			if hasPDU {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		// Feed success response
+		port.FeedResponse("\r\n+CMGS: 42\r\n\r\nOK\r\n")
+	}()
+
+	resp, err := engine.SendPDU(15, "0011000B91", 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected SendPDU error: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected resp.OK to be true")
+	}
+	if len(resp.Lines) == 0 || resp.Lines[0] != "+CMGS: 42" {
+		t.Fatalf("expected +CMGS: 42 in lines, got: %v", resp.Lines)
+	}
+}
+
+func TestEngine_SendPDU_EarlyError(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		port.FeedResponse("\r\n+CMS ERROR: 304\r\n")
+	}()
+
+	resp, err := engine.SendPDU(15, "0011000B91", 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Error {
+		t.Fatalf("expected resp.Error to be true")
+	}
+	if len(resp.Lines) == 0 || resp.Lines[0] != "+CMS ERROR: 304" {
+		t.Fatalf("expected +CMS ERROR: 304, got: %v", resp.Lines)
+	}
+}
+
+func TestEngine_SendPDU_Timeout(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	// Feed prompt but never send final OK/CMGS
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		port.FeedResponse("\r\n> ")
+	}()
+
+	_, err := engine.SendPDU(15, "0011000B91", 50*time.Millisecond)
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("expected ErrTimeout, got: %v", err)
+	}
+
+	// Verify ESC was sent to port on timeout
+	port.mu.Lock()
+	inStr := port.inBuf.String()
+	port.mu.Unlock()
+	if !strings.Contains(inStr, "\x1B") {
+		t.Fatalf("expected \\x1B (ESC) written to port on timeout, got: %q", inStr)
+	}
+}
+
 var _ io.ReadWriter = (*mockPort)(nil)

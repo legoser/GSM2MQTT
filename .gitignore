@@ -35,5 +35,6 @@ configs/mosquitto/mosquitto.conf
 configs/mosquitto/acl
 configs/mosquitto/passwd
 
-# Docker
+# Runtime data
+data/
 .env

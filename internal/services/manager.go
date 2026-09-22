@@ -83,7 +83,7 @@ func (m *GatewayManager) GetReceivedSMS() []ReceivedSMS {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var all []ReceivedSMS
+	all := make([]ReceivedSMS, 0)
 	for _, id := range m.order {
 		if r, ok := m.runners[id]; ok {
 			all = append(all, r.GetReceivedSMS()...)
@@ -99,6 +99,15 @@ func (m *GatewayManager) SendUSSD(ctx context.Context, modemID, code string) (st
 		return "", err
 	}
 	return runner.SendUSSD(ctx, code)
+}
+
+// SendRawAT sends an arbitrary AT command through the requested (or first available) modem.
+func (m *GatewayManager) SendRawAT(ctx context.Context, modemID, cmd string) (string, error) {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return "", err
+	}
+	return runner.SendRawAT(ctx, cmd)
 }
 
 func (m *GatewayManager) findRunner(modemID string) (*ModemRunner, error) {

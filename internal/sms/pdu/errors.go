@@ -21,4 +21,7 @@ var (
 
 	// ErrNotStatusReport is returned when attempting to decode a non-status-report PDU as status report.
 	ErrNotStatusReport = errors.New("PDU is not an SMS-STATUS-REPORT")
+
+	// ErrUnsupportedMessageType is returned when attempting to decode an unsupported PDU type (e.g. SMS-SUBMIT as SMS-DELIVER).
+	ErrUnsupportedMessageType = errors.New("unsupported PDU message type")
 )

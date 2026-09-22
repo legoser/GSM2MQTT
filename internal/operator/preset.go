@@ -4,6 +4,9 @@ import (
 	"strings"
 )
 
+// DefaultCurrency is the standard currency for Russian mobile operators.
+const DefaultCurrency = "RUB"
+
 // Preset contains balance query configuration for a specific mobile network operator.
 type Preset struct {
 	Name         string
@@ -19,35 +22,35 @@ var standardPresets = map[string]*Preset{
 		Title:        "MTS",
 		USSDCode:     "*100#",
 		BalanceRegex: `(?i)(?:баланс|balance|balans|остаток)[:\s]*([+-]?\d+[.,]?\d*)`,
-		Currency:     "RUB",
+		Currency:     DefaultCurrency,
 	},
 	"megafon": {
 		Name:         "megafon",
 		Title:        "MegaFon",
 		USSDCode:     "*100#",
 		BalanceRegex: `(?i)(?:баланс|balance|balans|остаток)[:\s]*([+-]?\d+[.,]?\d*)`,
-		Currency:     "RUB",
+		Currency:     DefaultCurrency,
 	},
 	"beeline": {
 		Name:         "beeline",
 		Title:        "Beeline",
 		USSDCode:     "*102#",
 		BalanceRegex: `(?i)(?:баланс|balance|balans|остаток)[:\s]*([+-]?\d+[.,]?\d*)`,
-		Currency:     "RUB",
+		Currency:     DefaultCurrency,
 	},
 	"tele2": {
 		Name:         "tele2",
 		Title:        "Tele2",
 		USSDCode:     "*105#",
 		BalanceRegex: `(?i)(?:баланс|balance|balans|остаток)[:\s]*([+-]?\d+[.,]?\d*)`,
-		Currency:     "RUB",
+		Currency:     DefaultCurrency,
 	},
 	"generic": {
 		Name:         "generic",
 		Title:        "Generic Operator",
 		USSDCode:     "*100#",
 		BalanceRegex: `(?i)(?:баланс|balance|balans|остаток|schete)?[:\s]*([+-]?\d+[.,]?\d*)`,
-		Currency:     "RUB",
+		Currency:     DefaultCurrency,
 	},
 }
 

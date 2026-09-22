@@ -3,8 +3,10 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
+	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/sms"
 	"github.com/legoser/gsm2mqtt/internal/sms/pdu"
 )
@@ -48,6 +50,7 @@ type SMSService struct {
 	tracker    *sms.Tracker
 	assembler  *sms.Assembler
 	onReceived func(msg *sms.AssembledSMS)
+	storageMgr modem.StorageManager
 }
 
 // NewSMSService constructs a new SMSService orchestrator.
@@ -128,6 +131,12 @@ func (s *SMSService) dispatchPDUs(pdus []pdu.PDU, normNumber, text string, reque
 	for i, part := range pdus {
 		ref, err := s.sender.SendPDU(part.CommandLength, part.Hex)
 		if err != nil {
+			slog.Error("failed to send PDU part",
+				slog.String("modem", s.cfg.ModemID),
+				slog.Int("part", i+1),
+				slog.Int("total", len(pdus)),
+				slog.Any("error", err),
+			)
 			return nil, fmt.Errorf("failed to send PDU part %d/%d: %w", i+1, len(pdus), err)
 		}
 		refs[i] = ref
@@ -179,6 +188,7 @@ func (s *SMSService) handleIncomingSMSURC(urc string) {
 
 	assembled, complete := s.assembler.AddPart(part)
 	if complete && s.onReceived != nil {
+		slog.Info("incoming SMS assembled", slog.String("modem", s.cfg.ModemID), slog.String("from", assembled.From), slog.Int("segments", assembled.Segments))
 		s.onReceived(assembled)
 	}
 }

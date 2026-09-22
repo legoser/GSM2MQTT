@@ -31,6 +31,7 @@ type StatusService struct {
 	onHealth     func(health ModemHealth)
 	onDisconnect func()
 	failCount    int
+	lastOperator string
 }
 
 // NewStatusService constructs a new StatusService.
@@ -59,6 +60,12 @@ func (s *StatusService) Poll(ctx context.Context) (*ModemHealth, error) {
 	reg, _ := s.provider.NetworkRegistration()
 	op, _ := s.provider.OperatorName()
 	sim, errSim := s.provider.SIMStatus()
+
+	if op != "" {
+		s.lastOperator = op
+	} else if s.lastOperator != "" {
+		op = s.lastOperator
+	}
 
 	if errRssi != nil && errSim != nil {
 		s.failCount++
@@ -113,7 +120,15 @@ func (s *StatusService) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	// Initial poll
-	_, _ = s.Poll(ctx)
+	health, _ := s.Poll(ctx)
+	if health != nil && (health.Status == "not_ready" || health.Status == "degraded") {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(3 * time.Second):
+			_, _ = s.Poll(ctx)
+		}
+	}
 
 	for {
 		select {

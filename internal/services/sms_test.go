@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/sms"
 )
@@ -173,5 +174,77 @@ func TestSMSService_Send_Multipart(t *testing.T) {
 	}
 	if len(sender.sentPDUs) != 2 {
 		t.Errorf("expected 2 sent PDUs, got %d", len(sender.sentPDUs))
+	}
+}
+
+type mockStorageManager struct {
+	selectedStorage string
+	messages        map[string][]modem.StoredMessage
+	deletedIndices  []int
+}
+
+func (m *mockStorageManager) SelectStorage(mem string) (*modem.StorageStatus, error) {
+	m.selectedStorage = mem
+	msgs := m.messages[mem]
+	return &modem.StorageStatus{Name: mem, Used: len(msgs), Total: 25}, nil
+}
+
+func (m *mockStorageManager) ListMessages() ([]modem.StoredMessage, error) {
+	return m.messages[m.selectedStorage], nil
+}
+
+func (m *mockStorageManager) DeleteMessage(index int) error {
+	m.deletedIndices = append(m.deletedIndices, index)
+	return nil
+}
+
+func (m *mockStorageManager) StorageCapacity() (*modem.StorageStatus, error) {
+	return &modem.StorageStatus{Name: "SM", Used: 15, Total: 15}, nil
+}
+
+func TestSMSService_SyncStoredMessages(t *testing.T) {
+	sender := &mockPDUSender{}
+	filter := security.NewFilter("all", nil, nil)
+	limiter := security.NewRateLimiter(10)
+	tracker := sms.NewTracker(time.Minute, nil)
+	assembler := sms.NewAssembler(time.Hour)
+
+	var received []*sms.AssembledSMS
+	onReceived := func(msg *sms.AssembledSMS) {
+		received = append(received, msg)
+	}
+
+	svc := NewSMSService(SMSServiceConfig{ModemID: "huawei_e1550"}, sender, filter, limiter, tracker, assembler, onReceived)
+
+	storage := &mockStorageManager{
+		messages: map[string][]modem.StoredMessage{
+			"SM": {
+				{
+					Index:  0,
+					Status: 0,
+					// Valid SMS PDU: from +79011111111, text "Test"
+					PDUHex: "07919720131111F1040C919701111111F100006290221153252104D4F29C0E",
+				},
+			},
+		},
+	}
+	svc.SetStorageManager(storage)
+
+	ctx := context.Background()
+	count, err := svc.SyncStoredMessages(ctx, "SM")
+	if err != nil {
+		t.Fatalf("unexpected sync error: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 message synced, got %d", count)
+	}
+	if len(received) != 1 {
+		t.Fatalf("expected 1 received message dispatched, got %d", len(received))
+	}
+	if received[0].Text != "Test" {
+		t.Errorf("expected 'Test', got %q", received[0].Text)
+	}
+	if len(storage.deletedIndices) != 1 || storage.deletedIndices[0] != 0 {
+		t.Errorf("expected message 0 deleted, got %v", storage.deletedIndices)
 	}
 }

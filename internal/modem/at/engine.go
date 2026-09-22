@@ -4,6 +4,7 @@ package at
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -26,6 +27,7 @@ type Engine struct {
 	inFlight    chan *Response
 	currentResp *Response
 	activeCmd   string
+	promptChan  chan struct{}
 }
 
 // NewEngine creates a new AT command engine.
@@ -92,6 +94,53 @@ func (e *Engine) SendCommand(ctx context.Context, cmd string) (string, error) {
 	return output, nil
 }
 
+// SendPDU transmits an SMS PDU via AT+CMGS, waits for the '>' prompt, then sends the PDU payload with Ctrl+Z (\x1A).
+func (e *Engine) SendPDU(cmdLength int, pduHex string, timeout time.Duration) (*Response, error) {
+	e.cmdMu.Lock()
+	defer e.cmdMu.Unlock()
+
+	respChan := make(chan *Response, 1)
+	promptChan := make(chan struct{}, 1)
+
+	e.respMu.Lock()
+	e.inFlight = respChan
+	e.promptChan = promptChan
+	e.currentResp = &Response{}
+	e.activeCmd = "AT+CMGS"
+	e.respMu.Unlock()
+
+	defer e.clearInFlight()
+
+	// 1. Send AT+CMGS=<length>\r
+	cmd := fmt.Sprintf("AT+CMGS=%d\r", cmdLength)
+	if _, err := e.port.Write([]byte(cmd)); err != nil {
+		return nil, err
+	}
+
+	// 2. Wait for '>' prompt or early error
+	select {
+	case <-promptChan:
+	case resp := <-respChan:
+		return resp, nil
+	case <-time.After(3 * time.Second):
+	}
+
+	// 3. Write PDU and Ctrl-Z (\x1A)
+	if _, err := e.port.Write([]byte(pduHex + "\x1A")); err != nil {
+		_, _ = e.port.Write([]byte("\x1B"))
+		return nil, err
+	}
+
+	// 4. Wait for final response (+CMGS: <ref> and OK)
+	select {
+	case resp := <-respChan:
+		return resp, nil
+	case <-time.After(timeout):
+		_, _ = e.port.Write([]byte("\x1B"))
+		return nil, ErrTimeout
+	}
+}
+
 // Start starts the background read loop for handling responses and URCs.
 func (e *Engine) Start(ctx context.Context) error {
 	buf := make([]byte, 256)
@@ -114,10 +163,23 @@ func (e *Engine) Start(ctx context.Context) error {
 
 		for i := 0; i < n; i++ {
 			b := buf[i]
+			if b == '>' {
+				e.respMu.Lock()
+				ch := e.promptChan
+				e.respMu.Unlock()
+				if ch != nil {
+					select {
+					case ch <- struct{}{}:
+					default:
+					}
+				}
+				lineBuf = lineBuf[:0]
+				continue
+			}
 			if b == '\n' {
 				line := strings.TrimSpace(string(lineBuf))
 				lineBuf = lineBuf[:0]
-				if line != "" {
+				if line != "" && line != ">" {
 					e.processLine(line)
 				}
 			} else if b != '\r' {
@@ -132,15 +194,11 @@ func (e *Engine) clearInFlight() {
 	e.inFlight = nil
 	e.currentResp = nil
 	e.activeCmd = ""
+	e.promptChan = nil
 	e.respMu.Unlock()
 }
 
 func (e *Engine) processLine(line string) {
-	if isURC(line) {
-		e.dispatchURC(line)
-		return
-	}
-
 	e.respMu.Lock()
 	defer e.respMu.Unlock()
 
@@ -151,6 +209,19 @@ func (e *Engine) processLine(line string) {
 
 	if line == e.activeCmd {
 		return // Ignore command echo
+	}
+
+	if isCallTerminationResponse(e.activeCmd, line) {
+		e.currentResp.Error = true
+		e.currentResp.Lines = append(e.currentResp.Lines, line)
+		e.inFlight <- e.currentResp
+		e.inFlight = nil
+		return
+	}
+
+	if !isCommandResponse(e.activeCmd, line) && isURC(line) {
+		e.dispatchURC(line)
+		return
 	}
 
 	switch {
@@ -168,6 +239,35 @@ func (e *Engine) processLine(line string) {
 	}
 }
 
+func isCallTerminationResponse(cmd, line string) bool {
+	upperCmd := strings.ToUpper(strings.TrimSpace(cmd))
+	if strings.HasPrefix(upperCmd, "ATD") || upperCmd == "ATA" || upperCmd == "ATH" {
+		switch line {
+		case "NO CARRIER", "BUSY", "NO ANSWER", "NO DIALTONE":
+			return true
+		}
+	}
+	return false
+}
+
+func isCommandResponse(cmd, line string) bool {
+	upperCmd := strings.ToUpper(strings.TrimSpace(cmd))
+	upperLine := strings.ToUpper(strings.TrimSpace(line))
+
+	if strings.HasPrefix(upperCmd, "AT") {
+		clean := strings.TrimPrefix(upperCmd, "AT")
+		for _, stop := range []string{"?", "=", "\r", "\n"} {
+			if idx := strings.Index(clean, stop); idx >= 0 {
+				clean = clean[:idx]
+			}
+		}
+		if clean != "" && strings.HasPrefix(upperLine, clean+":") {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Engine) dispatchURC(line string) {
 	select {
 	case e.urcChan <- line:
@@ -179,7 +279,9 @@ func isURC(line string) bool {
 	urcPrefixes := []string{
 		"+CLIP:", "+CMTI:", "+CMT:", "+CDS:", "+DTMF:",
 		"+CUSD:", "RING", "+CRING:", "+CREG:",
-		"+CGREG:", "+CEREG:", "NO CARRIER",
+		"+CGREG:", "+CEREG:", "NO CARRIER", "+COLP:",
+		"^ORIG:", "^CONN:", "^CEND:", "^RSSI:", "^MODE:",
+		"^DSFLOWRPT:", "^BOOT:", "^SRVST:",
 	}
 	for _, p := range urcPrefixes {
 		if strings.HasPrefix(line, p) {

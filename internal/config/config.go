@@ -114,15 +114,18 @@ type StatusConfig struct {
 
 // TariffConfig holds mobile operator presets, balance monitoring, and quota thresholds.
 type TariffConfig struct {
-	Enabled          bool          `yaml:"enabled"`
-	OperatorPreset   string        `yaml:"operator_preset"`
-	BalanceUSSD      string        `yaml:"balance_ussd"`
-	BalanceRegex     string        `yaml:"balance_regex"`
-	AutoCheckOnError bool          `yaml:"auto_check_on_error"`
-	CheckInterval    time.Duration `yaml:"check_interval"`
-	MinBalanceAlert  float64       `yaml:"min_balance_alert"`
-	SMSLimit         int           `yaml:"sms_limit"`
-	ResetDayOfMonth  int           `yaml:"reset_day_of_month"`
+	Enabled            bool          `yaml:"enabled"`
+	OperatorPreset     string        `yaml:"operator_preset"`
+	BalanceUSSD        string        `yaml:"balance_ussd"`
+	BalanceRegex       string        `yaml:"balance_regex"`
+	AutoCheckOnError   bool          `yaml:"auto_check_on_error"`
+	CheckInterval      time.Duration `yaml:"check_interval"`
+	MinBalanceAlert    float64       `yaml:"min_balance_alert"`
+	SMSLimit           int           `yaml:"sms_limit"`
+	CallMinutesLimit   float64       `yaml:"call_minutes_limit"`
+	DataTrafficLimitMB int64         `yaml:"data_traffic_limit_mb"`
+	ResetDayOfMonth    int           `yaml:"reset_day_of_month"`
+	StorageDir         string        `yaml:"storage_dir"`
 }
 
 // APIConfig holds settings for the embedded HTTP dashboard and REST API.

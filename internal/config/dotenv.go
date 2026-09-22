@@ -33,6 +33,9 @@ func parseEnvFile(path string) map[string]string {
 		}
 		res[k] = v
 	}
+	if err := scanner.Err(); err != nil {
+		// Just ignore or log it, for now we will return what we successfully parsed
+	}
 	return res
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -30,6 +31,7 @@ type ModemManager interface {
 	SendUSSD(ctx context.Context, modemID, code string) (string, error)
 	DialCall(ctx context.Context, modemID, number string) error
 	HangupCall(ctx context.Context, modemID string) error
+	SendRawAT(ctx context.Context, modemID, cmd string) (string, error)
 	GetReceivedSMS() []ReceivedSMS
 }
 
@@ -91,6 +93,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/ussd/send", s.handleSendUSSD)
 	s.mux.HandleFunc("POST /api/call/dial", s.handleCallDial)
 	s.mux.HandleFunc("POST /api/call/hangup", s.handleCallHangup)
+	s.mux.HandleFunc("POST /api/at/send", s.handleSendAT)
 	s.mux.HandleFunc("GET /api/sms/inbox", s.handleGetInbox)
 	s.mux.HandleFunc("GET /", s.handleRootUI)
 }
@@ -113,16 +116,20 @@ func (s *Server) handleSendSMS(w http.ResponseWriter, r *http.Request) {
 		Text    string `json:"text"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		slog.Warn("api send sms invalid json", slog.Any("error", err))
 		http.Error(w, `{"error":"invalid request json"}`, http.StatusBadRequest)
 		return
 	}
 
+	slog.Info("api send sms requested", slog.String("modem", req.ModemID), slog.String("to", req.To), slog.Int("len", len(req.Text)))
 	refs, err := s.manager.SendSMS(r.Context(), req.ModemID, req.To, req.Text)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		slog.Error("api send sms failed", slog.String("modem", req.ModemID), slog.String("to", req.To), slog.Any("error", err))
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
+	slog.Info("api send sms succeeded", slog.String("modem", req.ModemID), slog.String("to", req.To), slog.Any("refs", refs))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -136,16 +143,20 @@ func (s *Server) handleSendUSSD(w http.ResponseWriter, r *http.Request) {
 		Code    string `json:"code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request json"}`, http.StatusBadRequest)
+		slog.Warn("api send ussd invalid json", slog.Any("error", err))
+		writeJSONError(w, http.StatusBadRequest, "invalid request json")
 		return
 	}
 
+	slog.Info("api send ussd requested", slog.String("modem", req.ModemID), slog.String("code", req.Code))
 	reply, err := s.manager.SendUSSD(r.Context(), req.ModemID, req.Code)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		slog.Error("api send ussd failed", slog.String("modem", req.ModemID), slog.String("code", req.Code), slog.Any("error", err))
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
+	slog.Info("api send ussd succeeded", slog.String("modem", req.ModemID), slog.String("code", req.Code), slog.String("reply", reply))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -159,13 +170,19 @@ func (s *Server) handleCallDial(w http.ResponseWriter, r *http.Request) {
 		Number  string `json:"number"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request json"}`, http.StatusBadRequest)
+		slog.Warn("api call dial invalid json", slog.Any("error", err))
+		writeJSONError(w, http.StatusBadRequest, "invalid request json")
 		return
 	}
+
+	slog.Info("api call dial requested", slog.String("modem", req.ModemID), slog.String("number", req.Number))
 	if err := s.manager.DialCall(r.Context(), req.ModemID, req.Number); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		slog.Error("api call dial failed", slog.String("modem", req.ModemID), slog.String("number", req.Number), slog.Any("error", err))
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	slog.Info("api call dial succeeded", slog.String("modem", req.ModemID), slog.String("number", req.Number))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
@@ -174,13 +191,45 @@ func (s *Server) handleCallHangup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ModemID string `json:"modem_id"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		slog.Warn("api call hangup invalid json", slog.Any("error", err))
+		http.Error(w, `{"error":"invalid request json"}`, http.StatusBadRequest)
+		return
+	}
+
+	slog.Info("api call hangup requested", slog.String("modem", req.ModemID))
 	if err := s.manager.HangupCall(r.Context(), req.ModemID); err != nil {
+		slog.Error("api call hangup failed", slog.String("modem", req.ModemID), slog.Any("error", err))
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
+
+	slog.Info("api call hangup succeeded", slog.String("modem", req.ModemID))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (s *Server) handleSendAT(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ModemID string `json:"modem_id"`
+		Command string `json:"command"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request json"}`, http.StatusBadRequest)
+		return
+	}
+	reply, err := s.manager.SendRawAT(r.Context(), req.ModemID, req.Command)
+	if err != nil {
+		slog.Error("api send at failed", slog.String("modem", req.ModemID), slog.String("command", req.Command), slog.Any("error", err))
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	slog.Info("api send at succeeded", slog.String("modem", req.ModemID), slog.String("command", req.Command), slog.String("reply", reply))
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"reply":   reply,
+	})
 }
 
 func (s *Server) handleGetInbox(w http.ResponseWriter, r *http.Request) {
@@ -196,4 +245,13 @@ func (s *Server) handleRootUI(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(dashboardHTML))
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": false,
+		"error":   message,
+	})
 }

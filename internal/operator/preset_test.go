@@ -129,6 +129,13 @@ func TestParseBalance(t *testing.T) {
 			wantErr:     ErrEmptyResponse,
 		},
 		{
+			name:        "operator debt notification",
+			text:        "Услуги связи ограничены из-за задолженности 1.78 руб. Пожалуйста, пополните баланс",
+			regex:       "",
+			wantBalance: -1.78,
+			wantErr:     nil,
+		},
+		{
 			name:        "no balance found",
 			text:        "Spasibo, vash platezh prinyat",
 			regex:       "",

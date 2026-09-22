@@ -220,6 +220,23 @@ func TestHuaweiDriver_Init(t *testing.T) {
 	if len(runner.commands) == 0 {
 		t.Fatal("expected commands to be sent")
 	}
+
+	foundVoice := false
+	foundColp := false
+	for _, cmd := range runner.commands {
+		if cmd == "AT^CVOICE=0" {
+			foundVoice = true
+		}
+		if cmd == "AT+COLP=1" {
+			foundColp = true
+		}
+	}
+	if !foundVoice {
+		t.Errorf("expected AT^CVOICE=0 to be sent, sent: %v", runner.commands)
+	}
+	if !foundColp {
+		t.Errorf("expected AT+COLP=1 to be sent, sent: %v", runner.commands)
+	}
 }
 
 func TestHuaweiDriver_SendUSSD_FallbackToPDU(t *testing.T) {
@@ -237,6 +254,134 @@ func TestHuaweiDriver_SendUSSD_FallbackToPDU(t *testing.T) {
 	}
 	if out != "OK" {
 		t.Errorf("expected OK, got %q", out)
+	}
+}
+
+func TestHuaweiDriver_Dial_VoiceDisabled(t *testing.T) {
+	runner := newMockATRunner()
+	runner.responses["AT^CVOICE?"] = &at.Response{OK: true, Lines: []string{"^CVOICE:1"}}
+	driver := NewHuaweiDriver(runner)
+
+	err := driver.Dial("+79991112233")
+	if err == nil {
+		t.Fatal("expected error when voice is disabled, got nil")
+	}
+	if !strings.Contains(err.Error(), "voice calls are not supported") {
+		t.Errorf("expected voice calls not supported error, got: %v", err)
+	}
+
+	// Verify ATD was NOT sent
+	for _, cmd := range runner.commands {
+		if strings.HasPrefix(cmd, "ATD") {
+			t.Errorf("ATD should not have been sent when voice is disabled, sent: %v", runner.commands)
+		}
+	}
+}
+
+func TestHuaweiDriver_Dial_VoiceEnabled(t *testing.T) {
+	runner := newMockATRunner()
+	runner.responses["AT^CVOICE?"] = &at.Response{OK: true, Lines: []string{"^CVOICE:0"}}
+	driver := NewHuaweiDriver(runner)
+
+	err := driver.Dial("+79991112233")
+	if err != nil {
+		t.Fatalf("unexpected dial error: %v", err)
+	}
+
+	foundATD := false
+	for _, cmd := range runner.commands {
+		if strings.HasPrefix(cmd, "ATD+79991112233;") {
+			foundATD = true
+		}
+	}
+	if !foundATD {
+		t.Errorf("expected ATD command to be sent when voice is enabled, sent: %v", runner.commands)
+	}
+}
+
+func TestBaseDriver_SelectStorage(t *testing.T) {
+	runner := newMockATRunner()
+	runner.responses[`AT+CPMS="ME","ME","ME"`] = &at.Response{
+		OK:    true,
+		Lines: []string{`+CPMS: 5,23,5,23,5,23`},
+	}
+
+	driver := NewGenericDriver(runner)
+	st, err := driver.SelectStorage("ME")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if st.Name != "ME" || st.Used != 5 || st.Total != 23 {
+		t.Errorf("unexpected storage status: %+v", st)
+	}
+
+	// Negative case: modem error
+	runner.responses[`AT+CPMS="INVALID","INVALID","INVALID"`] = &at.Response{
+		Error: true,
+		Lines: []string{`+CMS ERROR: 321`},
+	}
+	_, err = driver.SelectStorage("INVALID")
+	if err == nil {
+		t.Fatal("expected error on invalid storage, got nil")
+	}
+}
+
+func TestBaseDriver_StorageCapacity(t *testing.T) {
+	runner := newMockATRunner()
+	runner.responses["AT+CPMS?"] = &at.Response{
+		OK:    true,
+		Lines: []string{`+CPMS: "SM",15,15,"SM",15,15,"SM",15,15`},
+	}
+
+	driver := NewGenericDriver(runner)
+	st, err := driver.StorageCapacity()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if st.Name != "SM" || st.Used != 15 || st.Total != 15 {
+		t.Errorf("unexpected capacity: %+v", st)
+	}
+}
+
+func TestBaseDriver_ListMessages(t *testing.T) {
+	runner := newMockATRunner()
+	runner.responses["AT+CMGL=4"] = &at.Response{
+		OK: true,
+		Lines: []string{
+			`+CMGL: 0,0,,24`,
+			`07919720131111F1040C919701111111F100006290221153252104D4F29C0E`,
+			`+CMGL: 1,1,,20`,
+			`07919720131111F1040C919701111111F100006290221153252104D4F29C0E`,
+		},
+	}
+
+	driver := NewGenericDriver(runner)
+	msgs, err := driver.ListMessages()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].Index != 0 || msgs[0].Status != 0 {
+		t.Errorf("unexpected message 0: %+v", msgs[0])
+	}
+	if msgs[1].Index != 1 || msgs[1].Status != 1 {
+		t.Errorf("unexpected message 1: %+v", msgs[1])
+	}
+}
+
+func TestBaseDriver_DeleteMessage(t *testing.T) {
+	runner := newMockATRunner()
+	runner.responses["AT+CMGD=3"] = &at.Response{OK: true}
+	runner.responses["AT+CMGD=99"] = &at.Response{Error: true, Lines: []string{"+CMS ERROR: 321"}}
+
+	driver := NewGenericDriver(runner)
+	if err := driver.DeleteMessage(3); err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if err := driver.DeleteMessage(99); err == nil {
+		t.Fatal("expected error on invalid index, got nil")
 	}
 }
 

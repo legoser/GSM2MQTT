@@ -67,11 +67,19 @@ func (d *BaseDriver) Close() error {
 	return nil
 }
 
+// DefaultDialTimeout specifies how long to wait for call setup response from network.
+const DefaultDialTimeout = 30 * time.Second
+
 // Dial places an outgoing voice call.
 func (d *BaseDriver) Dial(number string) error {
 	cleanNum := strings.TrimSpace(number)
 	cmd := fmt.Sprintf("ATD%s;", cleanNum)
-	return d.execSimple(cmd, 10*time.Second)
+	err := d.execSimple(cmd, DefaultDialTimeout)
+	if err != nil {
+		// Clean up any half-opened voice call on modem
+		_ = d.execSimple("ATH", 3*time.Second)
+	}
+	return err
 }
 
 // Answer answers an incoming voice call.
@@ -117,16 +125,34 @@ func (d *BaseDriver) SignalQuality() (int, error) {
 // NetworkRegistration checks the network registration state.
 func (d *BaseDriver) NetworkRegistration() (*modem.NetworkStatus, error) {
 	resp, err := d.runner.Send("AT+CREG?", 3*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	if resp.Error || len(resp.Lines) == 0 {
-		return nil, fmt.Errorf("AT+CREG? failed: %v", resp.Lines)
+	if err == nil && !resp.Error && len(resp.Lines) > 0 {
+		if st := parseRegLine(resp.Lines, "+CREG:", "GSM"); st != nil && st.Registered {
+			return st, nil
+		}
 	}
 
-	for _, line := range resp.Lines {
-		if strings.HasPrefix(line, "+CREG:") {
-			parts := strings.Split(strings.TrimPrefix(line, "+CREG:"), ",")
+	respG, errG := d.runner.Send("AT+CGREG?", 3*time.Second)
+	if errG == nil && !respG.Error && len(respG.Lines) > 0 {
+		if st := parseRegLine(respG.Lines, "+CGREG:", "UMTS"); st != nil && st.Registered {
+			return st, nil
+		}
+	}
+
+	if resp != nil && len(resp.Lines) > 0 {
+		if st := parseRegLine(resp.Lines, "+CREG:", "GSM"); st != nil {
+			return st, nil
+		}
+	}
+
+	return nil, fmt.Errorf("unable to determine network registration")
+}
+
+func parseRegLine(lines []string, prefix string, defaultTech string) *modem.NetworkStatus {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, prefix) {
+			body := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+			parts := strings.Split(body, ",")
 			statIdx := 1
 			if len(parts) == 1 {
 				statIdx = 0
@@ -137,13 +163,13 @@ func (d *BaseDriver) NetworkRegistration() (*modem.NetworkStatus, error) {
 					return &modem.NetworkStatus{
 						Registered: stat == 1 || stat == 5,
 						Roaming:    stat == 5,
-						Technology: "GSM",
-					}, nil
+						Technology: defaultTech,
+					}
 				}
 			}
 		}
 	}
-	return nil, fmt.Errorf("unable to parse CREG from %v", resp.Lines)
+	return nil
 }
 
 // OperatorName retrieves the current network operator name.
@@ -224,8 +250,7 @@ func (d *BaseDriver) ListSMS(filter modem.SMSFilter) ([]modem.SMS, error) {
 
 // DeleteSMS deletes an SMS message by storage index.
 func (d *BaseDriver) DeleteSMS(index int) error {
-	cmd := fmt.Sprintf("AT+CMGD=%d", index)
-	return d.execSimple(cmd, 5*time.Second)
+	return d.DeleteMessage(index)
 }
 
 func (d *BaseDriver) queryClean(cmd string) string {

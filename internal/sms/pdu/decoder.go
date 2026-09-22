@@ -29,6 +29,10 @@ func DecodeSMS(pduHex string) (*DecodedSMS, error) {
 
 	// 2. First Octet
 	firstOctet := data[offset]
+	mti := firstOctet & 0x03
+	if mti != 0x00 { // 0x00 = SMS-DELIVER
+		return nil, fmt.Errorf("%w: expected SMS-DELIVER (0), got %d", ErrUnsupportedMessageType, mti)
+	}
 	hasUDH := (firstOctet & 0x40) != 0
 	offset++
 

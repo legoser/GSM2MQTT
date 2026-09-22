@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/modem"
+	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
 
 // DiagnosticReport contains detailed post-failure self-diagnostic results.
@@ -23,8 +24,8 @@ type DiagnosticReport struct {
 	BalanceOK bool      `json:"balance_ok"`
 	Balance   float64   `json:"balance"`
 	Currency  string    `json:"currency"`
-	Issue     string    `json:"issue,omitempty"`
-	Advice    string    `json:"advice,omitempty"`
+	Issue     string    `json:"issue"`
+	Advice    string    `json:"advice"`
 }
 
 // BalanceQueryFunc queries the latest monetary account balance.
@@ -60,7 +61,7 @@ func (d *DiagnosticService) RunDiagnostic(ctx context.Context, trigger string) (
 		ModemID:   d.modemID,
 		Trigger:   trigger,
 		BalanceOK: true,
-		Currency:  "RUB",
+		Currency:  tariff.DefaultCurrency,
 	}
 
 	d.checkSIM(report)

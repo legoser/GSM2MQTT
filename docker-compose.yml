@@ -34,6 +34,7 @@ services:
       - MOCK_MODEM=${MOCK_MODEM:-false}
     volumes:
       - ./configs/gsm2mqtt.yaml:/etc/gsm2mqtt/gsm2mqtt.yaml:ro
+      - ./data:/app/data
       - /dev:/dev
       - /dev/pts:/dev/pts
       - /tmp:/tmp

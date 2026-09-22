@@ -47,6 +47,10 @@ func (m *mockModemManager) HangupCall(ctx context.Context, modemID string) error
 	return nil
 }
 
+func (m *mockModemManager) SendRawAT(ctx context.Context, modemID, cmd string) (string, error) {
+	return "OK", nil
+}
+
 func (m *mockModemManager) GetReceivedSMS() []ReceivedSMS {
 	return m.inbox
 }
@@ -247,6 +251,31 @@ func TestServer_GetInbox(t *testing.T) {
 	}
 	if len(res) != 1 || res[0].Text != "Test inbox message" {
 		t.Errorf("unexpected inbox response: %+v", res)
+	}
+}
+
+func TestServer_SendAT(t *testing.T) {
+	mock := &mockModemManager{}
+	server := NewServer(ServerConfig{Port: 8080}, mock)
+
+	body, _ := json.Marshal(map[string]string{
+		"modem_id": "test_modem",
+		"command":  "AT+CSQ",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/at/send", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var res map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("json unmarshal failed: %v", err)
+	}
+	if res["reply"] != "OK" {
+		t.Errorf("expected OK reply, got: %v", res)
 	}
 }
 
