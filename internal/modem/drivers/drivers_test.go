@@ -221,3 +221,22 @@ func TestHuaweiDriver_Init(t *testing.T) {
 		t.Fatal("expected commands to be sent")
 	}
 }
+
+func TestHuaweiDriver_SendUSSD_FallbackToPDU(t *testing.T) {
+	runner := newMockATRunner()
+	// Simulate modem rejecting plain text USSD
+	runner.responses[`AT+CUSD=1,"*100#",15`] = &at.Response{Error: true, Lines: []string{"ERROR"}}
+	runner.responses[`AT+CUSD=1,"*100#"`] = &at.Response{Error: true, Lines: []string{"ERROR"}}
+	// Modem accepts 7-bit PDU encoded *100# -> AA180C3602
+	runner.responses[`AT+CUSD=1,"AA180C3602",15`] = &at.Response{OK: true, Lines: []string{"OK"}}
+
+	driver := NewHuaweiDriver(runner)
+	out, err := driver.SendUSSD("*100#")
+	if err != nil {
+		t.Fatalf("expected SendUSSD to succeed with PDU fallback, got err: %v", err)
+	}
+	if out != "OK" {
+		t.Errorf("expected OK, got %q", out)
+	}
+}
+

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -18,7 +19,8 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("loading config file: %w", err)
 	}
 
-	applyEnvOverrides(cfg)
+	dotEnv := loadDotEnv(filepath.Dir(path))
+	applyHierarchicalOverrides(cfg, dotEnv)
 
 	if err := validate(cfg); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
@@ -113,36 +115,38 @@ func loadFromFile(cfg *Config, path string) error {
 }
 
 // applyEnvOverrides applies environment variable overrides to the config.
-// Pattern: GSM2MQTT_<SECTION>_<FIELD> in uppercase.
 func applyEnvOverrides(cfg *Config) {
-	overrides := map[string]func(string){
-		"GSM2MQTT_LOG_LEVEL":          func(v string) { cfg.LogLevel = v },
-		"GSM2MQTT_MQTT_BROKER":        func(v string) { cfg.MQTT.Broker = v },
-		"GSM2MQTT_MQTT_PORT":          func(v string) { cfg.MQTT.Port = atoi(v, cfg.MQTT.Port) },
-		"GSM2MQTT_MQTT_USERNAME":      func(v string) { cfg.MQTT.Username = v },
-		"GSM2MQTT_MQTT_PASSWORD":      func(v string) { cfg.MQTT.Password = v },
-		"GSM2MQTT_MQTT_CLIENT_ID":     func(v string) { cfg.MQTT.ClientID = v },
-		"GSM2MQTT_POOL_ENABLED":       func(v string) { cfg.Pool.Enabled = v == "true" || v == "1" },
-		"GSM2MQTT_POOL_STRATEGY":      func(v string) { cfg.Pool.Strategy = v },
-		"GSM2MQTT_POOL_DEFAULT_MODEM": func(v string) { cfg.Pool.DefaultModem = v },
-		"GSM2MQTT_API_ENABLED":        func(v string) { cfg.API.Enabled = v == "true" || v == "1" },
-		"GSM2MQTT_API_HOST":           func(v string) { cfg.API.Host = v },
-		"GSM2MQTT_API_PORT":           func(v string) { cfg.API.Port = atoi(v, cfg.API.Port) },
-		"GSM2MQTT_MODEM_PORT": func(v string) {
+	applyHierarchicalOverrides(cfg, nil)
+}
+
+// applyHierarchicalOverrides applies configuration overrides with priority: OS Env > .env > YAML.
+func applyHierarchicalOverrides(cfg *Config, dotEnv map[string]string) {
+	overrides := []struct {
+		keys   []string
+		setter func(string)
+	}{
+		{[]string{"GSM2MQTT_LOG_LEVEL", "LOG_LEVEL"}, func(v string) { cfg.LogLevel = v }},
+		{[]string{"GSM2MQTT_MQTT_BROKER", "MQTT_BROKER"}, func(v string) { cfg.MQTT.Broker = v }},
+		{[]string{"GSM2MQTT_MQTT_PORT", "MQTT_PORT"}, func(v string) { cfg.MQTT.Port = atoi(v, cfg.MQTT.Port) }},
+		{[]string{"GSM2MQTT_MQTT_USERNAME", "MQTT_USERNAME"}, func(v string) { cfg.MQTT.Username = v }},
+		{[]string{"GSM2MQTT_MQTT_PASSWORD", "MQTT_PASSWORD"}, func(v string) { cfg.MQTT.Password = v }},
+		{[]string{"GSM2MQTT_MQTT_CLIENT_ID", "MQTT_CLIENT_ID"}, func(v string) { cfg.MQTT.ClientID = v }},
+		{[]string{"GSM2MQTT_POOL_ENABLED", "POOL_ENABLED"}, func(v string) { cfg.Pool.Enabled = v == "true" || v == "1" }},
+		{[]string{"GSM2MQTT_POOL_STRATEGY", "POOL_STRATEGY"}, func(v string) { cfg.Pool.Strategy = v }},
+		{[]string{"GSM2MQTT_POOL_DEFAULT_MODEM", "POOL_DEFAULT_MODEM"}, func(v string) { cfg.Pool.DefaultModem = v }},
+		{[]string{"GSM2MQTT_API_ENABLED", "API_ENABLED"}, func(v string) { cfg.API.Enabled = v == "true" || v == "1" }},
+		{[]string{"GSM2MQTT_API_HOST", "API_HOST"}, func(v string) { cfg.API.Host = v }},
+		{[]string{"GSM2MQTT_API_PORT", "API_PORT"}, func(v string) { cfg.API.Port = atoi(v, cfg.API.Port) }},
+		{[]string{"GSM2MQTT_MODEM_PORT", "MODEM_DEVICE", "MODEM_PORT"}, func(v string) {
 			if len(cfg.Modems) > 0 {
 				cfg.Modems[0].Port = v
 			}
-		},
-		"MODEM_DEVICE": func(v string) {
-			if len(cfg.Modems) > 0 {
-				cfg.Modems[0].Port = v
-			}
-		},
+		}},
 	}
 
-	for env, setter := range overrides {
-		if v := os.Getenv(env); v != "" {
-			setter(v)
+	for _, o := range overrides {
+		if v := getHierarchicalValue(dotEnv, o.keys...); v != "" {
+			o.setter(v)
 		}
 	}
 }

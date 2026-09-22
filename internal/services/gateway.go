@@ -83,11 +83,8 @@ func (r *ModemRunner) Run(ctx context.Context) error {
 	}
 }
 
-func (r *ModemRunner) runOnce(ctx context.Context) error {
-	childCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	port, err := r.opener.Open(transport.PortConfig{
+func (r *ModemRunner) openPort() (transport.Port, error) {
+	return r.opener.Open(transport.PortConfig{
 		Device:      r.mCfg.Port,
 		BaudRate:    r.mCfg.BaudRate,
 		DataBits:    r.mCfg.DataBits,
@@ -95,14 +92,22 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 		Parity:      r.mCfg.Parity,
 		FlowControl: r.mCfg.FlowControl,
 	})
+}
+
+func (r *ModemRunner) runOnce(ctx context.Context) error {
+	childCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	port, err := r.openPort()
 	if err != nil {
 		return fmt.Errorf("failed to open modem port %s: %w", r.mCfg.Port, err)
 	}
 	defer port.Close()
 
 	engine := at.NewEngine(port)
+	engineErrCh := make(chan error, 1)
 	go func() {
-		_ = engine.Start(childCtx)
+		engineErrCh <- engine.Start(childCtx)
 	}()
 
 	driver := r.createDriver(engine)
@@ -114,6 +119,7 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 	r.publishDiscovery(driver, topics)
 
 	smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc := r.wireServices(engine, driver, topics)
+	statusSvc.SetOnDisconnect(cancel)
 
 	r.mu.Lock()
 	r.smsSvc = smsSvc
@@ -127,8 +133,17 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 	go statusSvc.Start(childCtx)
 	go r.startBalanceLoop(childCtx, ussdSvc, tariffMgr, topics)
 
-	<-ctx.Done()
-	return ctx.Err()
+	select {
+	case <-childCtx.Done():
+		return fmt.Errorf("modem runner context cancelled")
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-engineErrCh:
+		if err == nil {
+			return fmt.Errorf("modem serial communication closed")
+		}
+		return fmt.Errorf("modem serial communication lost: %w", err)
+	}
 }
 
 // Summary returns current live status snapshot for API inspection.
@@ -241,53 +256,3 @@ func (r *ModemRunner) urcLoop(
 	}
 }
 
-// ID returns the configured identifier of the modem.
-func (r *ModemRunner) ID() string {
-	return r.mCfg.ID
-}
-
-// Status returns the operational status of the modem.
-func (r *ModemRunner) Status() string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if r.lastHealth.Status == "" {
-		return "ready"
-	}
-	return r.lastHealth.Status
-}
-
-// Signal returns the CSQ signal strength RSSI.
-func (r *ModemRunner) Signal() int {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.lastHealth.Signal
-}
-
-// Operator returns the detected network operator name.
-func (r *ModemRunner) Operator() string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.lastHealth.Operator
-}
-
-// Dial initiates a voice call on this modem.
-func (r *ModemRunner) Dial(ctx context.Context, number string) error {
-	r.mu.RLock()
-	svc := r.callSvc
-	r.mu.RUnlock()
-	if svc == nil {
-		return fmt.Errorf("call service not initialized")
-	}
-	return svc.Dial(ctx, number)
-}
-
-// Hangup terminates any active voice call on this modem.
-func (r *ModemRunner) Hangup(ctx context.Context) error {
-	r.mu.RLock()
-	svc := r.callSvc
-	r.mu.RUnlock()
-	if svc == nil {
-		return fmt.Errorf("call service not initialized")
-	}
-	return svc.Hangup(ctx)
-}

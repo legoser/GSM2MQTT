@@ -95,10 +95,13 @@ func ParseResponse(urc string) (*Response, error) {
 		}
 	}
 
-	// Decode UCS-2 hex if DCS == 72
-	if dcs == 72 && len(message)%4 == 0 && isHex(message) {
+	// Decode UCS-2 hex if DCS == 72 or if message is valid hex with length % 4 == 0
+	if (dcs == 72 || len(message)%4 == 0) && len(message) >= 4 && isHex(message) {
 		if rawBytes, err := hex.DecodeString(message); err == nil {
-			message = pdu.DecodeUCS2(rawBytes)
+			decoded := pdu.DecodeUCS2(rawBytes)
+			if decoded != "" && isPrintable(decoded) {
+				message = decoded
+			}
 		}
 	} else {
 		// Unescape any escaped newline sequences common in USSD menus
@@ -112,6 +115,15 @@ func ParseResponse(urc string) (*Response, error) {
 		DCS:            dcs,
 		ActionRequired: Status(statusCode) == StatusActionRequired,
 	}, nil
+}
+
+func isPrintable(s string) bool {
+	for _, r := range s {
+		if r < 32 && r != '\n' && r != '\r' && r != '\t' {
+			return false
+		}
+	}
+	return true
 }
 
 func isHex(s string) bool {

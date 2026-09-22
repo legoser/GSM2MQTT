@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/ussd"
 )
@@ -54,12 +55,22 @@ func (s *USSDService) Send(ctx context.Context, code string) (*ussd.Response, er
 		return parseInlineCUSD(out)
 	}
 
+	timeout := 15 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 && remaining < timeout {
+			timeout = remaining
+		}
+	}
+
 	select {
 	case resp := <-respCh:
 		return resp, nil
 	case <-ctx.Done():
 		s.clearPending()
 		return nil, ctx.Err()
+	case <-time.After(timeout):
+		s.clearPending()
+		return nil, ussd.ErrUSSDTimeout
 	}
 }
 

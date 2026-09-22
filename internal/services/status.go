@@ -25,10 +25,12 @@ type ModemHealth struct {
 
 // StatusService polls modem state and publishes telemetry.
 type StatusService struct {
-	cfg      StatusServiceConfig
-	provider modem.StatusProvider
-	onSignal func(rssi int, dbm int)
-	onHealth func(health ModemHealth)
+	cfg          StatusServiceConfig
+	provider     modem.StatusProvider
+	onSignal     func(rssi int, dbm int)
+	onHealth     func(health ModemHealth)
+	onDisconnect func()
+	failCount    int
 }
 
 // NewStatusService constructs a new StatusService.
@@ -46,12 +48,26 @@ func NewStatusService(
 	}
 }
 
+// SetOnDisconnect sets a callback triggered when communication fails repeatedly.
+func (s *StatusService) SetOnDisconnect(fn func()) {
+	s.onDisconnect = fn
+}
+
 // Poll queries modem status and updates listeners.
 func (s *StatusService) Poll(ctx context.Context) (*ModemHealth, error) {
-	rssi, _ := s.provider.SignalQuality()
+	rssi, errRssi := s.provider.SignalQuality()
 	reg, _ := s.provider.NetworkRegistration()
 	op, _ := s.provider.OperatorName()
-	sim, _ := s.provider.SIMStatus()
+	sim, errSim := s.provider.SIMStatus()
+
+	if errRssi != nil && errSim != nil {
+		s.failCount++
+		if s.failCount >= 3 && s.onDisconnect != nil {
+			s.onDisconnect()
+		}
+	} else {
+		s.failCount = 0
+	}
 
 	dbm := calculateDBm(rssi)
 
