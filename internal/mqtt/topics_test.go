@@ -36,6 +36,11 @@ func TestTopics_Generation(t *testing.T) {
 			expected: "gsm2mqtt/modem/siemens_tc35/call/dial",
 		},
 		{
+			name:     "Call Hangup topic",
+			actual:   topics.CallHangup(),
+			expected: "gsm2mqtt/modem/siemens_tc35/call/hangup",
+		},
+		{
 			name:     "Call Incoming topic",
 			actual:   topics.CallIncoming(),
 			expected: "gsm2mqtt/modem/siemens_tc35/call/incoming",
@@ -49,6 +54,31 @@ func TestTopics_Generation(t *testing.T) {
 			name:     "Signal Strength topic",
 			actual:   topics.SignalStrength(),
 			expected: "gsm2mqtt/modem/siemens_tc35/signal",
+		},
+		{
+			name:     "USSD Send topic",
+			actual:   topics.USSDSend(),
+			expected: "gsm2mqtt/modem/siemens_tc35/ussd/send",
+		},
+		{
+			name:     "USSD Response topic",
+			actual:   topics.USSDResponse(),
+			expected: "gsm2mqtt/modem/siemens_tc35/ussd/response",
+		},
+		{
+			name:     "Command Raw topic",
+			actual:   topics.CommandRaw(),
+			expected: "gsm2mqtt/modem/siemens_tc35/command/raw",
+		},
+		{
+			name:     "Command Response topic",
+			actual:   topics.CommandResponse(),
+			expected: "gsm2mqtt/modem/siemens_tc35/command/response",
+		},
+		{
+			name:     "Health topic",
+			actual:   topics.Health(),
+			expected: "gsm2mqtt/modem/siemens_tc35/health",
 		},
 	}
 

@@ -2,16 +2,21 @@ package modem
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
 
 type mockCommander struct {
 	responses map[string]string
+	errs      map[string]error
 }
 
 func (m *mockCommander) SendCommand(ctx context.Context, cmd string) (string, error) {
 	cleanCmd := strings.TrimSpace(cmd)
+	if err, ok := m.errs[cleanCmd]; ok {
+		return "", err
+	}
 	if resp, ok := m.responses[cleanCmd]; ok {
 		return resp, nil
 	}
@@ -72,6 +77,24 @@ func TestDetect_Huawei(t *testing.T) {
 	}
 }
 
+func TestDetect_Quectel(t *testing.T) {
+	cmd := &mockCommander{
+		responses: map[string]string{
+			"ATI":     "Quectel\r\nEC25\r\nRevision: EC25EFAR06A03M4G",
+			"AT+CGMI": "Quectel",
+			"AT+CGMM": "EC25",
+		},
+	}
+
+	modemType, err := Detect(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if modemType != TypeQuectel {
+		t.Errorf("expected TypeQuectel, got %v", modemType)
+	}
+}
+
 func TestDetect_GenericFallback(t *testing.T) {
 	cmd := &mockCommander{
 		responses: map[string]string{
@@ -87,5 +110,23 @@ func TestDetect_GenericFallback(t *testing.T) {
 	}
 	if modemType != TypeGeneric {
 		t.Errorf("expected TypeGeneric for unknown modem, got %v", modemType)
+	}
+}
+
+func TestDetect_ErrorFallback(t *testing.T) {
+	cmd := &mockCommander{
+		errs: map[string]error{
+			"ATI":     errors.New("command unsupported"),
+			"AT+CGMI": errors.New("command unsupported"),
+			"AT+CGMM": errors.New("command unsupported"),
+		},
+	}
+
+	modemType, err := Detect(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("expected graceful fallback, got error: %v", err)
+	}
+	if modemType != TypeGeneric {
+		t.Errorf("expected TypeGeneric on error, got %v", modemType)
 	}
 }
