@@ -1,0 +1,121 @@
+# ============================================================
+# GSM2MQTT Configuration
+# ============================================================
+# Environment variables override any YAML setting.
+# Pattern: GSM2MQTT_<SECTION>_<PARAM> (uppercase, underscore-separated)
+# Example: GSM2MQTT_MQTT_BROKER=192.168.1.100
+
+log_level: info  # debug, info, warn, error
+
+# -------------------------------------------------------
+# MQTT Broker Connection
+# -------------------------------------------------------
+mqtt:
+  broker: "localhost"                  # GSM2MQTT_MQTT_BROKER
+  port: 1883                          # GSM2MQTT_MQTT_PORT (8883 for TLS)
+  username: ""                         # GSM2MQTT_MQTT_USERNAME
+  password: ""                         # GSM2MQTT_MQTT_PASSWORD
+  client_id: "gsm2mqtt"               # GSM2MQTT_MQTT_CLIENT_ID
+  topic_prefix: "gsm2mqtt"            # Root MQTT topic prefix
+  discovery: true                      # Home Assistant MQTT Auto Discovery
+  discovery_prefix: "homeassistant"    # HA default
+
+  # TLS (optional)
+  tls:
+    enabled: false
+    ca_cert: ""
+    client_cert: ""
+    client_key: ""
+    insecure_skip_verify: false
+
+# -------------------------------------------------------
+# GSM Modems
+# -------------------------------------------------------
+modems:
+  - id: "modem1"                       # Unique identifier
+    name: "Siemens TC35"               # Human-readable name
+    port: "/dev/ttyS0"                 # Serial port path
+    baud_rate: 9600                     # 9600, 19200, 38400, 57600, 115200
+    type: "auto"                        # auto | siemens | simcom | huawei | generic
+    pin: ""                             # SIM PIN (if required)
+    data_bits: 8                        # 7, 8
+    stop_bits: 1                        # 1, 2
+    parity: "none"                      # none, odd, even
+    flow_control: "none"                # none, hardware (RTS/CTS)
+
+  # Example: USB Huawei modem
+  # - id: "huawei_e3372"
+  #   name: "Huawei E3372 4G"
+  #   port: "/dev/serial/by-id/usb-HUAWEI_MOBILE-if00-port0"
+  #   baud_rate: 115200
+  #   type: "huawei"
+
+  # Example: SIM800L via USB-UART
+  # - id: "sim800"
+  #   name: "SIM800L Module"
+  #   port: "/dev/ttyUSB0"
+  #   baud_rate: 9600
+  #   type: "simcom"
+
+# -------------------------------------------------------
+# SMS Settings
+# -------------------------------------------------------
+sms:
+  # Outgoing SMS encoding mode
+  # "auto"     — auto-detect (cyrillic → UCS-2, latin → GSM-7)
+  # "translit" — transliterate cyrillic to latin, then GSM-7
+  # "ucs2"     — always UCS-2 (any characters, but 70 chars/SMS)
+  # "gsm7"     — always GSM-7 (cyrillic replaced with '?')
+  encoding: "auto"
+
+  # Long message handling
+  # "split"    — auto-split into multipart SMS with UDH
+  # "truncate" — truncate to 1 SMS
+  # "reject"   — reject with error
+  long_message: "split"
+  max_segments: 4
+
+  # Include encoding info in MQTT response
+  report_encoding: true
+
+  # Delivery reports
+  delivery_report:
+    enabled: true
+    timeout: 5m
+    publish_pending: true
+
+# -------------------------------------------------------
+# Security
+# -------------------------------------------------------
+security:
+  # Incoming SMS filter by phone number
+  # "all"       — forward all SMS to MQTT (default)
+  # "whitelist" — only from allowed numbers
+  # "blacklist" — all except blocked numbers
+  incoming_filter: "all"
+  whitelist: []
+  blacklist: []
+
+  # Outgoing SMS rate limiting
+  rate_limit:
+    enabled: true
+    max_sms_per_minute: 5
+    max_sms_per_hour: 30
+    max_sms_per_day: 100
+    max_sms_per_number_per_hour: 3
+    cooldown_minutes: 10
+
+  # Raw AT commands via MQTT (DANGEROUS — disabled by default)
+  allow_raw_at: false
+  blocked_at_commands:
+    - "AT+CFUN=0"
+    - "AT+CPIN"
+    - "ATD"
+    - "AT&F"
+
+# -------------------------------------------------------
+# Status Monitoring
+# -------------------------------------------------------
+status:
+  interval: 30s
+  signal_interval: 60s
