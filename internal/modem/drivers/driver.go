@@ -32,10 +32,10 @@ func NewBaseDriver(runner ATRunner) *BaseDriver {
 func (d *BaseDriver) Init(ctx context.Context) error {
 	initCmds := []string{
 		"ATE0",              // Echo off
-		"AT+CMEE=2",          // Enable verbose error reporting
-		"AT+CMGF=0",          // PDU mode for SMS
-		"AT+CNMI=2,1,0,1,0",  // New message notifications
-		"AT+CLIP=1",          // Enable caller ID presentation
+		"AT+CMEE=2",         // Enable verbose error reporting
+		"AT+CMGF=0",         // PDU mode for SMS
+		"AT+CNMI=2,1,0,1,0", // New message notifications
+		"AT+CLIP=1",         // Enable caller ID presentation
 	}
 
 	for _, cmd := range initCmds {

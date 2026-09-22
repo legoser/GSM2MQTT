@@ -2,11 +2,11 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/config"
@@ -14,11 +14,18 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/modem/at"
 	"github.com/legoser/gsm2mqtt/internal/modem/drivers"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
-	"github.com/legoser/gsm2mqtt/internal/security"
-	"github.com/legoser/gsm2mqtt/internal/sms"
+	"github.com/legoser/gsm2mqtt/internal/tariff"
 	"github.com/legoser/gsm2mqtt/internal/transport"
-	"github.com/legoser/gsm2mqtt/internal/ussd"
 )
+
+// ModemSummary represents the consolidated live state of a managed modem.
+type ModemSummary struct {
+	ID       string      `json:"id"`
+	Type     string      `json:"type"`
+	Health   ModemHealth `json:"health"`
+	Balance  float64     `json:"balance"`
+	Currency string      `json:"currency"`
+}
 
 // ModemRunner manages the complete lifecycle, AT engine, and MQTT bridging for a single modem.
 type ModemRunner struct {
@@ -26,6 +33,11 @@ type ModemRunner struct {
 	cfg        *config.Config
 	opener     transport.Opener
 	mqttClient mqtt.MQTTClient
+	mu         sync.RWMutex
+	lastHealth ModemHealth
+	smsSvc     *SMSService
+	ussdSvc    *USSDService
+	tariffMgr  *tariff.Manager
 }
 
 // NewModemRunner constructs a new ModemRunner.
@@ -74,14 +86,75 @@ func (r *ModemRunner) Run(ctx context.Context) error {
 	topics := mqtt.NewTopics(r.cfg.MQTT.TopicPrefix, r.mCfg.ID)
 	r.publishDiscovery(driver, topics)
 
-	smsSvc, callSvc, ussdSvc, statusSvc := r.wireServices(engine, driver, topics)
+	smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc := r.wireServices(engine, driver, topics)
+
+	r.mu.Lock()
+	r.smsSvc = smsSvc
+	r.ussdSvc = ussdSvc
+	r.tariffMgr = tariffMgr
+	r.mu.Unlock()
 
 	go r.urcLoop(childCtx, engine, smsSvc, callSvc, ussdSvc)
-	r.subscribeMQTT(topics, smsSvc, callSvc, ussdSvc, driver)
+	r.subscribeMQTT(topics, smsSvc, callSvc, ussdSvc, tariffMgr, diagSvc, driver)
 	go statusSvc.Start(childCtx)
+	go r.startBalanceLoop(childCtx, ussdSvc, tariffMgr, topics)
 
 	<-ctx.Done()
 	return ctx.Err()
+}
+
+// Summary returns current live status snapshot for API inspection.
+func (r *ModemRunner) Summary() ModemSummary {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	balance := 0.0
+	currency := "RUB"
+	if r.tariffMgr != nil {
+		st := r.tariffMgr.Status()
+		balance = st.Balance
+		currency = st.Currency
+	}
+
+	return ModemSummary{
+		ID:       r.mCfg.ID,
+		Type:     r.mCfg.Type,
+		Health:   r.lastHealth,
+		Balance:  balance,
+		Currency: currency,
+	}
+}
+
+// SendSMS sends an SMS via the runner's SMS service.
+func (r *ModemRunner) SendSMS(ctx context.Context, to, text string) ([]byte, error) {
+	r.mu.RLock()
+	svc := r.smsSvc
+	r.mu.RUnlock()
+	if svc == nil {
+		return nil, fmt.Errorf("SMS service not initialized")
+	}
+	return svc.Send(ctx, SendSMSRequest{To: to, Text: text})
+}
+
+// SendUSSD executes a USSD query via the runner's USSD service.
+func (r *ModemRunner) SendUSSD(ctx context.Context, code string) (string, error) {
+	r.mu.RLock()
+	svc := r.ussdSvc
+	r.mu.RUnlock()
+	if svc == nil {
+		return "", fmt.Errorf("USSD service not initialized")
+	}
+	resp, err := svc.Send(ctx, code)
+	if err != nil {
+		return "", err
+	}
+	return resp.Message, nil
+}
+
+func (r *ModemRunner) updateHealth(h ModemHealth) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lastHealth = h
 }
 
 func (r *ModemRunner) createDriver(engine *at.Engine) modem.Driver {
@@ -118,66 +191,6 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver, topics *mqtt.Topics)
 	}
 }
 
-func (r *ModemRunner) wireServices(
-	engine *at.Engine,
-	driver modem.Driver,
-	topics *mqtt.Topics,
-) (*SMSService, *CallService, *USSDService, *StatusService) {
-	filter := security.NewFilter(r.cfg.Security.IncomingFilter, r.cfg.Security.Whitelist, r.cfg.Security.Blacklist)
-	limiter := security.NewRateLimiterWithConfig(security.RateLimiterConfig{
-		Enabled:             r.cfg.Security.RateLimit.Enabled,
-		MaxPerMinute:        r.cfg.Security.RateLimit.MaxSMSPerMinute,
-		MaxPerHour:          r.cfg.Security.RateLimit.MaxSMSPerHour,
-		MaxPerDay:           r.cfg.Security.RateLimit.MaxSMSPerDay,
-		MaxPerNumberPerHour: r.cfg.Security.RateLimit.MaxSMSPerNumberPerHour,
-		Cooldown:            time.Duration(r.cfg.Security.RateLimit.CooldownMinutes) * time.Minute,
-	})
-
-	tracker := sms.NewTracker(r.cfg.SMS.DeliveryReport.Timeout, func(e sms.DeliveryEvent) {
-		payload, _ := json.Marshal(e)
-		_ = r.mqttClient.Publish(topics.SMSStatus(), 1, false, payload)
-	})
-
-	assembler := sms.NewAssembler(24 * time.Hour)
-	sender := &atPDUSender{engine: engine}
-
-	smsSvc := NewSMSService(SMSServiceConfig{
-		ModemID:        r.mCfg.ID,
-		Transliterate:  r.cfg.SMS.Encoding == "translit",
-		DeliveryReport: r.cfg.SMS.DeliveryReport.Enabled,
-	}, sender, filter, limiter, tracker, assembler, func(msg *sms.AssembledSMS) {
-		payload, _ := json.Marshal(msg)
-		_ = r.mqttClient.Publish(topics.SMSReceived(), 1, false, payload)
-	})
-
-	callSvc := NewCallService(r.mCfg.ID, driver, func(e CallEvent) {
-		payload, _ := json.Marshal(e)
-		if e.Type == "incoming" || e.Type == "ended" {
-			_ = r.mqttClient.Publish(topics.CallIncoming(), 1, false, payload)
-		} else if e.Type == "dtmf" {
-			_ = r.mqttClient.Publish(topics.CallDTMF(), 1, false, payload)
-		}
-	})
-
-	ussdSvc := NewUSSDService(r.mCfg.ID, driver, func(resp *ussd.Response) {
-		payload, _ := json.Marshal(resp)
-		_ = r.mqttClient.Publish(topics.USSDResponse(), 1, false, payload)
-	})
-
-	statusSvc := NewStatusService(StatusServiceConfig{
-		ModemID:  r.mCfg.ID,
-		Interval: r.cfg.Status.Interval,
-	}, driver, func(rssi, dbm int) {
-		payload := fmt.Sprintf(`{"rssi":%d,"dbm":%d}`, rssi, dbm)
-		_ = r.mqttClient.Publish(topics.SignalStrength(), 1, false, []byte(payload))
-	}, func(h ModemHealth) {
-		payload, _ := json.Marshal(h)
-		_ = r.mqttClient.Publish(topics.Health(), 1, false, payload)
-	})
-
-	return smsSvc, callSvc, ussdSvc, statusSvc
-}
-
 func (r *ModemRunner) urcLoop(
 	ctx context.Context,
 	engine *at.Engine,
@@ -198,43 +211,6 @@ func (r *ModemRunner) urcLoop(
 			ussdSvc.HandleURC(line)
 		}
 	}
-}
-
-func (r *ModemRunner) subscribeMQTT(
-	topics *mqtt.Topics,
-	smsSvc *SMSService,
-	callSvc *CallService,
-	ussdSvc *USSDService,
-	driver modem.Driver,
-) {
-	_ = r.mqttClient.Subscribe(topics.SMSSend(), 1, func(_ string, payload []byte) {
-		var req SendSMSRequest
-		if err := json.Unmarshal(payload, &req); err == nil {
-			_, _ = smsSvc.Send(context.Background(), req)
-		}
-	})
-
-	_ = r.mqttClient.Subscribe(topics.CallDial(), 1, func(_ string, payload []byte) {
-		var req struct {
-			Number string `json:"number"`
-		}
-		if err := json.Unmarshal(payload, &req); err == nil && req.Number != "" {
-			_ = callSvc.Dial(context.Background(), req.Number)
-		}
-	})
-
-	_ = r.mqttClient.Subscribe(topics.CallHangup(), 1, func(_ string, _ []byte) {
-		_ = callSvc.Hangup(context.Background())
-	})
-
-	_ = r.mqttClient.Subscribe(topics.USSDSend(), 1, func(_ string, payload []byte) {
-		var req struct {
-			Code string `json:"code"`
-		}
-		if err := json.Unmarshal(payload, &req); err == nil && req.Code != "" {
-			_, _ = ussdSvc.Send(context.Background(), req.Code)
-		}
-	})
 }
 
 type atPDUSender struct {

@@ -72,6 +72,20 @@ func Defaults() *Config {
 			Interval:       30 * time.Second,
 			SignalInterval: 60 * time.Second,
 		},
+		Tariff: TariffConfig{
+			Enabled:          true,
+			OperatorPreset:   "generic",
+			BalanceUSSD:      "*100#",
+			AutoCheckOnError: true,
+			CheckInterval:    24 * time.Hour,
+			MinBalanceAlert:  50.0,
+			ResetDayOfMonth:  1,
+		},
+		API: APIConfig{
+			Enabled: false,
+			Host:    "127.0.0.1",
+			Port:    8080,
+		},
 	}
 }
 

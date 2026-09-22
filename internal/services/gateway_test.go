@@ -60,10 +60,10 @@ func (p *mockGatewayPort) Close() error {
 	return nil
 }
 
-func (p *mockGatewayPort) SetDTR(dtr bool) error           { return nil }
-func (p *mockGatewayPort) SetRTS(rts bool) error           { return nil }
-func (p *mockGatewayPort) ResetInputBuffer() error         { return nil }
-func (p *mockGatewayPort) ResetOutputBuffer() error        { return nil }
+func (p *mockGatewayPort) SetDTR(dtr bool) error    { return nil }
+func (p *mockGatewayPort) SetRTS(rts bool) error    { return nil }
+func (p *mockGatewayPort) ResetInputBuffer() error  { return nil }
+func (p *mockGatewayPort) ResetOutputBuffer() error { return nil }
 
 type mockGatewayOpener struct {
 	port *mockGatewayPort

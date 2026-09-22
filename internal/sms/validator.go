@@ -9,8 +9,8 @@ import (
 // Sentinel errors for phone number and message validation.
 var (
 	ErrEmptyPhoneNumber       = errors.New("phone number is empty")
-	ErrPhoneNumberTooShort     = errors.New("phone number is too short")
-	ErrPhoneNumberTooLong      = errors.New("phone number exceeds E.164 maximum 15 digits")
+	ErrPhoneNumberTooShort    = errors.New("phone number is too short")
+	ErrPhoneNumberTooLong     = errors.New("phone number exceeds E.164 maximum 15 digits")
 	ErrInvalidPhoneCharacters = errors.New("phone number contains invalid non-digit characters")
 	ErrEmptyText              = errors.New("message text cannot be empty")
 	ErrNullByteInText         = errors.New("message text contains null byte \\x00")

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/legoser/gsm2mqtt/internal/api"
 	"github.com/legoser/gsm2mqtt/internal/config"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/services"
@@ -67,11 +68,14 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 	defer mqttClient.Disconnect(250)
 
 	opener := transport.NewSerialOpener()
+	manager := services.NewGatewayManager()
 	var wg sync.WaitGroup
 
 	for _, mCfg := range cfg.Modems {
 		wg.Add(1)
 		runner := services.NewModemRunner(mCfg, cfg, opener, mqttClient)
+		manager.Register(runner)
+
 		go func(m config.ModemConfig) {
 			defer wg.Done()
 			logger.Info("starting modem runner", slog.String("modem", m.ID), slog.String("port", m.Port))
@@ -79,6 +83,19 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 				logger.Error("modem runner error", slog.String("modem", m.ID), slog.String("error", err.Error()))
 			}
 		}(mCfg)
+	}
+
+	if cfg.API.Enabled {
+		apiServer := api.NewServer(api.ServerConfig{
+			Host: cfg.API.Host,
+			Port: cfg.API.Port,
+		}, manager)
+		go func() {
+			logger.Info("starting embedded HTTP API", slog.String("host", cfg.API.Host), slog.Int("port", cfg.API.Port))
+			if err := apiServer.Start(ctx); err != nil {
+				logger.Error("API server error", slog.String("error", err.Error()))
+			}
+		}()
 	}
 
 	<-ctx.Done()

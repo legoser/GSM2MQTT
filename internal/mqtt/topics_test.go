@@ -80,6 +80,36 @@ func TestTopics_Generation(t *testing.T) {
 			actual:   topics.Health(),
 			expected: "gsm2mqtt/modem/siemens_tc35/health",
 		},
+		{
+			name:     "Alert topic",
+			actual:   topics.Alert(),
+			expected: "gsm2mqtt/modem/siemens_tc35/alert",
+		},
+		{
+			name:     "Diagnostic topic",
+			actual:   topics.Diagnostic(),
+			expected: "gsm2mqtt/modem/siemens_tc35/diagnostic",
+		},
+		{
+			name:     "Balance topic",
+			actual:   topics.Balance(),
+			expected: "gsm2mqtt/modem/siemens_tc35/balance",
+		},
+		{
+			name:     "TariffSetPreset topic",
+			actual:   topics.TariffSetPreset(),
+			expected: "gsm2mqtt/modem/siemens_tc35/tariff/set_preset",
+		},
+		{
+			name:     "AccountingStatus topic",
+			actual:   topics.AccountingStatus(),
+			expected: "gsm2mqtt/modem/siemens_tc35/accounting/status",
+		},
+		{
+			name:     "AccountingAlert topic",
+			actual:   topics.AccountingAlert(),
+			expected: "gsm2mqtt/modem/siemens_tc35/accounting/alert",
+		},
 	}
 
 	for _, tt := range tests {

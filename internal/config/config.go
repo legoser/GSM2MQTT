@@ -23,6 +23,12 @@ type Config struct {
 
 	// Status holds modem status monitoring settings.
 	Status StatusConfig `yaml:"status"`
+
+	// Tariff holds balance query, quota, and accounting settings.
+	Tariff TariffConfig `yaml:"tariff"`
+
+	// API holds embedded HTTP server settings.
+	API APIConfig `yaml:"api"`
 }
 
 // MQTTConfig holds MQTT broker connection parameters.
@@ -101,4 +107,24 @@ type DeliveryReportConfig struct {
 type StatusConfig struct {
 	Interval       time.Duration `yaml:"interval"`
 	SignalInterval time.Duration `yaml:"signal_interval"`
+}
+
+// TariffConfig holds mobile operator presets, balance monitoring, and quota thresholds.
+type TariffConfig struct {
+	Enabled          bool          `yaml:"enabled"`
+	OperatorPreset   string        `yaml:"operator_preset"`
+	BalanceUSSD      string        `yaml:"balance_ussd"`
+	BalanceRegex     string        `yaml:"balance_regex"`
+	AutoCheckOnError bool          `yaml:"auto_check_on_error"`
+	CheckInterval    time.Duration `yaml:"check_interval"`
+	MinBalanceAlert  float64       `yaml:"min_balance_alert"`
+	SMSLimit         int           `yaml:"sms_limit"`
+	ResetDayOfMonth  int           `yaml:"reset_day_of_month"`
+}
+
+// APIConfig holds settings for the embedded HTTP dashboard and REST API.
+type APIConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Host    string `yaml:"host"`
+	Port    int    `yaml:"port"`
 }

@@ -82,6 +82,36 @@ func (t *Topics) Health() string {
 	return fmt.Sprintf("%s/modem/%s/health", t.prefix, t.modemID)
 }
 
+// Alert returns the urgent alert notification topic.
+func (t *Topics) Alert() string {
+	return fmt.Sprintf("%s/modem/%s/alert", t.prefix, t.modemID)
+}
+
+// Diagnostic returns the topic for detailed failure diagnostics.
+func (t *Topics) Diagnostic() string {
+	return fmt.Sprintf("%s/modem/%s/diagnostic", t.prefix, t.modemID)
+}
+
+// Balance returns the topic for publishing current account balance.
+func (t *Topics) Balance() string {
+	return fmt.Sprintf("%s/modem/%s/balance", t.prefix, t.modemID)
+}
+
+// TariffSetPreset returns the topic for dynamically setting the operator preset.
+func (t *Topics) TariffSetPreset() string {
+	return fmt.Sprintf("%s/modem/%s/tariff/set_preset", t.prefix, t.modemID)
+}
+
+// AccountingStatus returns the topic for reporting SMS and data quotas.
+func (t *Topics) AccountingStatus() string {
+	return fmt.Sprintf("%s/modem/%s/accounting/status", t.prefix, t.modemID)
+}
+
+// AccountingAlert returns the topic for quota exhaustion warnings.
+func (t *Topics) AccountingAlert() string {
+	return fmt.Sprintf("%s/modem/%s/accounting/alert", t.prefix, t.modemID)
+}
+
 // LWT returns the service-level Last Will and Testament topic.
 func (t *Topics) LWT() string {
 	return fmt.Sprintf("%s/status", t.prefix)

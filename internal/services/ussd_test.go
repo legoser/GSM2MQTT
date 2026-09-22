@@ -11,10 +11,10 @@ import (
 )
 
 type mockUSSDSender struct {
-	mu      sync.Mutex
-	sent    []string
+	mu       sync.Mutex
+	sent     []string
 	syncResp string
-	err     error
+	err      error
 }
 
 func (m *mockUSSDSender) SendUSSD(code string) (string, error) {

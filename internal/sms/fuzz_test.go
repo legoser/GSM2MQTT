@@ -7,9 +7,9 @@ import (
 
 // FuzzNormalizePhoneNumber uses Go native fuzzing to generate thousands of random/mutated phone numbers.
 // Invariants verified:
-// 1. Must never panic.
-// 2. If no error is returned, the output must either be an E.164 number (starts with '+', 3..16 chars)
-//    or a short code (2..6 digits).
+//  1. Must never panic.
+//  2. If no error is returned, the output must either be an E.164 number (starts with '+', 3..16 chars)
+//     or a short code (2..6 digits).
 func FuzzNormalizePhoneNumber(f *testing.F) {
 	// Seed corpus with known edge cases
 	seeds := []string{

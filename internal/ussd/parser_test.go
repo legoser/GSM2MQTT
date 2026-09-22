@@ -62,12 +62,12 @@ func TestValidateCode(t *testing.T) {
 
 func TestParseResponse_Positive(t *testing.T) {
 	tests := []struct {
-		name            string
-		urc             string
-		expectedMsg     string
-		expectedStatus  Status
-		expectedDCS     int
-		expectedAction  bool
+		name           string
+		urc            string
+		expectedMsg    string
+		expectedStatus Status
+		expectedDCS    int
+		expectedAction bool
 	}{
 		{
 			name:           "plain text balance response",
