@@ -49,13 +49,22 @@ internal/services/       (depends on: modem, mqtt, sms, security)
 internal/api/            (depends on: services)
 ```
 
-### 4. Test-First Development (TDD)
+### 4. Test-First Development (TDD) & Edge-Case Coverage
 
 - **ALWAYS write tests BEFORE implementation.**
 - Tests must be **red** (failing) before writing the production code.
 - Tests must be **green** after implementation.
 - Test file naming: `*_test.go` in the same package.
-- Use table-driven tests where appropriate.
+- **Mandatory Positive AND Negative Test Cases**:
+  - Every function accepting external input must test both valid data (happy path) and invalid/corrupt/boundary data (negative cases).
+  - Negative tests must assert specific sentinel errors using `errors.Is()`.
+- **Systematic Edge-Case Methodology**:
+  - **Boundary Value Analysis (BVA)**: test limits at `[min-1, min, min+1, max-1, max, max+1]` (e.g. 0, 1, 67, 70, 71, 153, 160, 161 runes; part indices 0, 1, max, max+1).
+  - **Equivalence Partitioning (EP)**: valid formats, empty/whitespace, national vs international, short codes, alphanumeric, symbols, control characters.
+  - **Corrupted / Truncated Data**: truncated packet streams, unexpected EOF, invalid hex/BCD nibbles, malformed headers.
+  - **Security / Injection Inputs**: null byte injection (`\x00`), modem-breaking escape sequences (`\x1A`, `\x1B`), oversized payloads.
+  - **Automated Fuzz Testing**: use Go native fuzzing (`func FuzzXxx(f *testing.F)`) on parsers, decoders, and normalizers to automatically discover edge cases.
+- Use table-driven tests with descriptive subtest names (`t.Run(name, ...)`).
 - Mock external dependencies (serial port, MQTT client).
 - Integration tests tagged with `//go:build integration`.
 

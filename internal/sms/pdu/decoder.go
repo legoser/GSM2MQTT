@@ -18,6 +18,9 @@ func DecodeSMS(pduHex string) (*DecodedSMS, error) {
 	offset := 0
 
 	// 1. SCA
+	if offset >= len(data) {
+		return nil, fmt.Errorf("truncated PDU at SCA: %w", ErrTruncatedPDU)
+	}
 	scaLen := int(data[offset])
 	offset += 1 + scaLen
 	if offset >= len(data) {
@@ -30,13 +33,16 @@ func DecodeSMS(pduHex string) (*DecodedSMS, error) {
 	offset++
 
 	// 3. OA
+	if offset+2 > len(data) {
+		return nil, fmt.Errorf("truncated PDU in OA header: %w", ErrTruncatedPDU)
+	}
 	digitCount := int(data[offset])
 	offset++
 	toa := data[offset]
 	offset++
 	bcdLen := (digitCount + 1) / 2
 	if offset+bcdLen > len(data) {
-		return nil, fmt.Errorf("truncated PDU in OA: %w", ErrTruncatedPDU)
+		return nil, fmt.Errorf("truncated PDU in OA digits: %w", ErrTruncatedPDU)
 	}
 	from := DecodeAddress(data[offset:offset+bcdLen], digitCount, toa)
 	offset += bcdLen
@@ -126,6 +132,9 @@ func parseUDH(data []byte, offset *int, udl int, enc Encoding, res *DecodedSMS) 
 }
 
 func parsePlainUD(udBytes []byte, udl int, enc Encoding, res *DecodedSMS) {
+	if len(udBytes) == 0 {
+		return
+	}
 	if enc == EncodingUCS2 {
 		res.Text = DecodeUCS2(udBytes)
 	} else {
