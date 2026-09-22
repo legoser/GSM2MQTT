@@ -18,6 +18,13 @@ func nextRefNumber() byte {
 
 // EncodeSMS encodes a recipient and text message into one or more PDUs.
 func EncodeSMS(recipient, text string, enc Encoding, requestDeliveryReport bool) ([]PDU, error) {
+	if strings.TrimSpace(recipient) == "" {
+		return nil, fmt.Errorf("encoding SMS: %w", ErrEmptyRecipient)
+	}
+	if text == "" {
+		return nil, fmt.Errorf("encoding SMS: %w", ErrEmptyText)
+	}
+
 	// 1. Determine encoding
 	selectedEnc := enc
 	if selectedEnc == EncodingAuto || selectedEnc == "" {

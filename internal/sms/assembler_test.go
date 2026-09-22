@@ -131,3 +131,88 @@ func TestAssembler_MultipartOutOfOrder(t *testing.T) {
 		t.Errorf("expected 3 segments, got %d", res.Segments)
 	}
 }
+
+func TestAssembler_InvalidBounds(t *testing.T) {
+	a := NewAssembler(5 * time.Minute)
+	now := time.Now()
+
+	// Part number 0
+	p0 := IncomingPart{
+		From:        "+79991112233",
+		Text:        "invalid",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0x10,
+		PartNumber:  0,
+		TotalParts:  2,
+	}
+	if _, ok := a.AddPart(p0); ok {
+		t.Errorf("expected part 0 to be rejected")
+	}
+
+	// Part number exceeding total parts
+	pExceed := IncomingPart{
+		From:        "+79991112233",
+		Text:        "invalid",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0x10,
+		PartNumber:  3,
+		TotalParts:  2,
+	}
+	if _, ok := a.AddPart(pExceed); ok {
+		t.Errorf("expected part 3 of 2 to be rejected")
+	}
+
+	// Total parts too large (> 20)
+	pTooLarge := IncomingPart{
+		From:        "+79991112233",
+		Text:        "invalid",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0x10,
+		PartNumber:  1,
+		TotalParts:  100,
+	}
+	if _, ok := a.AddPart(pTooLarge); ok {
+		t.Errorf("expected total parts 100 to be rejected")
+	}
+}
+
+func TestAssembler_TTLExpiration(t *testing.T) {
+	// Very short TTL
+	a := NewAssembler(30 * time.Millisecond)
+	now := time.Now()
+
+	p1 := IncomingPart{
+		From:        "+79991112233",
+		Text:        "Hello ",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0x55,
+		PartNumber:  1,
+		TotalParts:  2,
+	}
+	if _, ok := a.AddPart(p1); ok {
+		t.Fatal("part 1 should not complete")
+	}
+
+	// Sleep longer than TTL so p1 expires and gets cleaned up
+	time.Sleep(60 * time.Millisecond)
+
+	// Now part 2 arrives after part 1 expired
+	p2 := IncomingPart{
+		From:        "+79991112233",
+		Text:        "World",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0x55,
+		PartNumber:  2,
+		TotalParts:  2,
+	}
+
+	// Since part 1 expired, message cannot be completed by part 2 alone
+	if _, ok := a.AddPart(p2); ok {
+		t.Errorf("expected assembly to fail after TTL expired for previous parts")
+	}
+}

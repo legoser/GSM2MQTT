@@ -66,6 +66,11 @@ func (a *Assembler) AddPart(part IncomingPart) (*AssembledSMS, bool) {
 		}, true
 	}
 
+	// Boundary check: invalid part indices or excessively large total parts
+	if part.PartNumber <= 0 || part.PartNumber > part.TotalParts || part.TotalParts > 20 {
+		return nil, false
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
