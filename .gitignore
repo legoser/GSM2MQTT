@@ -38,3 +38,8 @@ configs/mosquitto/passwd
 # Runtime data
 data/
 .env
+
+# Agent & AI configuration
+.gemini/
+AGENTS.md
+agents.md
