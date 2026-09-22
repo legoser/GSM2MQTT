@@ -253,3 +253,26 @@ func TestLoad_PoolDefaultsAndOverrides(t *testing.T) {
 		t.Errorf("expected default modem modem1, got %s", cfg2.Pool.DefaultModem)
 	}
 }
+
+func TestLoad_ModemPortOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgFile := filepath.Join(tmpDir, "config.yaml")
+	yamlContent := `
+modems:
+  - id: "m1"
+    port: "/dev/ttyUSB0"
+`
+	if err := os.WriteFile(cfgFile, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	t.Setenv("MODEM_DEVICE", "/dev/ttyACM0")
+	cfg, err := Load(cfgFile)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	if len(cfg.Modems) != 1 || cfg.Modems[0].Port != "/dev/ttyACM0" {
+		t.Errorf("expected port /dev/ttyACM0, got %v", cfg.Modems[0].Port)
+	}
+}
+

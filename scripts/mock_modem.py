@@ -19,6 +19,10 @@ def respond(master_fd, text):
 def main():
     master_fd, slave_fd = pty.openpty()
     slave_name = os.ttyname(slave_fd)
+    try:
+        os.chmod(slave_name, 0o666)
+    except Exception:
+        pass
 
     try:
         if os.path.islink(LINK_PATH) or os.path.exists(LINK_PATH):
@@ -35,26 +39,48 @@ def main():
     buffer = ""
     in_sms_mode = False
 
+    import select
+
     try:
         while True:
+            # Check for incoming simulation triggers
+            if os.path.exists("/tmp/mock_incoming_sms"):
+                try:
+                    os.remove("/tmp/mock_incoming_sms")
+                except Exception:
+                    pass
+                print("[Virtual Modem] Emitting incoming SMS URC (+CMT)")
+                respond(master_fd, "\r\n+CMT: 00040B919712345678F900006290229000002305C8329BFD0E\r\n")
+
+            if os.path.exists("/tmp/mock_incoming_call"):
+                try:
+                    os.remove("/tmp/mock_incoming_call")
+                except Exception:
+                    pass
+                print("[Virtual Modem] Emitting incoming Call URC (RING)")
+                respond(master_fd, '\r\nRING\r\n\r\n+CLIP: "+79998887766",145,"",0,"",0\r\n')
+
+            r, _, _ = select.select([master_fd], [], [], 0.2)
+            if not r:
+                continue
+
             data = os.read(master_fd, 1024).decode("utf-8", errors="ignore")
             if not data:
                 break
             
             buffer += data
 
-            if in_sms_mode:
-                # In SMS mode, modem waits for Ctrl+Z (0x1A) or ESC (0x1B)
-                if "\x1A" in buffer:
-                    print("[Virtual Modem] SMS PDU payload received. Sending +CMGS: 42")
-                    respond(master_fd, "\r\n+CMGS: 42\r\n\r\nOK")
-                    in_sms_mode = False
-                    buffer = ""
-                elif "\x1B" in buffer:
-                    print("[Virtual Modem] SMS cancelled by client.")
-                    respond(master_fd, "\r\nOK")
-                    in_sms_mode = False
-                    buffer = ""
+            if "\x1A" in buffer:
+                print("[Virtual Modem] SMS PDU payload received. Sending +CMGS: 42")
+                respond(master_fd, "\r\n+CMGS: 42\r\n\r\nOK")
+                in_sms_mode = False
+                buffer = ""
+                continue
+            elif "\x1B" in buffer:
+                print("[Virtual Modem] SMS cancelled by client.")
+                respond(master_fd, "\r\nOK")
+                in_sms_mode = False
+                buffer = ""
                 continue
 
             if "\r" in buffer or "\n" in buffer:

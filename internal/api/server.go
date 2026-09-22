@@ -20,11 +20,17 @@ type ServerConfig struct {
 // ModemSummary is an alias to services.ModemSummary for API presentation.
 type ModemSummary = services.ModemSummary
 
+// ReceivedSMS is an alias to services.ReceivedSMS for API presentation.
+type ReceivedSMS = services.ReceivedSMS
+
 // ModemManager is the interface required by the API to query state and dispatch operations.
 type ModemManager interface {
 	GetModems() []ModemSummary
 	SendSMS(ctx context.Context, modemID, to, text string) ([]byte, error)
 	SendUSSD(ctx context.Context, modemID, code string) (string, error)
+	DialCall(ctx context.Context, modemID, number string) error
+	HangupCall(ctx context.Context, modemID string) error
+	GetReceivedSMS() []ReceivedSMS
 }
 
 // Server provides Web UI and REST API endpoints for GSM2MQTT.
@@ -83,6 +89,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/modems", s.handleGetModems)
 	s.mux.HandleFunc("POST /api/sms/send", s.handleSendSMS)
 	s.mux.HandleFunc("POST /api/ussd/send", s.handleSendUSSD)
+	s.mux.HandleFunc("POST /api/call/dial", s.handleCallDial)
+	s.mux.HandleFunc("POST /api/call/hangup", s.handleCallHangup)
+	s.mux.HandleFunc("GET /api/sms/inbox", s.handleGetInbox)
 	s.mux.HandleFunc("GET /", s.handleRootUI)
 }
 
@@ -144,43 +153,47 @@ func (s *Server) handleSendUSSD(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleCallDial(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ModemID string `json:"modem_id"`
+		Number  string `json:"number"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request json"}`, http.StatusBadRequest)
+		return
+	}
+	if err := s.manager.DialCall(r.Context(), req.ModemID, req.Number); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (s *Server) handleCallHangup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ModemID string `json:"modem_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := s.manager.HangupCall(r.Context(), req.ModemID); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (s *Server) handleGetInbox(w http.ResponseWriter, r *http.Request) {
+	msgs := s.manager.GetReceivedSMS()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(msgs)
+}
+
 func (s *Server) handleRootUI(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	html := `<!DOCTYPE html>
-<html>
-<head>
-<title>GSM2MQTT Gateway Dashboard</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 2rem; background: #f8f9fa; color: #212529; }
-.card { background: #fff; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 1.5rem; max-width: 600px; }
-h1, h2 { color: #1a73e8; }
-input, textarea, button { width: 100%; box-sizing: border-box; padding: 0.5rem; margin-top: 0.5rem; margin-bottom: 1rem; border: 1px solid #ced4da; border-radius: 4px; }
-button { background: #1a73e8; color: #fff; border: none; font-weight: bold; cursor: pointer; }
-button:hover { background: #1557b0; }
-</style>
-</head>
-<body>
-<h1>GSM2MQTT Gateway</h1>
-<div class="card">
-<h2>Modem Telemetry</h2>
-<p>Gateway status: <strong>Online</strong></p>
-<p><a href="/api/modems">View JSON Modems Telemetry</a></p>
-</div>
-<div class="card">
-<h2>Send Test SMS</h2>
-<form action="/api/sms/send" method="POST" onsubmit="event.preventDefault(); fetch('/api/sms/send', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({modem_id:document.getElementById('m').value, to:document.getElementById('to').value, text:document.getElementById('txt').value})}).then(r=>r.json()).then(d=>alert(JSON.stringify(d)));">
-<label>Modem ID: <input id="m" value="modem1" required></label>
-<label>Phone Number: <input id="to" placeholder="+79001234567" required></label>
-<label>Message Text: <textarea id="txt" rows="3" required></textarea></label>
-<button type="submit">Send SMS</button>
-</form>
-</div>
-</body>
-</html>`
-	_, _ = w.Write([]byte(html))
+	_, _ = w.Write([]byte(dashboardHTML))
 }

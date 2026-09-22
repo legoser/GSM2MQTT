@@ -15,6 +15,9 @@ type mockModemManager struct {
 	modems   []ModemSummary
 	sentSMS  map[string]string
 	sentUSSD string
+	dialNum  string
+	hangup   bool
+	inbox    []ReceivedSMS
 }
 
 func (m *mockModemManager) GetModems() []ModemSummary {
@@ -32,6 +35,20 @@ func (m *mockModemManager) SendSMS(ctx context.Context, modemID, to, text string
 func (m *mockModemManager) SendUSSD(ctx context.Context, modemID, code string) (string, error) {
 	m.sentUSSD = code
 	return "Balance is 100 RUB", nil
+}
+
+func (m *mockModemManager) DialCall(ctx context.Context, modemID, number string) error {
+	m.dialNum = number
+	return nil
+}
+
+func (m *mockModemManager) HangupCall(ctx context.Context, modemID string) error {
+	m.hangup = true
+	return nil
+}
+
+func (m *mockModemManager) GetReceivedSMS() []ReceivedSMS {
+	return m.inbox
 }
 
 func TestServer_Health(t *testing.T) {
@@ -162,3 +179,74 @@ func TestServer_Metrics(t *testing.T) {
 		t.Errorf("expected text/plain content type, got %s", contentType)
 	}
 }
+
+func TestServer_CallDial(t *testing.T) {
+	mock := &mockModemManager{}
+	server := NewServer(ServerConfig{Port: 8080}, mock)
+
+	body, _ := json.Marshal(map[string]string{
+		"modem_id": "modem1",
+		"number":   "+79001234567",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/call/dial", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if mock.dialNum != "+79001234567" {
+		t.Errorf("expected dialed number +79001234567, got %s", mock.dialNum)
+	}
+}
+
+func TestServer_CallHangup(t *testing.T) {
+	mock := &mockModemManager{}
+	server := NewServer(ServerConfig{Port: 8080}, mock)
+
+	body, _ := json.Marshal(map[string]string{
+		"modem_id": "modem1",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/call/hangup", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !mock.hangup {
+		t.Errorf("expected hangup to be true")
+	}
+}
+
+func TestServer_GetInbox(t *testing.T) {
+	mock := &mockModemManager{
+		inbox: []ReceivedSMS{
+			{
+				ID:        "msg-1",
+				ModemID:   "modem1",
+				Sender:    "+79998887766",
+				Timestamp: "2026-09-22 12:00:00",
+				Text:      "Test inbox message",
+			},
+		},
+	}
+	server := NewServer(ServerConfig{Port: 8080}, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sms/inbox", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var res []ReceivedSMS
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("json unmarshal failed: %v", err)
+	}
+	if len(res) != 1 || res[0].Text != "Test inbox message" {
+		t.Errorf("unexpected inbox response: %+v", res)
+	}
+}
+

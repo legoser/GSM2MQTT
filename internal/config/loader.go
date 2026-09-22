@@ -128,6 +128,16 @@ func applyEnvOverrides(cfg *Config) {
 		"GSM2MQTT_API_ENABLED":        func(v string) { cfg.API.Enabled = v == "true" || v == "1" },
 		"GSM2MQTT_API_HOST":           func(v string) { cfg.API.Host = v },
 		"GSM2MQTT_API_PORT":           func(v string) { cfg.API.Port = atoi(v, cfg.API.Port) },
+		"GSM2MQTT_MODEM_PORT": func(v string) {
+			if len(cfg.Modems) > 0 {
+				cfg.Modems[0].Port = v
+			}
+		},
+		"MODEM_DEVICE": func(v string) {
+			if len(cfg.Modems) > 0 {
+				cfg.Modems[0].Port = v
+			}
+		},
 	}
 
 	for env, setter := range overrides {

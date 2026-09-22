@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/config"
 	"github.com/legoser/gsm2mqtt/internal/modem"
@@ -27,16 +28,17 @@ type ModemSummary struct {
 
 // ModemRunner manages the complete lifecycle, AT engine, and MQTT bridging for a single modem.
 type ModemRunner struct {
-	mCfg       config.ModemConfig
-	cfg        *config.Config
-	opener     transport.Opener
-	mqttClient mqtt.MQTTClient
-	mu         sync.RWMutex
-	lastHealth ModemHealth
-	smsSvc     *SMSService
-	ussdSvc    *USSDService
-	callSvc    *CallService
-	tariffMgr  *tariff.Manager
+	mCfg        config.ModemConfig
+	cfg         *config.Config
+	opener      transport.Opener
+	mqttClient  mqtt.MQTTClient
+	mu          sync.RWMutex
+	lastHealth  ModemHealth
+	smsSvc      *SMSService
+	ussdSvc     *USSDService
+	callSvc     *CallService
+	tariffMgr   *tariff.Manager
+	receivedSMS []ReceivedSMS
 }
 
 // NewModemRunner constructs a new ModemRunner.
@@ -54,8 +56,34 @@ func NewModemRunner(
 	}
 }
 
-// Run starts serial communication, initializes modem drivers, and binds MQTT handlers.
+// Run manages serial connection, automatically reconnects on error, and runs until context cancellation.
 func (r *ModemRunner) Run(ctx context.Context) error {
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		err := r.runOnce(ctx)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		r.updateHealth(ModemHealth{
+			Status: "error",
+			SIM:    "DISCONNECTED",
+		})
+		slog.Warn("modem port disconnected or unavailable, retrying in 3s...",
+			slog.String("modem", r.mCfg.ID),
+			slog.String("port", r.mCfg.Port),
+			slog.Any("error", err),
+		)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(3 * time.Second):
+		}
+	}
+}
+
+func (r *ModemRunner) runOnce(ctx context.Context) error {
 	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

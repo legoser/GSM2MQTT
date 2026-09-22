@@ -76,6 +76,7 @@ func (r *ModemRunner) wireServices(
 		Transliterate:  r.cfg.SMS.Encoding == "translit",
 		DeliveryReport: r.cfg.SMS.DeliveryReport.Enabled,
 	}, sender, filter, limiter, smsTracker, assembler, func(msg *sms.AssembledSMS) {
+		r.recordIncomingSMS(msg)
 		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_received_total", map[string]string{"modem": r.mCfg.ID})
 		payload, _ := json.Marshal(msg)
 		_ = r.mqttClient.Publish(topics.SMSReceived(), 1, false, payload)

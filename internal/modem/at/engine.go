@@ -177,7 +177,7 @@ func (e *Engine) dispatchURC(line string) {
 
 func isURC(line string) bool {
 	urcPrefixes := []string{
-		"+CLIP:", "+CMTI:", "+CDS:", "+DTMF:",
+		"+CLIP:", "+CMTI:", "+CMT:", "+CDS:", "+DTMF:",
 		"+CUSD:", "RING", "+CRING:", "+CREG:",
 		"+CGREG:", "+CEREG:", "NO CARRIER",
 	}
