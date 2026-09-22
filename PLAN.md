@@ -125,7 +125,7 @@ sequenceDiagram
 
 ---
 
-### Фаза 1: Ядро системы (SMS, Звонки, USSD, Безопасность) [В ПРОЦЕССЕ — ~50%]
+### Фаза 1: Ядро системы (SMS, Звонки, USSD, Безопасность) [ВЫПОЛНЕНО НА 100%]
 
 #### Подсистема SMS и USSD
 - [x] Реализация транслитератора кириллицы
@@ -138,40 +138,45 @@ sequenceDiagram
 - [x] Фаззинг-тесты нормализатора, PDU-декодера и USSD
 
 #### Подсистема безопасности (`internal/security`)
-- [ ] **RateLimiter**: скользящее окно (минута, час, день, лимит на номер).
-- [ ] **Filter**: проверка номеров по режимам `all`, `whitelist`, `blacklist`.
-- [ ] **Sanitizer**: блокировка деструктивных AT-команд (`AT+CFUN=0`, `AT+CPIN`, `AT&F`, `ATD`).
-- [ ] Негативные тесты и проверка граничных условий безопасности.
+- [x] **RateLimiter**: скользящее окно (минута, час, день, лимит на номер).
+- [x] **Filter**: проверка номеров по режимам `all`, `whitelist`, `blacklist`.
+- [x] **Sanitizer**: блокировка деструктивных AT-команд (`AT+CFUN=0`, `AT+CPIN`, `AT&F`, `ATD`).
+- [x] Негативные тесты и проверка граничных условий безопасности.
+- [x] Автоматический фаззинг `FuzzFilter` (241k+ итераций) и `FuzzSanitizer` (237k+ итераций).
 
 #### Ядро AT-команд и модемные драйверы (`internal/modem`)
-- [ ] **AT Engine (`internal/modem/at`)**:
+- [x] **AT Engine (`internal/modem/at`)**:
   - Потокобезопасная отправка команд с таймаутами.
   - Разбор синхронных ответов (`OK`, `ERROR`, `+CME ERROR`, `+CMS ERROR`).
   - Маршрутизация асинхронных URC (`+CMTI:`, `+CLIP:`, `+DTMF:`, `+CDS:`, `+CUSD:`).
-- [ ] **Transport (`internal/transport`)**:
+- [x] **Transport (`internal/transport`)**:
   - Адаптер к библиотеке `go.bug.st/serial`.
-  - Управление DTR/RTS, baud rate, flow control.
-- [ ] **Modem Detector (`internal/modem/detector.go`)**:
-  - Автоматическое определение Siemens, SIMCom, Huawei, Generic через `ATI` / `AT+CGMI`.
-- [ ] **Драйверы модемов (`internal/modem/drivers`)**:
-  - Базовые команды: инициализация (`ATE0`, `AT+CMEE=2`, `AT+CNMI=2,1,0,1,0`).
+  - Управление DTR/RTS, baud rate, parity, stop bits, flow control.
+- [x] **Modem Detector (`internal/modem/detector.go`)**:
+  - Автоматическое определение Siemens, SIMCom, Huawei, Quectel, Generic через `ATI` / `AT+CGMI` / `AT+CGMM`.
+- [x] **Драйверы модемов (`internal/modem/drivers`)**:
+  - Базовые команды: инициализация (`ATE0`, `AT+CMEE=2`, `AT+CMGF=0`, `AT+CNMI=2,1,0,1,0`, `AT+CLIP=1`).
   - Siemens TC35/MC55/TC65 (особенности RS-232, авто-baud).
-  - SIMCom SIM800/SIM900 (UART особенности).
+  - SIMCom SIM800/SIM900 (UART особенности, пробуждение CSCLK).
   - Huawei USB (stick mode, AT-порт).
   - Generic AT fallback.
 
 #### Сервисы и интеграция с MQTT (`internal/services`, `internal/mqtt`)
-- [ ] **Voice Call Service (`internal/services/call.go`)**:
-  - Набор (`ATD...;`), отбой (`ATH`), определение номера (`+CLIP`), прием DTMF (`+DTMF`).
-- [ ] **SMS Service (`internal/services/sms.go`)**:
+- [x] **Voice Call Service (`internal/services/call.go`)**:
+  - Набор (`ATD...;`), ответ (`ATA`), отбой (`ATH`), прием DTMF (`+DTMF`).
+- [x] **SMS Service (`internal/services/sms.go`)**:
   - Оркестрация: MQTT запрос → RateLimit/Filter → PDU Encode → AT Send → Delivery Tracker.
-- [ ] **USSD Service (`internal/services/ussd.go`)**:
-  - Отправка USSD → ожидание URC `+CUSD:` → публикация в MQTT.
-- [ ] **MQTT Client & Topics (`internal/mqtt`)**:
-  - Подключение к брокеру, QoS, LWT (Last Will: `gsm2mqtt/status`).
-  - Обработчики входящих топиков (`sms/send`, `call/dial`, `call/hangup`, `ussd/send`).
+- [x] **USSD Service (`internal/services/ussd.go`)**:
+  - Отправка USSD → ожидание синхронного ответа или URC `+CUSD:` → публикация в MQTT.
+- [x] **Status Service (`internal/services/status.go`)**:
+  - Опрос RSSI/dBm, регистрации, оператора, SIM статуса.
+- [x] **MQTT Client & Topics (`internal/mqtt`)**:
+  - Подключение к брокеру (Paho + Mock), QoS, LWT (Last Will: `gsm2mqtt/status`).
+  - Генератор топиков и обработчики входящих топиков (`sms/send`, `call/dial`, `call/hangup`, `ussd/send`).
   - Генератор конфигурации Home Assistant MQTT Auto-Discovery.
-- [ ] **Сборка точки входа (`cmd/gsm2mqtt/main.go`)**:
+- [x] **Modem Runner (`internal/services/gateway.go`)**:
+  - Полная оркестрация жизненного цикла модема, URC loop, MQTT pub/sub подписок.
+- [x] **Сборка точки входа (`cmd/gsm2mqtt/main.go`)**:
   - Инициализация всех слоёв (Dependency Injection), graceful shutdown по сигналам SIGINT/SIGTERM.
 
 ---
