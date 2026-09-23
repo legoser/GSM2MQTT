@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -34,8 +35,9 @@ type ModemRunner struct {
 	mu           sync.RWMutex
 	lastHealth   ModemHealth
 	lastBalance  float64
-	lastCurrency string
-	driver       modem.Driver
+	lastCurrency     string
+	lastBalanceCheck time.Time
+	driver           modem.Driver
 	smsSvc       *SMSService
 	ussdSvc      *USSDService
 	callSvc      *CallService
@@ -145,6 +147,18 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 	r.subscribeMQTT(smsSvc, callSvc, ussdSvc, tariffMgr, diagSvc, driver)
 	go statusSvc.Start(childCtx)
 	go r.startBalanceLoop(childCtx)
+
+	r.mu.RLock()
+	if len(r.receivedSMS) > 0 && r.mqttClient != nil && r.mqttClient.IsConnected() {
+		last := r.receivedSMS[len(r.receivedSMS)-1]
+		lastPayload, _ := json.Marshal(map[string]any{
+			"from":      last.Sender,
+			"text":      last.Text,
+			"timestamp": last.Timestamp,
+		})
+		_ = r.mqttClient.Publish(r.topics.SMSReceived(), 1, true, lastPayload)
+	}
+	r.mu.RUnlock()
 
 	go func() {
 		synced, err := smsSvc.SyncStoredMessages(childCtx, "SM", "ME")

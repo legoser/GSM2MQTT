@@ -134,19 +134,31 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 		return
 	}
 	info, _ := driver.Identify()
-	mfg := "Generic"
-	model := "Modem"
+	mfg := ""
+	model := ""
 	if info != nil {
-		if info.Manufacturer != "" {
-			mfg = info.Manufacturer
-		}
-		if info.Model != "" {
-			model = info.Model
-		}
+		mfg = info.Manufacturer
+		model = info.Model
 	}
-	disc, err := mqtt.BuildSignalDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, r.mCfg.ID, mfg, model)
+	if mfg == "" || strings.EqualFold(mfg, "undefined") {
+		mfg = "Unknown"
+	}
+	if model == "" {
+		model = r.mCfg.Type
+	}
+
+	messages, err := mqtt.BuildModemDiscoveries(
+		r.cfg.MQTT.DiscoveryPrefix,
+		r.cfg.MQTT.TopicPrefix,
+		r.mCfg.ID,
+		mfg,
+		model,
+		r.lastCurrency,
+	)
 	if err == nil && r.mqttClient.IsConnected() {
-		_ = r.mqttClient.Publish(disc.Topic, 1, true, disc.Payload)
+		for _, msg := range messages {
+			_ = r.mqttClient.Publish(msg.Topic, 1, true, msg.Payload)
+		}
 	}
 }
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -99,7 +98,7 @@ func (r *ModemRunner) wireServices(
 		r.recordIncomingSMS(msg)
 		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_received_total", map[string]string{"modem": r.mCfg.ID})
 		payload, _ := json.Marshal(msg)
-		_ = r.mqttClient.Publish(r.topics.SMSReceived(), 1, false, payload)
+		_ = r.mqttClient.Publish(r.topics.SMSReceived(), 1, true, payload)
 
 		r.applyParsedBalance(msg.Text)
 	})
@@ -186,12 +185,21 @@ func (r *ModemRunner) subscribeMQTT(
 	})
 
 	_ = r.mqttClient.Subscribe(r.topics.USSDSend(), 1, func(_ string, payload []byte) {
+		raw := strings.TrimSpace(string(payload))
+		code := raw
 		var req struct {
 			Code string `json:"code"`
 		}
 		if err := json.Unmarshal(payload, &req); err == nil && req.Code != "" {
+			code = req.Code
+		}
+		code = strings.Trim(code, "\"")
+		if code != "" {
 			metrics.DefaultRegistry.IncCounter("gsm2mqtt_ussd_requests_total", map[string]string{"modem": r.mCfg.ID})
-			_, _ = ussdSvc.Send(context.Background(), req.Code)
+			resp, err := ussdSvc.Send(context.Background(), code)
+			if err == nil && resp != nil {
+				r.applyParsedBalance(resp.Message)
+			}
 		}
 	})
 
@@ -237,6 +245,15 @@ func (r *ModemRunner) startBalanceLoop(ctx context.Context) {
 }
 
 func (r *ModemRunner) checkBalance(ctx context.Context) {
+	r.mu.Lock()
+	if !r.lastBalanceCheck.IsZero() && time.Since(r.lastBalanceCheck) < 1*time.Hour {
+		r.mu.Unlock()
+		slog.Debug("automatic balance check throttled (min 1 hour between checks)", slog.String("modem", r.mCfg.ID))
+		return
+	}
+	r.lastBalanceCheck = time.Now()
+	r.mu.Unlock()
+
 	ussdCode := r.cfg.Tariff.BalanceUSSD
 	if ussdCode == "" {
 		preset, err := operator.GetPreset(r.cfg.Tariff.OperatorPreset)
@@ -255,28 +272,3 @@ func (r *ModemRunner) checkBalance(ctx context.Context) {
 	r.applyParsedBalance(resp.Message)
 }
 
-type atPDUSender struct {
-	engine *at.Engine
-}
-
-func (s *atPDUSender) SendPDU(cmdLength int, pduHex string) (byte, error) {
-	resp, err := s.engine.SendPDU(cmdLength, pduHex, 30*time.Second)
-	if err != nil {
-		return 0, err
-	}
-	if resp.Error {
-		return 0, fmt.Errorf("PDU send returned error: %v", resp.Lines)
-	}
-	for _, line := range resp.Lines {
-		if strings.HasPrefix(line, "+CMGS:") {
-			parts := strings.Fields(line)
-			if len(parts) > 1 {
-				ref, err := strconv.Atoi(parts[1])
-				if err == nil {
-					return byte(ref), nil
-				}
-			}
-		}
-	}
-	return 0, nil
-}

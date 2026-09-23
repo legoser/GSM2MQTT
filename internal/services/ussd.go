@@ -56,6 +56,9 @@ func (s *USSDService) Send(ctx context.Context, code string) (*ussd.Response, er
 		resp, err := parseInlineCUSD(out)
 		if err == nil {
 			slog.Info("USSD inline response received", slog.String("modem", s.modemID), slog.String("message", resp.Message))
+			if s.onResponse != nil {
+				s.onResponse(resp)
+			}
 		}
 		return resp, err
 	}
