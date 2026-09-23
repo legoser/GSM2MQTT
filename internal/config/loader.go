@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -15,11 +14,18 @@ import (
 func Load(path string) (*Config, error) {
 	cfg := Defaults()
 
-	if err := loadFromFile(cfg, path); err != nil {
-		return nil, fmt.Errorf("loading config file: %w", err)
+	resolvedPath := path
+	if resolvedPath == "" {
+		resolvedPath = findDefaultConfig()
 	}
 
-	dotEnv := loadDotEnv(filepath.Dir(path))
+	if resolvedPath != "" {
+		if err := loadFromFile(cfg, resolvedPath); err != nil {
+			return nil, fmt.Errorf("loading config file: %w", err)
+		}
+	}
+
+	dotEnv := loadDotEnv(filepath.Dir(resolvedPath))
 	applyHierarchicalOverrides(cfg, dotEnv)
 
 	if err := validate(cfg); err != nil {
@@ -103,6 +109,11 @@ func loadFromFile(cfg *Config, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			if path == "/etc/gsm2mqtt/gsm2mqtt.yaml" {
+				if alt := findDefaultConfig(); alt != "" && alt != path {
+					return loadFromFile(cfg, alt)
+				}
+			}
 			// No config file — use defaults
 			return nil
 		}
@@ -116,37 +127,19 @@ func loadFromFile(cfg *Config, path string) error {
 	return nil
 }
 
-// applyHierarchicalOverrides applies configuration overrides with priority: OS Env > .env > YAML.
-func applyHierarchicalOverrides(cfg *Config, dotEnv map[string]string) {
-	overrides := []struct {
-		keys   []string
-		setter func(string)
-	}{
-		{[]string{"GSM2MQTT_LOG_LEVEL", "LOG_LEVEL"}, func(v string) { cfg.LogLevel = v }},
-		{[]string{"GSM2MQTT_MQTT_BROKER", "MQTT_BROKER"}, func(v string) { cfg.MQTT.Broker = v }},
-		{[]string{"GSM2MQTT_MQTT_PORT", "MQTT_PORT"}, func(v string) { cfg.MQTT.Port = atoi(v, cfg.MQTT.Port) }},
-		{[]string{"GSM2MQTT_MQTT_USERNAME", "MQTT_USERNAME"}, func(v string) { cfg.MQTT.Username = v }},
-		{[]string{"GSM2MQTT_MQTT_PASSWORD", "MQTT_PASSWORD"}, func(v string) { cfg.MQTT.Password = v }},
-		{[]string{"GSM2MQTT_MQTT_CLIENT_ID", "MQTT_CLIENT_ID"}, func(v string) { cfg.MQTT.ClientID = v }},
-		{[]string{"GSM2MQTT_POOL_ENABLED", "POOL_ENABLED"}, func(v string) { cfg.Pool.Enabled = v == "true" || v == "1" }},
-		{[]string{"GSM2MQTT_POOL_STRATEGY", "POOL_STRATEGY"}, func(v string) { cfg.Pool.Strategy = v }},
-		{[]string{"GSM2MQTT_POOL_DEFAULT_MODEM", "POOL_DEFAULT_MODEM"}, func(v string) { cfg.Pool.DefaultModem = v }},
-		{[]string{"GSM2MQTT_API_ENABLED", "API_ENABLED"}, func(v string) { cfg.API.Enabled = v == "true" || v == "1" }},
-		{[]string{"GSM2MQTT_API_HOST", "API_HOST"}, func(v string) { cfg.API.Host = v }},
-		{[]string{"GSM2MQTT_API_PORT", "API_PORT"}, func(v string) { cfg.API.Port = atoi(v, cfg.API.Port) }},
-		{[]string{"GSM2MQTT_TARIFF_STORAGE_DIR", "TARIFF_STORAGE_DIR"}, func(v string) { cfg.Tariff.StorageDir = v }},
-		{[]string{"GSM2MQTT_MODEM_PORT", "MODEM_DEVICE", "MODEM_PORT"}, func(v string) {
-			if len(cfg.Modems) > 0 {
-				cfg.Modems[0].Port = v
-			}
-		}},
+// findDefaultConfig searches for a configuration file in standard locations.
+func findDefaultConfig() string {
+	candidates := []string{
+		"configs/gsm2mqtt.yaml",
+		"gsm2mqtt.yaml",
+		"/etc/gsm2mqtt/gsm2mqtt.yaml",
 	}
-
-	for _, o := range overrides {
-		if v := getHierarchicalValue(dotEnv, o.keys...); v != "" {
-			o.setter(v)
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+			return c
 		}
 	}
+	return ""
 }
 
 // validate checks the configuration for required fields and valid values.
@@ -198,13 +191,4 @@ func validate(cfg *Config) error {
 	}
 
 	return nil
-}
-
-// atoi converts a string to int, returning defaultVal on parse error.
-func atoi(s string, defaultVal int) int {
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		return defaultVal
-	}
-	return v
 }

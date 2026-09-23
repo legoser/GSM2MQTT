@@ -159,6 +159,25 @@ func configPath() string {
 		if arg == "--config" && i+1 < len(os.Args) {
 			return os.Args[i+1]
 		}
+		if strings.HasPrefix(arg, "--config=") {
+			return strings.TrimPrefix(arg, "--config=")
+		}
+	}
+	if env := os.Getenv("GSM2MQTT_CONFIG"); env != "" {
+		return env
+	}
+	if env := os.Getenv("CONFIG_PATH"); env != "" {
+		return env
+	}
+	candidates := []string{
+		"configs/gsm2mqtt.yaml",
+		"gsm2mqtt.yaml",
+		"/etc/gsm2mqtt/gsm2mqtt.yaml",
+	}
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+			return c
+		}
 	}
 	return "/etc/gsm2mqtt/gsm2mqtt.yaml"
 }

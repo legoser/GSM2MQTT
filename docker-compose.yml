@@ -23,9 +23,14 @@ services:
       - mosquitto
     ports:
       - "${API_PORT:-8080}:8080"
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - GSM2MQTT_MQTT_BROKER=mosquitto
-      - GSM2MQTT_MQTT_PORT=1883
+      - GSM2MQTT_MQTT_BROKER=${GSM2MQTT_MQTT_BROKER:-${MQTT_BROKER:-}}
+      - GSM2MQTT_MQTT_PORT=${GSM2MQTT_MQTT_PORT:-${MQTT_PORT:-}}
+      - GSM2MQTT_MQTT_USERNAME=${GSM2MQTT_MQTT_USERNAME:-${MQTT_USERNAME:-}}
+      - GSM2MQTT_MQTT_PASSWORD=${GSM2MQTT_MQTT_PASSWORD:-${MQTT_PASSWORD:-}}
       - GSM2MQTT_API_ENABLED=true
       - GSM2MQTT_API_HOST=0.0.0.0
       - GSM2MQTT_API_PORT=8080
