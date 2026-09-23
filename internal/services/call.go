@@ -3,17 +3,17 @@ package services
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/modem"
-	"github.com/legoser/gsm2mqtt/internal/sms"
 )
 
 // DefaultAutoDropTimeout is the default duration to allow an outgoing call to ring before auto-hanging up.
-const DefaultAutoDropTimeout = 25 * time.Second
+const DefaultAutoDropTimeout = 60 * time.Second
 
 // CallState represents the current lifecycle state of a voice call.
 type CallState string
@@ -27,6 +27,11 @@ const (
 	CallStateBusy      CallState = "busy"
 	CallStateFailed    CallState = "failed"
 )
+
+// CallStateChecker queries active call status from the modem (e.g. via AT+CLCC).
+type CallStateChecker interface {
+	CheckCallState() (string, error)
+}
 
 // CallStatus contains real-time state and details about ongoing or recent voice call.
 type CallStatus struct {
@@ -55,6 +60,8 @@ type CallService struct {
 	status          CallStatus
 	autoDropTimeout time.Duration
 	dropTimer       *time.Timer
+	monitorStop     chan struct{}
+	monitorInterval time.Duration
 }
 
 // NewCallService creates a new voice call service.
@@ -64,6 +71,7 @@ func NewCallService(modemID string, caller modem.Caller, onEvent func(event Call
 		caller:          caller,
 		onEvent:         onEvent,
 		autoDropTimeout: DefaultAutoDropTimeout,
+		monitorInterval: 1 * time.Second,
 		status: CallStatus{
 			State:   CallStateIdle,
 			Message: "Idle",
@@ -83,6 +91,10 @@ func (s *CallService) stopDropTimer() {
 		s.dropTimer.Stop()
 		s.dropTimer = nil
 	}
+	if s.monitorStop != nil {
+		close(s.monitorStop)
+		s.monitorStop = nil
+	}
 }
 
 func (s *CallService) onAutoDropTimeout() {
@@ -92,9 +104,13 @@ func (s *CallService) onAutoDropTimeout() {
 		return
 	}
 	slog.Info("call-drop timeout reached, terminating call", slog.String("modem", s.modemID))
-	s.status.State = CallStateCompleted
-	s.status.Message = "Call completed (auto-drop timeout reached)"
+	s.status.State = CallStateFailed
+	s.status.Message = "Call timed out (no answer)"
 	s.status.EndedAt = time.Now()
+	if s.monitorStop != nil {
+		close(s.monitorStop)
+		s.monitorStop = nil
+	}
 	s.mu.Unlock()
 
 	_ = s.caller.Hangup()
@@ -110,47 +126,70 @@ func (s *CallService) Status() CallStatus {
 	return s.status
 }
 
-// Dial initiates an outgoing voice call, normalizes number, and sets auto-drop timer.
+func cleanVoiceNumber(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	var b strings.Builder
+	for i, r := range trimmed {
+		if r == '+' && i == 0 {
+			b.WriteRune(r)
+		} else if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// Dial initiates an outgoing voice call, sanitizes number, and sets auto-drop timer and monitor.
 func (s *CallService) Dial(ctx context.Context, number string) error {
-	norm := strings.TrimSpace(number)
-	if n, err := sms.NormalizePhoneNumber(norm, "+7"); err == nil {
-		norm = n
+	clean := cleanVoiceNumber(number)
+	if clean == "" {
+		return errors.New("empty phone number")
 	}
 
 	s.mu.Lock()
 	s.stopDropTimer()
 	s.status = CallStatus{
 		State:     CallStateDialing,
-		Number:    norm,
+		Number:    clean,
 		Direction: "outgoing",
-		Message:   "Dialing " + norm + "...",
+		Message:   "Dialing " + clean + "...",
 		StartedAt: time.Now(),
 	}
 	s.mu.Unlock()
 
-	slog.Info("modem dialing voice call", slog.String("modem", s.modemID), slog.String("number", norm))
-	if err := s.caller.Dial(norm); err != nil {
+	slog.Info("modem dialing voice call", slog.String("modem", s.modemID), slog.String("number", clean))
+	if err := s.caller.Dial(clean); err != nil {
 		s.mu.Lock()
 		s.status.State = CallStateFailed
 		s.status.Message = err.Error()
 		s.status.EndedAt = time.Now()
 		s.mu.Unlock()
 
-		slog.Error("modem voice call dial failed", slog.String("modem", s.modemID), slog.String("number", norm), slog.Any("error", err))
+		slog.Error("modem voice call dial failed", slog.String("modem", s.modemID), slog.String("number", clean), slog.Any("error", err))
 		return err
 	}
 
 	s.mu.Lock()
 	s.status.State = CallStateRinging
-	s.status.Message = "Ringing " + norm + "..."
+	s.status.Message = "Ringing " + clean + "..."
 	timeout := s.autoDropTimeout
 	if timeout <= 0 {
 		timeout = DefaultAutoDropTimeout
 	}
 	s.dropTimer = time.AfterFunc(timeout, s.onAutoDropTimeout)
+	stopCh := make(chan struct{})
+	s.monitorStop = stopCh
+	interval := s.monitorInterval
+	if interval <= 0 {
+		interval = 1 * time.Second
+	}
 	s.mu.Unlock()
 
-	slog.Info("modem voice call dial command accepted", slog.String("modem", s.modemID), slog.String("number", norm))
+	if checker, ok := s.caller.(CallStateChecker); ok {
+		go s.monitorCall(checker, stopCh, interval)
+	}
+
+	slog.Info("modem voice call dial command accepted", slog.String("modem", s.modemID), slog.String("number", clean))
 	return nil
 }
 

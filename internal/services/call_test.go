@@ -231,14 +231,23 @@ func TestCallService_Status_EndedOnNoCarrier(t *testing.T) {
 	svc := NewCallService("neoway_m590", mock, nil)
 
 	ctx := context.Background()
-	_ = svc.Dial(ctx, "+79964126670")
+	_ = svc.Dial(ctx, "89964126670")
 
-	// URC NO CARRIER arrives
+	// URC NO CARRIER arrives during dialing/ringing
 	svc.HandleURC("NO CARRIER")
 
 	st := svc.Status()
+	if st.State != CallStateFailed {
+		t.Errorf("expected state 'failed' after unanswered NO CARRIER, got %q", st.State)
+	}
+
+	// Case 2: NO CARRIER after call was answered
+	_ = svc.Dial(ctx, "89964126670")
+	_ = svc.Answer(ctx)
+	svc.HandleURC("NO CARRIER")
+	st = svc.Status()
 	if st.State != CallStateCompleted {
-		t.Errorf("expected state 'completed' after NO CARRIER, got %q", st.State)
+		t.Errorf("expected state 'completed' after answered call ended with NO CARRIER, got %q", st.State)
 	}
 }
 
@@ -247,7 +256,7 @@ func TestCallService_Status_Busy(t *testing.T) {
 	svc := NewCallService("neoway_m590", mock, nil)
 
 	ctx := context.Background()
-	_ = svc.Dial(ctx, "+79964126670")
+	_ = svc.Dial(ctx, "89964126670")
 
 	// URC BUSY arrives
 	svc.HandleURC("BUSY")
@@ -258,7 +267,7 @@ func TestCallService_Status_Busy(t *testing.T) {
 	}
 }
 
-func TestCallService_Dial_Normalization(t *testing.T) {
+func TestCallService_Dial_Sanitization(t *testing.T) {
 	mock := &mockCaller{}
 	svc := NewCallService("neoway_m590", mock, nil)
 
@@ -271,8 +280,20 @@ func TestCallService_Dial_Normalization(t *testing.T) {
 	dialed := mock.dialed
 	mock.mu.Unlock()
 
-	if dialed != "+79964126670" {
-		t.Errorf("expected normalized dialed number '+79964126670', got %q", dialed)
+	if dialed != "89964126670" {
+		t.Errorf("expected preserved dialed number '89964126670', got %q", dialed)
+	}
+
+	if err := svc.Dial(ctx, "+7 (996) 412-66-70"); err != nil {
+		t.Fatalf("unexpected dial error: %v", err)
+	}
+
+	mock.mu.Lock()
+	dialedPlus := mock.dialed
+	mock.mu.Unlock()
+
+	if dialedPlus != "+79964126670" {
+		t.Errorf("expected preserved dialed number '+79964126670', got %q", dialedPlus)
 	}
 }
 
@@ -285,7 +306,7 @@ func TestCallService_Dial_AutoDropTimeout(t *testing.T) {
 	svc.SetAutoDropTimeout(50 * time.Millisecond)
 
 	ctx := context.Background()
-	if err := svc.Dial(ctx, "+79964126670"); err != nil {
+	if err := svc.Dial(ctx, "89964126670"); err != nil {
 		t.Fatalf("unexpected dial error: %v", err)
 	}
 
@@ -300,11 +321,54 @@ func TestCallService_Dial_AutoDropTimeout(t *testing.T) {
 	}
 
 	st := svc.Status()
-	if st.State != CallStateCompleted {
-		t.Errorf("expected state 'completed', got %q", st.State)
+	if st.State != CallStateFailed {
+		t.Errorf("expected state 'failed' on unanswered timeout, got %q", st.State)
 	}
-	if !strings.Contains(st.Message, "timeout") {
-		t.Errorf("expected message to mention timeout, got %q", st.Message)
+	if !strings.Contains(st.Message, "timed out") {
+		t.Errorf("expected message to mention timed out, got %q", st.Message)
+	}
+}
+
+type mockCallerWithChecker struct {
+	mockCaller
+	checkState string
+	checkErr   error
+}
+
+func (m *mockCallerWithChecker) CheckCallState() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.checkState, m.checkErr
+}
+
+func TestCallService_CallDrop_AutoHangup_On_CheckCallState(t *testing.T) {
+	mock := &mockCallerWithChecker{
+		checkState: "answered",
+	}
+	svc := NewCallService("neoway_m590", mock, nil)
+	svc.monitorInterval = 10 * time.Millisecond
+
+	ctx := context.Background()
+	if err := svc.Dial(ctx, "89964126670"); err != nil {
+		t.Fatalf("unexpected dial error: %v", err)
+	}
+
+	time.Sleep(60 * time.Millisecond)
+
+	mock.mu.Lock()
+	hungup := mock.hungup
+	mock.mu.Unlock()
+
+	if !hungup {
+		t.Errorf("expected auto-hangup on answered state from CheckCallState")
+	}
+
+	st := svc.Status()
+	if st.State != CallStateCompleted {
+		t.Errorf("expected state 'completed' after drop, got %q", st.State)
+	}
+	if !strings.Contains(st.Message, "answered") {
+		t.Errorf("expected message to mention answered, got %q", st.Message)
 	}
 }
 

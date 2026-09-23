@@ -78,11 +78,11 @@ sms:
   # Include encoding info in MQTT response
   report_encoding: true
 
-  # Delivery reports
+  # Delivery reports (disabled by default as most prepaid/M2M SIMs lack TP-SRR support)
   delivery_report:
-    enabled: true
+    enabled: false
     timeout: 5m
-    publish_pending: true
+    publish_pending: false
 
 # -------------------------------------------------------
 # Security

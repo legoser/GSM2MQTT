@@ -38,8 +38,7 @@ func (d *NeowayDriver) Init(ctx context.Context) error {
 		"AT+CMGF=0",         // PDU mode for SMS
 		"AT+CNMI=2,1,0,1,0", // New message notifications
 		"AT+CLIP=1",         // Enable caller ID presentation
-		"AT+COLP=1",         // Enable connected line presentation for call-drop auto hangup
-		"AT+CSCS=\"GSM\"",   // Standard GSM character set for SMS and voice dialing
+		"AT+CSCS=\"IRA\"",   // Standard ASCII character set for SMS and voice dialing
 	}
 
 	for _, cmd := range initCmds {
@@ -139,10 +138,10 @@ func (d *NeowayDriver) SendUSSD(code string) (string, error) {
 	// Reset any existing session
 	_, _ = d.runner.Send("AT+CUSD=2", 1*time.Second)
 
-	// Ensure TE character set is always restored to GSM upon completion
+	// Ensure TE character set is always restored to IRA upon completion
 	defer func() {
-		slog.Debug("restoring neoway TE character set to GSM")
-		_, _ = d.runner.Send("AT+CSCS=\"GSM\"", 1*time.Second)
+		slog.Debug("restoring neoway TE character set to IRA")
+		_, _ = d.runner.Send("AT+CSCS=\"IRA\"", 1*time.Second)
 	}()
 
 	// Ensure TE character set is UCS2
@@ -166,7 +165,7 @@ func (d *NeowayDriver) SendUSSD(code string) (string, error) {
 
 	// Fallback to plain USSD if hex command failed
 	slog.Debug("neoway UCS-2 hex USSD failed or empty, attempting fallback to plain code", slog.Any("err", err))
-	_, _ = d.runner.Send("AT+CSCS=\"GSM\"", 1*time.Second)
+	_, _ = d.runner.Send("AT+CSCS=\"IRA\"", 1*time.Second)
 	fallbackCmd := fmt.Sprintf("AT+CUSD=1,%q,15", code)
 	fbResp, fbErr := d.runner.Send(fallbackCmd, 15*time.Second)
 	if fbErr != nil {
@@ -179,6 +178,35 @@ func (d *NeowayDriver) SendUSSD(code string) (string, error) {
 	}
 
 	return strings.Join(fbResp.Lines, "\n"), nil
+}
+
+// CheckCallState queries active call states on Neoway M590 via AT+CLCC.
+// Returns "dialing", "ringing", "answered", or "idle".
+func (d *NeowayDriver) CheckCallState() (string, error) {
+	resp, err := d.runner.Send("AT+CLCC", 2*time.Second)
+	if err != nil {
+		return "", err
+	}
+	if resp.Error {
+		return "", fmt.Errorf("CLCC error: %v", resp.Lines)
+	}
+	for _, line := range resp.Lines {
+		if strings.HasPrefix(line, "+CLCC:") {
+			parts := strings.Split(line, ",")
+			if len(parts) >= 3 {
+				stat := strings.TrimSpace(parts[2])
+				switch stat {
+				case "0":
+					return "answered", nil
+				case "2":
+					return "dialing", nil
+				case "3":
+					return "ringing", nil
+				}
+			}
+		}
+	}
+	return "idle", nil
 }
 
 var _ modem.Driver = (*NeowayDriver)(nil)

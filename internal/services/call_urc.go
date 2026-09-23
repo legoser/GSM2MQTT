@@ -57,7 +57,101 @@ func (s *CallService) handleClipURC(urc string) {
 }
 
 func (s *CallService) handleColpURC(urc string) {
-	slog.Info("modem connected line (+COLP) received: call answered, initiating auto-hangup (call-drop)", slog.String("modem", s.modemID))
+	s.handleCallAnsweredDrop()
+}
+
+func (s *CallService) handleDTMFURC(urc string) {
+	digit := parseDTMFDigit(urc)
+	if s.onEvent != nil {
+		s.onEvent(CallEvent{
+			Type:    "dtmf",
+			Digit:   digit,
+			ModemID: s.modemID,
+		})
+	}
+}
+
+func (s *CallService) handleNoCarrierURC() {
+	slog.Info("modem call ended event", slog.String("modem", s.modemID), slog.String("event", "NO CARRIER"))
+	s.mu.Lock()
+	s.stopDropTimer()
+	if s.status.State == CallStateAnswered {
+		s.status.State = CallStateCompleted
+		s.status.Message = "Call finished"
+	} else {
+		s.status.State = CallStateFailed
+		s.status.Message = "Call ended (no answer / disconnected)"
+	}
+	s.status.EndedAt = time.Now()
+	s.mu.Unlock()
+
+	if s.onEvent != nil {
+		s.onEvent(CallEvent{
+			Type:    "ended",
+			ModemID: s.modemID,
+		})
+	}
+}
+
+func (s *CallService) handleBusyURC() {
+	slog.Info("modem call busy event", slog.String("modem", s.modemID), slog.String("event", "BUSY"))
+	s.mu.Lock()
+	s.stopDropTimer()
+	s.status.State = CallStateBusy
+	s.status.Message = "Line busy / Rejected"
+	s.status.EndedAt = time.Now()
+	s.mu.Unlock()
+
+	if s.onEvent != nil {
+		s.onEvent(CallEvent{
+			Type:    "ended",
+			ModemID: s.modemID,
+		})
+	}
+}
+
+func (s *CallService) monitorCall(checker CallStateChecker, stopCh <-chan struct{}, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			s.mu.RLock()
+			st := s.status.State
+			s.mu.RUnlock()
+
+			if st != CallStateDialing && st != CallStateRinging {
+				return
+			}
+
+			callState, err := checker.CheckCallState()
+			if err != nil {
+				continue
+			}
+
+			switch callState {
+			case "ringing":
+				s.mu.Lock()
+				if s.status.State == CallStateDialing {
+					s.status.State = CallStateRinging
+					s.status.Message = "Ringing " + s.status.Number + "..."
+				}
+				s.mu.Unlock()
+			case "answered":
+				s.handleCallAnsweredDrop()
+				return
+			case "idle":
+				return
+			}
+		}
+	}
+}
+
+func (s *CallService) handleCallAnsweredDrop() {
+	slog.Info("call answered by recipient, initiating auto-hangup (call-drop)", slog.String("modem", s.modemID))
 	s.mu.Lock()
 	s.stopDropTimer()
 	s.status.State = CallStateAnswered
@@ -78,50 +172,5 @@ func (s *CallService) handleColpURC(urc string) {
 
 	if s.onEvent != nil {
 		s.onEvent(CallEvent{Type: "ended", ModemID: s.modemID})
-	}
-}
-
-func (s *CallService) handleDTMFURC(urc string) {
-	digit := parseDTMFDigit(urc)
-	if s.onEvent != nil {
-		s.onEvent(CallEvent{
-			Type:    "dtmf",
-			Digit:   digit,
-			ModemID: s.modemID,
-		})
-	}
-}
-
-func (s *CallService) handleNoCarrierURC() {
-	slog.Info("modem call ended event", slog.String("modem", s.modemID), slog.String("event", "NO CARRIER"))
-	s.mu.Lock()
-	s.stopDropTimer()
-	s.status.State = CallStateCompleted
-	s.status.Message = "Call completed (NO CARRIER)"
-	s.status.EndedAt = time.Now()
-	s.mu.Unlock()
-
-	if s.onEvent != nil {
-		s.onEvent(CallEvent{
-			Type:    "ended",
-			ModemID: s.modemID,
-		})
-	}
-}
-
-func (s *CallService) handleBusyURC() {
-	slog.Info("modem call busy event", slog.String("modem", s.modemID), slog.String("event", "BUSY"))
-	s.mu.Lock()
-	s.stopDropTimer()
-	s.status.State = CallStateBusy
-	s.status.Message = "Line busy / Rejected (BUSY)"
-	s.status.EndedAt = time.Now()
-	s.mu.Unlock()
-
-	if s.onEvent != nil {
-		s.onEvent(CallEvent{
-			Type:    "ended",
-			ModemID: s.modemID,
-		})
 	}
 }
