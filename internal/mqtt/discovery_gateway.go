@@ -52,6 +52,50 @@ func (p ModemDiscoveryParams) EntityObjectID(metric string) string {
 	return fmt.Sprintf("gsm_modem_%d_%s", p.SlotIndex, metric)
 }
 
+// TextDiscoveryPayload represents Home Assistant MQTT text entity configuration.
+type TextDiscoveryPayload struct {
+	Name                string      `json:"name"`
+	UniqueID            string      `json:"unique_id"`
+	ObjectID            string      `json:"object_id,omitempty"`
+	CommandTopic        string      `json:"command_topic"`
+	StateTopic          string      `json:"state_topic"`
+	CommandTemplate     string      `json:"command_template,omitempty"`
+	ValueTemplate       string      `json:"value_template,omitempty"`
+	Icon                string      `json:"icon,omitempty"`
+	AvailabilityTopic   string      `json:"availability_topic,omitempty"`
+	PayloadAvailable    string      `json:"payload_available,omitempty"`
+	PayloadNotAvailable string      `json:"payload_not_available,omitempty"`
+	Device              *DeviceInfo `json:"device"`
+}
+
+// BuildRecipientsTextDiscovery creates discovery for dynamic alert recipients text entity.
+func BuildRecipientsTextDiscovery(discoveryPrefix, topicPrefix string) (*DiscoveryMessage, error) {
+	uniqueID := "gsm2mqtt_gateway_recipients"
+	topic := fmt.Sprintf("%s/text/%s/config", discoveryPrefix, uniqueID)
+	availTopic, avail, notAvail := buildAvailability(topicPrefix)
+
+	payload := TextDiscoveryPayload{
+		Name:                "Alert Recipients",
+		UniqueID:            uniqueID,
+		ObjectID:            "gsm2mqtt_gateway_recipients",
+		CommandTopic:        fmt.Sprintf("%s/config/recipients/set", topicPrefix),
+		StateTopic:          fmt.Sprintf("%s/config/recipients", topicPrefix),
+		CommandTemplate:     "{{ value }}",
+		ValueTemplate:       "{{ value_json | join(', ') if value_json is iterable and value_json is not string else value }}",
+		Icon:                "mdi:phone-message",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device: &DeviceInfo{
+			Identifiers:  []string{GatewayIdentifier},
+			Name:         "GSM2MQTT Gateway",
+			Manufacturer: "GSM2MQTT",
+			Model:        "Go GSM Gateway",
+		},
+	}
+	return marshalDiscovery(topic, payload)
+}
+
 // BuildGatewayDiscovery creates discovery message for the parent GSM2MQTT Gateway device.
 func BuildGatewayDiscovery(discoveryPrefix, topicPrefix, version string) (*DiscoveryMessage, error) {
 	uniqueID := "gsm2mqtt_gateway_status"

@@ -14,6 +14,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/modem/drivers"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/operator"
+	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
 
@@ -157,6 +158,13 @@ func (r *ModemRunner) SlotIndex() int {
 	return r.slotIndex
 }
 
+// SetRecipientsManager registers the dynamic alert recipients manager.
+func (r *ModemRunner) SetRecipientsManager(mgr *security.RecipientsManager) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.recipientsMgr = mgr
+}
+
 func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 	if !r.cfg.MQTT.Discovery {
 		return
@@ -179,6 +187,15 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 
 	if gwMsg, err := mqtt.BuildGatewayDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
 		_ = r.mqttClient.Publish(gwMsg.Topic, 1, true, gwMsg.Payload)
+	}
+
+	if recMsg, err := mqtt.BuildRecipientsTextDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(recMsg.Topic, 1, true, recMsg.Payload)
+	}
+
+	if r.recipientsMgr != nil && r.mqttClient.IsConnected() {
+		recPayload, _ := json.Marshal(r.recipientsMgr.Get())
+		_ = r.mqttClient.Publish(fmt.Sprintf("%s/config/recipients", r.cfg.MQTT.TopicPrefix), 1, true, recPayload)
 	}
 
 	messages, err := mqtt.BuildModemDiscoveries(mqtt.ModemDiscoveryParams{

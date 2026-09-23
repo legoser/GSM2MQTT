@@ -12,6 +12,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/modem/at"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
+	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 )
@@ -42,8 +43,9 @@ type ModemRunner struct {
 	ussdSvc      *USSDService
 	callSvc      *CallService
 	tariffMgr    *tariff.Manager
-	receivedSMS  []ReceivedSMS
-	slotIndex    int
+	receivedSMS   []ReceivedSMS
+	slotIndex     int
+	recipientsMgr *security.RecipientsManager
 }
 
 // DefaultCurrency defines standard currency when none is specified.

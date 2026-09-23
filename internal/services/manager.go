@@ -7,15 +7,17 @@ import (
 
 	"github.com/legoser/gsm2mqtt/internal/config"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
+	"github.com/legoser/gsm2mqtt/internal/security"
 )
 
 // GatewayManager coordinates multiple ModemRunner instances and provides an aggregate facade.
 type GatewayManager struct {
-	mu         sync.RWMutex
-	runners    map[string]*ModemRunner
-	order      []string
-	mqttClient mqtt.MQTTClient
-	mqttCfg    config.MQTTConfig
+	mu            sync.RWMutex
+	runners       map[string]*ModemRunner
+	order         []string
+	mqttClient    mqtt.MQTTClient
+	mqttCfg       config.MQTTConfig
+	recipientsMgr *security.RecipientsManager
 }
 
 // NewGatewayManager creates a new GatewayManager.
@@ -153,13 +155,19 @@ type MQTTStatus struct {
 	DiscoveryPrefix string `json:"discovery_prefix,omitempty"`
 }
 
-// SetMQTT stores the MQTT client and configuration for reporting.
+// SetMQTT stores the MQTT client and configuration for reporting and binds recipients.
 func (m *GatewayManager) SetMQTT(client mqtt.MQTTClient, cfg *config.MQTTConfig) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.mqttClient = client
 	if cfg != nil {
 		m.mqttCfg = *cfg
+	}
+	topicPrefix := m.mqttCfg.TopicPrefix
+	m.mu.Unlock()
+
+	if client != nil && client.IsConnected() && topicPrefix != "" {
+		m.subscribeRecipientsMQTT(client, topicPrefix)
+		m.publishRecipientsState(m.GetRecipients())
 	}
 }
 
@@ -183,3 +191,5 @@ func (m *GatewayManager) GetMQTTStatus() MQTTStatus {
 		DiscoveryPrefix: m.mqttCfg.DiscoveryPrefix,
 	}
 }
+
+

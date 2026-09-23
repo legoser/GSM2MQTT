@@ -38,6 +38,65 @@ func TestBuildGatewayDiscovery(t *testing.T) {
 	}
 }
 
+func TestBuildRecipientsTextDiscovery(t *testing.T) {
+	msg, err := BuildRecipientsTextDiscovery("homeassistant", "gsm2mqtt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expectedTopic := "homeassistant/text/gsm2mqtt_gateway_recipients/config"
+	if msg.Topic != expectedTopic {
+		t.Errorf("expected topic %q, got %q", expectedTopic, msg.Topic)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatalf("invalid JSON payload: %v", err)
+	}
+
+	if payload["unique_id"] != "gsm2mqtt_gateway_recipients" {
+		t.Errorf("expected unique_id gsm2mqtt_gateway_recipients, got %v", payload["unique_id"])
+	}
+	if payload["command_topic"] != "gsm2mqtt/config/recipients/set" {
+		t.Errorf("expected command_topic gsm2mqtt/config/recipients/set, got %v", payload["command_topic"])
+	}
+	if payload["state_topic"] != "gsm2mqtt/config/recipients" {
+		t.Errorf("expected state_topic gsm2mqtt/config/recipients, got %v", payload["state_topic"])
+	}
+}
+
+func TestBuildNotifyDiscovery(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "siemens_mc35i",
+		SlotIndex:       1,
+	}
+	msg, err := BuildNotifyDiscovery(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedTopic := "homeassistant/notify/gsm2mqtt_modem_1_notify/config"
+	if msg.Topic != expectedTopic {
+		t.Errorf("expected topic %q, got %q", expectedTopic, msg.Topic)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatalf("invalid JSON payload: %v", err)
+	}
+
+	if payload["unique_id"] != "gsm2mqtt_modem_1_notify" {
+		t.Errorf("expected unique_id gsm2mqtt_modem_1_notify, got %v", payload["unique_id"])
+	}
+	if payload["object_id"] != "gsm_modem_notify" {
+		t.Errorf("expected object_id gsm_modem_notify, got %v", payload["object_id"])
+	}
+	if payload["command_topic"] != "gsm2mqtt/modem/gsm_modem/sms/send" {
+		t.Errorf("expected command_topic gsm2mqtt/modem/gsm_modem/sms/send, got %v", payload["command_topic"])
+	}
+}
+
 func TestBuildSignalDiscovery(t *testing.T) {
 	params := ModemDiscoveryParams{
 		DiscoveryPrefix: "homeassistant",
@@ -98,8 +157,8 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildModemDiscoveries failed: %v", err)
 	}
-	if len(msgs) != 10 {
-		t.Fatalf("expected 10 discovery messages, got %d", len(msgs))
+	if len(msgs) != 11 {
+		t.Fatalf("expected 11 discovery messages, got %d", len(msgs))
 	}
 
 	expectedIDs := map[string]bool{
@@ -113,6 +172,7 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 		"gsm2mqtt_modem_1_btn_hangup":    false,
 		"gsm2mqtt_modem_1_incoming_call": false,
 		"gsm2mqtt_modem_1_new_sms":       false,
+		"gsm2mqtt_modem_1_notify":        false,
 	}
 
 	for _, msg := range msgs {

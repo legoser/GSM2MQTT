@@ -78,6 +78,8 @@ type SecurityConfig struct {
 	RateLimit         RateLimitConfig `yaml:"rate_limit"`
 	AllowRawAT        bool            `yaml:"allow_raw_at"`
 	BlockedATCommands []string        `yaml:"blocked_at_commands"`
+	RecipientsFile    string          `yaml:"recipients_file"`
+	FallbackCall      bool            `yaml:"fallback_call"`
 }
 
 // RateLimitConfig holds rate limiting settings for outgoing SMS.

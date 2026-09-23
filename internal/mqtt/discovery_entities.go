@@ -101,6 +101,45 @@ func BuildNewSMSBinaryDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, erro
 	return marshalDiscovery(topic, payload)
 }
 
+// NotifyDiscoveryPayload represents Home Assistant MQTT notify entity configuration.
+type NotifyDiscoveryPayload struct {
+	Name                string      `json:"name"`
+	UniqueID            string      `json:"unique_id"`
+	ObjectID            string      `json:"object_id,omitempty"`
+	CommandTopic        string      `json:"command_topic"`
+	CommandTemplate     string      `json:"command_template,omitempty"`
+	AvailabilityTopic   string      `json:"availability_topic,omitempty"`
+	PayloadAvailable    string      `json:"payload_available,omitempty"`
+	PayloadNotAvailable string      `json:"payload_not_available,omitempty"`
+	Device              *DeviceInfo `json:"device"`
+}
+
+// BuildNotifyDiscovery generates discovery for Home Assistant notify entity (like Telegram integration).
+func BuildNotifyDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("notify")
+	topic := fmt.Sprintf("%s/notify/%s/config", p.DiscoveryPrefix, uniqueID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	cmdTopic := fmt.Sprintf("%s/modem/%s/sms/send", p.TopicPrefix, p.ModemID)
+	if p.SlotIndex <= 1 {
+		cmdTopic = fmt.Sprintf("%s/modem/gsm_modem/sms/send", p.TopicPrefix)
+	}
+
+	payload := NotifyDiscoveryPayload{
+		Name:                "GSM SMS",
+		UniqueID:            uniqueID,
+		ObjectID:            p.EntityObjectID("notify"),
+		CommandTopic:        cmdTopic,
+		CommandTemplate:     `{"to":"{{ target if target is defined and target else '' }}","text":"{{ message }}"}`,
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}
+
 // BuildModemDiscoveries builds the complete set of Home Assistant Auto-Discovery messages for a modem.
 func BuildModemDiscoveries(p ModemDiscoveryParams) ([]*DiscoveryMessage, error) {
 	builders := []func() (*DiscoveryMessage, error){
@@ -133,6 +172,9 @@ func BuildModemDiscoveries(p ModemDiscoveryParams) ([]*DiscoveryMessage, error) 
 		},
 		func() (*DiscoveryMessage, error) {
 			return BuildNewSMSBinaryDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildNotifyDiscovery(p)
 		},
 	}
 

@@ -14,6 +14,8 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/api"
 	"github.com/legoser/gsm2mqtt/internal/config"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
+	"github.com/legoser/gsm2mqtt/internal/pool"
+	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/services"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 )
@@ -67,16 +69,48 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 	}
 	defer mqttClient.Disconnect(250)
 
-	opener := transport.NewSerialOpener()
+	recipientsPath := cfg.Security.RecipientsFile
+	if recipientsPath == "" {
+		recipientsPath = "data/recipients.json"
+	}
+	recipientsMgr := security.NewRecipientsManager(recipientsPath, cfg.Security.Whitelist)
+
 	manager := services.NewGatewayManager()
+	manager.InitRecipients(recipientsMgr)
 	manager.SetMQTT(mqttClient, &cfg.MQTT)
+
 	modemPool := initPool(ctx, cfg, mqttClient, logger)
+	wg := startModems(ctx, cfg, mqttClient, manager, recipientsMgr, modemPool, logger)
+
+	if cfg.API.Enabled {
+		startAPIServer(ctx, cfg, manager, logger)
+	}
+
+	<-ctx.Done()
+	logger.Info("shutting down runners...")
+	wg.Wait()
+	_ = mqttClient.Publish(fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix), 1, true, []byte("offline"))
+	logger.Info("gsm2mqtt stopped cleanly")
+	return 0
+}
+
+func startModems(
+	ctx context.Context,
+	cfg *config.Config,
+	mqttClient mqtt.MQTTClient,
+	manager *services.GatewayManager,
+	recipientsMgr *security.RecipientsManager,
+	modemPool *pool.Pool,
+	logger *slog.Logger,
+) *sync.WaitGroup {
+	opener := transport.NewSerialOpener()
 	var wg sync.WaitGroup
 
 	for i, mCfg := range cfg.Modems {
 		wg.Add(1)
 		runner := services.NewModemRunner(mCfg, cfg, opener, mqttClient)
 		runner.SetSlotIndex(i + 1)
+		runner.SetRecipientsManager(recipientsMgr)
 		manager.Register(runner)
 		if modemPool != nil {
 			modemPool.Register(runner)
@@ -90,26 +124,20 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 			}
 		}(mCfg)
 	}
+	return &wg
+}
 
-	if cfg.API.Enabled {
-		apiServer := api.NewServer(api.ServerConfig{
-			Host: cfg.API.Host,
-			Port: cfg.API.Port,
-		}, manager)
-		go func() {
-			logger.Info("starting embedded HTTP API", slog.String("host", cfg.API.Host), slog.Int("port", cfg.API.Port))
-			if err := apiServer.Start(ctx); err != nil {
-				logger.Error("API server error", slog.String("error", err.Error()))
-			}
-		}()
-	}
-
-	<-ctx.Done()
-	logger.Info("shutting down runners...")
-	wg.Wait()
-	_ = mqttClient.Publish(fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix), 1, true, []byte("offline"))
-	logger.Info("gsm2mqtt stopped cleanly")
-	return 0
+func startAPIServer(ctx context.Context, cfg *config.Config, manager *services.GatewayManager, logger *slog.Logger) {
+	apiServer := api.NewServer(api.ServerConfig{
+		Host: cfg.API.Host,
+		Port: cfg.API.Port,
+	}, manager)
+	go func() {
+		logger.Info("starting embedded HTTP API", slog.String("host", cfg.API.Host), slog.Int("port", cfg.API.Port))
+		if err := apiServer.Start(ctx); err != nil {
+			logger.Error("API server error", slog.String("error", err.Error()))
+		}
+	}()
 }
 
 func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {

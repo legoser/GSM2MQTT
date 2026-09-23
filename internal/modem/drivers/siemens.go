@@ -3,6 +3,7 @@ package drivers
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/modem"
@@ -77,4 +78,49 @@ func (d *SiemensDriver) Init(ctx context.Context) error {
 	return nil
 }
 
+// Identify returns hardware information about the Siemens modem using ATI and standard registers.
+func (d *SiemensDriver) Identify() (*modem.Info, error) {
+	info := &modem.Info{}
+
+	// Siemens ATI returns 3 lines: Manufacturer, Model, Revision
+	resp, err := d.runner.Send("ATI", 2*time.Second)
+	if err == nil && !resp.Error && len(resp.Lines) > 0 {
+		for _, line := range resp.Lines {
+			clean := strings.TrimSpace(line)
+			if clean == "" || clean == "OK" {
+				continue
+			}
+			if info.Manufacturer == "" {
+				info.Manufacturer = clean
+			} else if info.Model == "" {
+				info.Model = clean
+			} else if info.Revision == "" {
+				info.Revision = clean
+			}
+		}
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	if info.Manufacturer == "" {
+		info.Manufacturer = d.queryClean("AT+CGMI")
+		time.Sleep(50 * time.Millisecond)
+	}
+	if info.Model == "" {
+		info.Model = d.queryClean("AT+CGMM")
+		time.Sleep(50 * time.Millisecond)
+	}
+	if info.Revision == "" {
+		info.Revision = d.queryClean("AT+CGMR")
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	info.IMEI = d.queryClean("AT+CGSN")
+	time.Sleep(50 * time.Millisecond)
+	info.IMSI = d.queryClean("AT+CIMI")
+
+	return info, nil
+}
+
 var _ modem.Driver = (*SiemensDriver)(nil)
+

@@ -22,36 +22,66 @@ func (r *ModemRunner) subscribeMQTT(
 	driver modem.Driver,
 ) {
 	sanitizer := security.NewSanitizer(r.cfg.Security.AllowRawAT, r.cfg.Security.BlockedATCommands)
-	r.subscribeSMS(smsSvc, tariffMgr, diagSvc)
+	r.subscribeSMS(smsSvc, callSvc, tariffMgr, diagSvc)
 	r.subscribeCall(callSvc)
 	r.subscribeUSSD(ussdSvc)
 	r.subscribeRawAT(driver, sanitizer)
 }
 
-func (r *ModemRunner) subscribeSMS(smsSvc *SMSService, tariffMgr *tariff.Manager, diagSvc *DiagnosticService) {
+func (r *ModemRunner) subscribeSMS(
+	smsSvc *SMSService,
+	callSvc *CallService,
+	tariffMgr *tariff.Manager,
+	diagSvc *DiagnosticService,
+) {
 	handler := func(_ string, payload []byte) {
 		var req SendSMSRequest
 		if err := json.Unmarshal(payload, &req); err != nil {
 			return
 		}
-		refs, err := smsSvc.Send(context.Background(), req)
-		if err != nil {
-			metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "failed"})
-			slog.Error("sms send failure", slog.String("modem", r.mCfg.ID), slog.Any("error", err))
-			if r.cfg.Tariff.AutoCheckOnError {
-				rep, _ := diagSvc.RunDiagnostic(context.Background(), "sms_send_failure")
-				if rep != nil {
-					dPayload, _ := json.Marshal(rep)
-					_ = r.mqttClient.Publish(r.topics.Diagnostic(), 1, false, dPayload)
-				}
-			}
+		text := req.GetText()
+		if text == "" {
 			return
 		}
-		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "sent"})
-		tariffMgr.RecordSMS(len(refs))
-		st := tariffMgr.Status()
-		stPayload, _ := json.Marshal(st)
-		_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, false, stPayload)
+
+		targets := []string{req.To}
+		if req.To == "" && r.recipientsMgr != nil {
+			targets = r.recipientsMgr.Get()
+		}
+
+		for _, target := range targets {
+			if target == "" {
+				continue
+			}
+			sendReq := req
+			sendReq.To = target
+			sendReq.Text = text
+
+			refs, err := smsSvc.Send(context.Background(), sendReq)
+			if err != nil {
+				metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "failed"})
+				slog.Error("sms send failure", slog.String("modem", r.mCfg.ID), slog.String("target", target), slog.Any("error", err))
+				if r.cfg.Tariff.AutoCheckOnError {
+					rep, _ := diagSvc.RunDiagnostic(context.Background(), "sms_send_failure")
+					if rep != nil {
+						dPayload, _ := json.Marshal(rep)
+						_ = r.mqttClient.Publish(r.topics.Diagnostic(), 1, false, dPayload)
+					}
+				}
+				if r.cfg.Security.FallbackCall && callSvc != nil {
+					slog.Info("triggering fallback voice call after SMS failure", slog.String("modem", r.mCfg.ID), slog.String("target", target))
+					go func(num string) {
+						_ = callSvc.Dial(context.Background(), num)
+					}(target)
+				}
+			} else {
+				metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "sent"})
+				tariffMgr.RecordSMS(len(refs))
+				st := tariffMgr.Status()
+				stPayload, _ := json.Marshal(st)
+				_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, false, stPayload)
+			}
+		}
 	}
 	_ = r.mqttClient.Subscribe(r.topics.SMSSend(), 1, handler)
 	if r.SlotIndex() == 1 {

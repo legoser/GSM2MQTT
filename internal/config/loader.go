@@ -64,6 +64,8 @@ func Defaults() *Config {
 				"ATD",
 				"AT&F",
 			},
+			RecipientsFile: "data/recipients.json",
+			FallbackCall:   true,
 		},
 		SMS: SMSConfig{
 			Encoding:       "auto",

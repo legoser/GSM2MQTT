@@ -23,7 +23,16 @@ type SMSServiceConfig struct {
 type SendSMSRequest struct {
 	To             string `json:"to"`
 	Text           string `json:"text"`
+	Message        string `json:"message,omitempty"`
 	DeliveryReport bool   `json:"delivery_report"`
+}
+
+// GetText returns the text message body from either Text or Message field.
+func (r SendSMSRequest) GetText() string {
+	if r.Text != "" {
+		return r.Text
+	}
+	return r.Message
 }
 
 // PDUSender transmits encoded PDU octets to the modem.

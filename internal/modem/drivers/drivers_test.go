@@ -691,3 +691,38 @@ func TestNeowayDriver_CheckCallState(t *testing.T) {
 	}
 }
 
+func TestSiemensDriver_Identify(t *testing.T) {
+	runner := newMockATRunner()
+	runner.responses["ATI"] = &at.Response{
+		OK:    true,
+		Lines: []string{"SIEMENS", "MC35i", "REVISION 02.00"},
+	}
+	runner.responses["AT+CGSN"] = &at.Response{
+		OK:    true,
+		Lines: []string{"353857015410240"},
+	}
+	runner.responses["AT+CIMI"] = &at.Response{
+		OK:    true,
+		Lines: []string{"250023055574883"},
+	}
+
+	driver := NewSiemensDriver(runner)
+	info, err := driver.Identify()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Manufacturer != "SIEMENS" {
+		t.Errorf("expected manufacturer SIEMENS, got %q", info.Manufacturer)
+	}
+	if info.Model != "MC35i" {
+		t.Errorf("expected model MC35i, got %q", info.Model)
+	}
+	if info.Revision != "REVISION 02.00" {
+		t.Errorf("expected revision 'REVISION 02.00', got %q", info.Revision)
+	}
+	if info.IMEI != "353857015410240" {
+		t.Errorf("expected IMEI '353857015410240', got %q", info.IMEI)
+	}
+}
+
+
