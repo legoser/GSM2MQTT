@@ -590,3 +590,21 @@ func TestNeowayDriver_BatteryStatus(t *testing.T) {
 	}
 }
 
+func TestNeowayDriver_SendUSSD_UCS2Hex(t *testing.T) {
+	runner := newMockATRunner()
+	expectedCmd := `AT+CUSD=1,"002A0031003000300023",15`
+	runner.responses[expectedCmd] = &at.Response{
+		OK:    true,
+		Lines: []string{`+CUSD: 0,"041204300448002004310430043B0430043D0441003A00200032002E003200320020044004430431002E",72`},
+	}
+
+	driver := NewNeowayDriver(runner)
+	resp, err := driver.SendUSSD("*100#")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(resp, "+CUSD: 0,") {
+		t.Errorf("expected CUSD response line, got %q", resp)
+	}
+}
+

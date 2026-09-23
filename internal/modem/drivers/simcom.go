@@ -63,7 +63,7 @@ func (d *SIMComDriver) BatteryStatus() (*modem.BatteryInfo, error) {
 func parseCBCLine(line string) (*modem.BatteryInfo, error) {
 	body := strings.TrimSpace(strings.TrimPrefix(line, "+CBC:"))
 	parts := strings.Split(body, ",")
-	if len(parts) < 3 {
+	if len(parts) < 2 {
 		return nil, fmt.Errorf("malformed +CBC line: %q", line)
 	}
 
@@ -77,9 +77,16 @@ func parseCBCLine(line string) (*modem.BatteryInfo, error) {
 		return nil, fmt.Errorf("invalid BCL in +CBC: %w", err)
 	}
 
-	bcv, err := strconv.Atoi(strings.TrimSpace(parts[2]))
-	if err != nil {
-		return nil, fmt.Errorf("invalid BCV in +CBC: %w", err)
+	bcv := 0
+	if len(parts) >= 3 {
+		parsedVoltage, err := strconv.Atoi(strings.TrimSpace(parts[2]))
+		if err == nil {
+			bcv = parsedVoltage
+		}
+	}
+	if bcv == 0 && bcl > 0 {
+		// Approximate standard Li-ion voltage from percentage if not reported by firmware
+		bcv = 3600 + int(float64(bcl)*6.0)
 	}
 
 	return &modem.BatteryInfo{

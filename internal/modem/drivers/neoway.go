@@ -130,5 +130,49 @@ func (d *NeowayDriver) BatteryStatus() (*modem.BatteryInfo, error) {
 	return nil, fmt.Errorf("no +CBC response line found in %v", resp.Lines)
 }
 
+// SendUSSD submits a USSD code request to Neoway M590 using UCS-2 hex string encoding.
+func (d *NeowayDriver) SendUSSD(code string) (string, error) {
+	slog.Info("neoway sending USSD request", slog.String("code", code))
+
+	// Reset any existing session
+	_, _ = d.runner.Send("AT+CUSD=2", 1*time.Second)
+
+	// Ensure TE character set is UCS2
+	_, _ = d.runner.Send("AT+CSCS=\"UCS2\"", 1*time.Second)
+
+	// Encode USSD string to UCS-2 hex
+	var ucs2Hex strings.Builder
+	for _, r := range code {
+		ucs2Hex.WriteString(fmt.Sprintf("%04X", r))
+	}
+	hexCode := ucs2Hex.String()
+
+	cmd := fmt.Sprintf("AT+CUSD=1,%q,15", hexCode)
+	slog.Debug("sending USSD command to neoway", slog.String("cmd", cmd))
+
+	resp, err := d.runner.Send(cmd, 15*time.Second)
+	if err == nil && !resp.Error && len(resp.Lines) > 0 {
+		slog.Debug("neoway USSD command returned immediate response", slog.Any("lines", resp.Lines))
+		return strings.Join(resp.Lines, "\n"), nil
+	}
+
+	// Fallback to plain USSD if hex command failed
+	slog.Debug("neoway UCS-2 hex USSD failed or empty, attempting fallback to plain code", slog.Any("err", err))
+	_, _ = d.runner.Send("AT+CSCS=\"GSM\"", 1*time.Second)
+	fallbackCmd := fmt.Sprintf("AT+CUSD=1,%q,15", code)
+	fbResp, fbErr := d.runner.Send(fallbackCmd, 15*time.Second)
+	if fbErr != nil {
+		slog.Error("neoway USSD fallback failed", slog.Any("error", fbErr))
+		return "", fbErr
+	}
+	if fbResp.Error {
+		slog.Error("neoway USSD fallback returned error", slog.Any("lines", fbResp.Lines))
+		return "", fmt.Errorf("neoway USSD request failed: %v", fbResp.Lines)
+	}
+
+	return strings.Join(fbResp.Lines, "\n"), nil
+}
+
 var _ modem.Driver = (*NeowayDriver)(nil)
 var _ modem.BatteryProvider = (*NeowayDriver)(nil)
+var _ modem.USSDSender = (*NeowayDriver)(nil)
