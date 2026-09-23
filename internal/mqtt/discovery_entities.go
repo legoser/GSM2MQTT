@@ -130,7 +130,7 @@ func BuildNotifyDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
 		UniqueID:            uniqueID,
 		ObjectID:            p.EntityObjectID("notify"),
 		CommandTopic:        cmdTopic,
-		CommandTemplate:     `{"to":"{{ target if target is defined and target else '' }}","text":"{{ message }}"}`,
+		CommandTemplate:     `{"text": {{ value | tojson }}}`,
 		AvailabilityTopic:   availTopic,
 		PayloadAvailable:    avail,
 		PayloadNotAvailable: notAvail,

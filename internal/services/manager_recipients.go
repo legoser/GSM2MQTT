@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
@@ -87,7 +88,10 @@ func (m *GatewayManager) subscribeRecipientsMQTT(client mqtt.MQTTClient, prefix 
 				}
 			}
 		}
-		_ = m.SetRecipients(nums)
+		slog.Info("received mqtt request to set alert recipients list", slog.Int("count", len(nums)))
+		if err := m.SetRecipients(nums); err != nil {
+			slog.Error("failed to set alert recipients from mqtt", slog.Any("error", err))
+		}
 	})
 
 	_ = client.Subscribe(fmt.Sprintf("%s/config/recipients/add", prefix), 1, func(_ string, payload []byte) {
@@ -100,7 +104,10 @@ func (m *GatewayManager) subscribeRecipientsMQTT(client mqtt.MQTTClient, prefix 
 		}
 		raw = strings.Trim(raw, "\"")
 		if raw != "" {
-			_ = m.AddRecipient(raw)
+			slog.Info("received mqtt request to add alert recipient", slog.String("raw", raw))
+			if err := m.AddRecipient(raw); err != nil {
+				slog.Error("failed to add alert recipient from mqtt", slog.String("raw", raw), slog.Any("error", err))
+			}
 		}
 	})
 
@@ -114,7 +121,10 @@ func (m *GatewayManager) subscribeRecipientsMQTT(client mqtt.MQTTClient, prefix 
 		}
 		raw = strings.Trim(raw, "\"")
 		if raw != "" {
-			_ = m.RemoveRecipient(raw)
+			slog.Info("received mqtt request to remove alert recipient", slog.String("raw", raw))
+			if ok := m.RemoveRecipient(raw); !ok {
+				slog.Warn("failed to remove alert recipient from mqtt", slog.String("raw", raw))
+			}
 		}
 	})
 }

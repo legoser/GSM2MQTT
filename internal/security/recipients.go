@@ -3,6 +3,7 @@ package security
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -113,6 +114,10 @@ func (m *RecipientsManager) Contains(raw string) bool {
 func (m *RecipientsManager) Add(raw string) error {
 	norm, err := NormalizeNumber(raw)
 	if err != nil {
+		slog.Warn("failed to add alert recipient: invalid phone format",
+			slog.String("input", raw),
+			slog.Any("error", err),
+		)
 		return err
 	}
 
@@ -120,6 +125,7 @@ func (m *RecipientsManager) Add(raw string) error {
 	for _, n := range m.numbers {
 		if n == norm {
 			m.mu.Unlock()
+			slog.Debug("alert recipient already registered", slog.String("number", norm))
 			return nil
 		}
 	}
@@ -128,7 +134,13 @@ func (m *RecipientsManager) Add(raw string) error {
 	_ = m.saveLocked()
 	fn := m.onChange
 	cpy := m.copyLocked()
+	count := len(m.numbers)
 	m.mu.Unlock()
+
+	slog.Info("alert recipient added successfully",
+		slog.String("number", norm),
+		slog.Int("total_recipients", count),
+	)
 
 	if fn != nil {
 		fn(cpy)
@@ -140,6 +152,10 @@ func (m *RecipientsManager) Add(raw string) error {
 func (m *RecipientsManager) Remove(raw string) bool {
 	norm, err := NormalizeNumber(raw)
 	if err != nil {
+		slog.Warn("failed to remove alert recipient: invalid phone format",
+			slog.String("input", raw),
+			slog.Any("error", err),
+		)
 		return false
 	}
 
@@ -154,6 +170,7 @@ func (m *RecipientsManager) Remove(raw string) bool {
 
 	if idx == -1 {
 		m.mu.Unlock()
+		slog.Warn("alert recipient not found for removal", slog.String("number", norm))
 		return false
 	}
 
@@ -161,7 +178,13 @@ func (m *RecipientsManager) Remove(raw string) bool {
 	_ = m.saveLocked()
 	fn := m.onChange
 	cpy := m.copyLocked()
+	count := len(m.numbers)
 	m.mu.Unlock()
+
+	slog.Info("alert recipient removed",
+		slog.String("number", norm),
+		slog.Int("total_recipients", count),
+	)
 
 	if fn != nil {
 		fn(cpy)
@@ -177,6 +200,7 @@ func (m *RecipientsManager) Set(rawNumbers []string) error {
 	for _, raw := range rawNumbers {
 		norm, err := NormalizeNumber(raw)
 		if err != nil {
+			slog.Warn("invalid number in alert recipients list", slog.String("input", raw), slog.Any("error", err))
 			return err
 		}
 		if !seen[norm] {
@@ -190,7 +214,13 @@ func (m *RecipientsManager) Set(rawNumbers []string) error {
 	_ = m.saveLocked()
 	fn := m.onChange
 	cpy := m.copyLocked()
+	count := len(m.numbers)
 	m.mu.Unlock()
+
+	slog.Info("alert recipients list updated",
+		slog.Int("total_recipients", count),
+		slog.Any("numbers", normalized),
+	)
 
 	if fn != nil {
 		fn(cpy)
@@ -235,6 +265,12 @@ func (m *RecipientsManager) load() error {
 			m.addNumberInMemory(norm)
 		}
 	}
+	if len(m.numbers) > 0 {
+		slog.Info("loaded alert recipients from disk",
+			slog.String("path", m.filePath),
+			slog.Int("count", len(m.numbers)),
+		)
+	}
 	return nil
 }
 
@@ -248,15 +284,12 @@ func (m *RecipientsManager) saveLocked() error {
 	if m.filePath == "" {
 		return nil
 	}
-	dir := filepath.Dir(m.filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(m.filePath), 0755); err != nil {
 		return err
 	}
-
 	data, err := json.MarshalIndent(m.numbers, "", "  ")
 	if err != nil {
 		return err
 	}
-
 	return os.WriteFile(m.filePath, data, 0644)
 }

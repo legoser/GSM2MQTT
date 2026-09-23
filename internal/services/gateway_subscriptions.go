@@ -37,7 +37,7 @@ func (r *ModemRunner) subscribeSMS(
 	handler := func(_ string, payload []byte) {
 		var req SendSMSRequest
 		if err := json.Unmarshal(payload, &req); err != nil {
-			return
+			req = SendSMSRequest{Text: string(payload)}
 		}
 		text := req.GetText()
 		if text == "" {
@@ -45,41 +45,23 @@ func (r *ModemRunner) subscribeSMS(
 		}
 
 		targets := []string{req.To}
-		if req.To == "" && r.recipientsMgr != nil {
-			targets = r.recipientsMgr.Get()
+		if req.To == "" {
+			if specificTo, remainingText, ok := extractLeadingRecipient(text); ok {
+				targets = []string{specificTo}
+				text = remainingText
+			} else if r.recipientsMgr != nil {
+				targets = r.recipientsMgr.Get()
+			}
+		}
+
+		if len(targets) == 0 || (len(targets) == 1 && targets[0] == "") {
+			slog.Warn("cannot send SMS: recipient is empty and no alert recipients configured", slog.String("modem", r.mCfg.ID))
+			return
 		}
 
 		for _, target := range targets {
-			if target == "" {
-				continue
-			}
-			sendReq := req
-			sendReq.To = target
-			sendReq.Text = text
-
-			refs, err := smsSvc.Send(context.Background(), sendReq)
-			if err != nil {
-				metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "failed"})
-				slog.Error("sms send failure", slog.String("modem", r.mCfg.ID), slog.String("target", target), slog.Any("error", err))
-				if r.cfg.Tariff.AutoCheckOnError {
-					rep, _ := diagSvc.RunDiagnostic(context.Background(), "sms_send_failure")
-					if rep != nil {
-						dPayload, _ := json.Marshal(rep)
-						_ = r.mqttClient.Publish(r.topics.Diagnostic(), 1, false, dPayload)
-					}
-				}
-				if r.cfg.Security.FallbackCall && callSvc != nil {
-					slog.Info("triggering fallback voice call after SMS failure", slog.String("modem", r.mCfg.ID), slog.String("target", target))
-					go func(num string) {
-						_ = callSvc.Dial(context.Background(), num)
-					}(target)
-				}
-			} else {
-				metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "sent"})
-				tariffMgr.RecordSMS(len(refs))
-				st := tariffMgr.Status()
-				stPayload, _ := json.Marshal(st)
-				_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, false, stPayload)
+			if target != "" {
+				r.sendAndReportSMS(smsSvc, callSvc, tariffMgr, diagSvc, req, target, text)
 			}
 		}
 	}
@@ -87,6 +69,67 @@ func (r *ModemRunner) subscribeSMS(
 	if r.SlotIndex() == 1 {
 		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/sms/send", r.cfg.MQTT.TopicPrefix), 1, handler)
 	}
+}
+
+func (r *ModemRunner) sendAndReportSMS(
+	smsSvc *SMSService,
+	callSvc *CallService,
+	tariffMgr *tariff.Manager,
+	diagSvc *DiagnosticService,
+	req SendSMSRequest,
+	target, text string,
+) {
+	sendReq := req
+	sendReq.To = target
+	sendReq.Text = text
+
+	slog.Info("processing outgoing SMS request", slog.String("modem", r.mCfg.ID), slog.String("target", target))
+	refs, err := smsSvc.Send(context.Background(), sendReq)
+	if err != nil {
+		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "failed"})
+		slog.Error("sms send failure", slog.String("modem", r.mCfg.ID), slog.String("target", target), slog.Any("error", err))
+		if r.cfg.Tariff.AutoCheckOnError {
+			rep, _ := diagSvc.RunDiagnostic(context.Background(), "sms_send_failure")
+			if rep != nil {
+				dPayload, _ := json.Marshal(rep)
+				_ = r.mqttClient.Publish(r.topics.Diagnostic(), 1, false, dPayload)
+			}
+		}
+		if r.cfg.Security.FallbackCall && callSvc != nil {
+			slog.Info("triggering fallback voice call after SMS failure", slog.String("modem", r.mCfg.ID), slog.String("target", target))
+			go func(num string) {
+				_ = callSvc.Dial(context.Background(), num)
+			}(target)
+		}
+		return
+	}
+
+	metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "sent"})
+	tariffMgr.RecordSMS(len(refs))
+	st := tariffMgr.Status()
+	stPayload, _ := json.Marshal(st)
+	_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, false, stPayload)
+}
+
+func extractLeadingRecipient(text string) (string, string, bool) {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, "+") && !strings.HasPrefix(trimmed, "8") && !strings.HasPrefix(trimmed, "7") {
+		return "", text, false
+	}
+	idx := strings.IndexAny(trimmed, ": \t\n")
+	if idx == -1 {
+		return "", text, false
+	}
+	candidate := trimmed[:idx]
+	norm, err := security.NormalizeNumber(candidate)
+	if err != nil {
+		return "", text, false
+	}
+	rest := strings.TrimSpace(trimmed[idx+1:])
+	if rest == "" {
+		return "", text, false
+	}
+	return norm, rest, true
 }
 
 func (r *ModemRunner) subscribeCall(callSvc *CallService) {

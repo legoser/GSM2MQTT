@@ -95,6 +95,10 @@ func TestBuildNotifyDiscovery(t *testing.T) {
 	if payload["command_topic"] != "gsm2mqtt/modem/gsm_modem/sms/send" {
 		t.Errorf("expected command_topic gsm2mqtt/modem/gsm_modem/sms/send, got %v", payload["command_topic"])
 	}
+	expectedTemplate := `{"text": {{ value | tojson }}}`
+	if payload["command_template"] != expectedTemplate {
+		t.Errorf("expected command_template %q, got %v", expectedTemplate, payload["command_template"])
+	}
 }
 
 func TestBuildSignalDiscovery(t *testing.T) {
