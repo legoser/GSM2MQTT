@@ -115,8 +115,19 @@ func (r *ModemRunner) applyParsedBalance(text string) {
 }
 
 func (r *ModemRunner) createDriver(engine *at.Engine) modem.Driver {
-	switch strings.ToLower(r.mCfg.Type) {
-	case "siemens":
+	modemType := strings.ToLower(r.mCfg.Type)
+	if modemType == "" || modemType == "auto" {
+		detectCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		detected, err := modem.Detect(detectCtx, engine)
+		cancel()
+		if err == nil && detected != "" && detected != modem.TypeGeneric {
+			slog.Info("auto-detected modem type", slog.String("modem", r.mCfg.ID), slog.String("detected", string(detected)))
+			modemType = string(detected)
+		}
+	}
+
+	switch modemType {
+	case "siemens", "tc35", "tc35i", "mc35", "mc35i", "mc55", "tc65", "cinterion":
 		return drivers.NewSiemensDriver(engine)
 	case "simcom", "sim800", "sim800l", "sim800c", "sim900", "sim7000", "sim7600":
 		return drivers.NewSIMComDriver(engine)

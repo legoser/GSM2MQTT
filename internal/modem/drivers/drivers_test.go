@@ -196,6 +196,30 @@ func TestSiemensDriver_AutoBaudInit(t *testing.T) {
 	}
 }
 
+func TestSiemensDriver_CNMIFallback(t *testing.T) {
+	runner := newMockATRunner()
+	// Fail first CNMI candidate to test fallback
+	runner.responses["AT+CNMI=2,1,0,2,1"] = &at.Response{Error: true}
+	runner.responses["AT+CNMI=2,1,0,0,1"] = &at.Response{OK: true}
+
+	driver := NewSiemensDriver(runner)
+	ctx := context.Background()
+	if err := driver.Init(ctx); err != nil {
+		t.Fatalf("Siemens Init with CNMI fallback failed: %v", err)
+	}
+
+	foundFallback := false
+	for _, cmd := range runner.commands {
+		if cmd == "AT+CNMI=2,1,0,0,1" {
+			foundFallback = true
+			break
+		}
+	}
+	if !foundFallback {
+		t.Errorf("expected fallback CNMI command to be issued, got: %v", runner.commands)
+	}
+}
+
 func TestSIMComDriver_Init(t *testing.T) {
 	runner := newMockATRunner()
 	driver := NewSIMComDriver(runner)

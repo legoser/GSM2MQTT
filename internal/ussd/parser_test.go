@@ -103,6 +103,14 @@ func TestParseResponse_Positive(t *testing.T) {
 			expectedDCS:    15,
 			expectedAction: false,
 		},
+		{
+			name:           "Status 2 network terminated with UCS-2 message (Siemens / MegaFon)",
+			urc:            `+CUSD: 2,"041204300448002004310430043B0430043D0441003A00200032002E003200320020044004430431002E",72`,
+			expectedMsg:    "Ваш баланс: 2.22 руб.",
+			expectedStatus: StatusTerminated,
+			expectedDCS:    72,
+			expectedAction: false,
+		},
 	}
 
 	for _, tt := range tests {

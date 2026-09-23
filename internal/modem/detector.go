@@ -3,6 +3,7 @@ package modem
 import (
 	"context"
 	"strings"
+	"time"
 )
 
 // Type represents a recognized GSM modem family.
@@ -28,7 +29,10 @@ func Detect(ctx context.Context, at ATCommander) (Type, error) {
 	var combined strings.Builder
 
 	cmds := []string{"ATI", "AT+CGMI", "AT+CGMM"}
-	for _, cmd := range cmds {
+	for i, cmd := range cmds {
+		if i > 0 {
+			time.Sleep(50 * time.Millisecond)
+		}
 		if resp, err := at.SendCommand(ctx, cmd); err == nil {
 			combined.WriteString(" ")
 			combined.WriteString(resp)
