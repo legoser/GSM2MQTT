@@ -36,9 +36,11 @@ func NewUSSDService(modemID string, sender USSDSender, onResponse func(resp *uss
 // Send validates the USSD code, submits it to the modem, and waits for a response.
 func (s *USSDService) Send(ctx context.Context, code string) (*ussd.Response, error) {
 	if err := ussd.ValidateCode(code); err != nil {
+		slog.Warn("invalid USSD code", slog.String("modem", s.modemID), slog.String("code", code), slog.Any("error", err))
 		return nil, err
 	}
 
+	slog.Info("sending USSD query", slog.String("modem", s.modemID), slog.String("code", code))
 	respCh := make(chan *ussd.Response, 1)
 
 	s.mu.Lock()
@@ -48,6 +50,7 @@ func (s *USSDService) Send(ctx context.Context, code string) (*ussd.Response, er
 	out, err := s.sender.SendUSSD(code)
 	if err != nil {
 		s.clearPending()
+		slog.Error("failed to dispatch USSD query", slog.String("modem", s.modemID), slog.String("code", code), slog.Any("error", err))
 		return nil, err
 	}
 
@@ -93,8 +96,10 @@ func (s *USSDService) HandleURC(urc string) {
 
 	resp, err := ussd.ParseResponse(trimmed)
 	if err != nil {
+		slog.Warn("failed to parse USSD URC", slog.String("modem", s.modemID), slog.String("urc", trimmed), slog.Any("error", err))
 		return
 	}
+	slog.Debug("USSD URC parsed successfully", slog.String("modem", s.modemID), slog.String("message", resp.Message))
 
 	s.mu.Lock()
 	ch := s.pendingCh

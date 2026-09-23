@@ -262,6 +262,7 @@ func (s *CallService) Hangup(ctx context.Context) error {
 
 // SendDTMF transmits a DTMF tone during an active call.
 func (s *CallService) SendDTMF(ctx context.Context, digit string) error {
+	slog.Info("modem transmitting DTMF tone", slog.String("modem", s.modemID), slog.String("digit", digit))
 	return s.caller.SendDTMF(digit)
 }
 

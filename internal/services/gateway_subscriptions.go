@@ -138,10 +138,12 @@ func (r *ModemRunner) subscribeCall(callSvc *CallService) {
 			Number string `json:"number"`
 		}
 		if err := json.Unmarshal(payload, &req); err == nil && req.Number != "" {
+			slog.Info("call dial requested via MQTT", slog.String("modem", r.mCfg.ID), slog.String("number", req.Number))
 			_ = callSvc.Dial(context.Background(), req.Number)
 		}
 	}
 	hangupHandler := func(_ string, _ []byte) {
+		slog.Info("call hangup requested via MQTT", slog.String("modem", r.mCfg.ID))
 		_ = callSvc.Hangup(context.Background())
 	}
 	_ = r.mqttClient.Subscribe(r.topics.CallDial(), 1, dialHandler)
@@ -164,6 +166,7 @@ func (r *ModemRunner) subscribeUSSD(ussdSvc *USSDService) {
 		}
 		code = strings.Trim(code, "\"")
 		if code != "" {
+			slog.Info("USSD query requested via MQTT", slog.String("modem", r.mCfg.ID), slog.String("code", code))
 			metrics.DefaultRegistry.IncCounter("gsm2mqtt_ussd_requests_total", map[string]string{"modem": r.mCfg.ID})
 			resp, err := ussdSvc.Send(context.Background(), code)
 			if err == nil && resp != nil {
@@ -180,12 +183,15 @@ func (r *ModemRunner) subscribeUSSD(ussdSvc *USSDService) {
 func (r *ModemRunner) subscribeRawAT(driver modem.Driver, sanitizer *security.Sanitizer) {
 	handler := func(_ string, payload []byte) {
 		cmd := strings.TrimSpace(string(payload))
+		slog.Info("raw AT command requested via MQTT", slog.String("modem", r.mCfg.ID), slog.String("cmd", cmd))
 		if err := sanitizer.Validate(cmd); err != nil {
+			slog.Warn("raw AT command rejected by sanitizer", slog.String("modem", r.mCfg.ID), slog.String("cmd", cmd), slog.Any("error", err))
 			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(fmt.Sprintf("REJECTED: %v", err)))
 			return
 		}
 		out, err := driver.SendRawAT(cmd)
 		if err != nil {
+			slog.Error("raw AT command execution failed", slog.String("modem", r.mCfg.ID), slog.String("cmd", cmd), slog.Any("error", err))
 			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(fmt.Sprintf("ERROR: %v", err)))
 		} else {
 			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(out))

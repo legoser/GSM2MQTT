@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/modem"
@@ -80,6 +81,14 @@ func (s *StatusService) Poll(ctx context.Context) (*ModemHealth, error) {
 	dbm := calculateDBm(rssi)
 	overallStatus := determineStatus(sim, registered, rssi)
 
+	slog.Debug("modem status polled",
+		slog.String("modem", s.cfg.ModemID),
+		slog.String("status", overallStatus),
+		slog.Int("signal", rssi),
+		slog.String("operator", op),
+		slog.String("sim", string(sim)),
+	)
+
 	health := &ModemHealth{
 		Status:    overallStatus,
 		Signal:    rssi,
@@ -102,7 +111,17 @@ func (s *StatusService) Poll(ctx context.Context) (*ModemHealth, error) {
 func (s *StatusService) updateFailCount(errRssi, errSim error) {
 	if errRssi != nil && errSim != nil {
 		s.failCount++
+		slog.Warn("modem status poll communication errors",
+			slog.String("modem", s.cfg.ModemID),
+			slog.Int("fail_count", s.failCount),
+			slog.Any("err_rssi", errRssi),
+			slog.Any("err_sim", errSim),
+		)
 		if s.failCount >= 3 && s.onDisconnect != nil {
+			slog.Error("modem status poll repeated failures, triggering disconnect",
+				slog.String("modem", s.cfg.ModemID),
+				slog.Int("fail_count", s.failCount),
+			)
 			s.onDisconnect()
 		}
 	} else {

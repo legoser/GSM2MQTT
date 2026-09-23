@@ -3,6 +3,7 @@ package mqtt
 import (
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -80,6 +81,15 @@ func NewPahoClient(cfg ClientConfig) (*PahoClient, error) {
 
 	opts.SetAutoReconnect(true)
 	opts.SetConnectTimeout(10 * time.Second)
+	opts.SetOnConnectHandler(func(_ paho.Client) {
+		slog.Info("connected to MQTT broker", slog.String("broker", cfg.Broker), slog.String("client_id", cfg.ClientID))
+	})
+	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
+		slog.Warn("connection lost to MQTT broker", slog.String("broker", cfg.Broker), slog.Any("error", err))
+	})
+	opts.SetReconnectingHandler(func(_ paho.Client, _ *paho.ClientOptions) {
+		slog.Info("reconnecting to MQTT broker...", slog.String("broker", cfg.Broker))
+	})
 
 	client := paho.NewClient(opts)
 	return &PahoClient{client: client, cfg: cfg}, nil
@@ -87,8 +97,10 @@ func NewPahoClient(cfg ClientConfig) (*PahoClient, error) {
 
 // Connect connects to the MQTT broker.
 func (c *PahoClient) Connect() error {
+	slog.Info("connecting to MQTT broker", slog.String("broker", c.cfg.Broker))
 	token := c.client.Connect()
 	if token.Wait() && token.Error() != nil {
+		slog.Error("failed to connect to MQTT broker", slog.String("broker", c.cfg.Broker), slog.Any("error", token.Error()))
 		return token.Error()
 	}
 	return nil
@@ -96,16 +108,25 @@ func (c *PahoClient) Connect() error {
 
 // Disconnect gracefully disconnects from the MQTT broker.
 func (c *PahoClient) Disconnect(quiesce uint) {
+	slog.Info("disconnecting from MQTT broker", slog.String("broker", c.cfg.Broker))
 	c.client.Disconnect(quiesce)
 }
 
 // Publish publishes a message to a topic.
 func (c *PahoClient) Publish(topic string, qos byte, retained bool, payload []byte) error {
+	slog.Debug("publishing MQTT message",
+		slog.String("topic", topic),
+		slog.Int("bytes", len(payload)),
+		slog.Int("qos", int(qos)),
+		slog.Bool("retained", retained),
+	)
 	if !c.IsConnected() {
+		slog.Error("cannot publish: MQTT client not connected", slog.String("topic", topic))
 		return ErrNotConnected
 	}
 	token := c.client.Publish(topic, qos, retained, payload)
 	if token.Wait() && token.Error() != nil {
+		slog.Error("MQTT publish failed", slog.String("topic", topic), slog.Any("error", token.Error()))
 		return token.Error()
 	}
 	return nil
@@ -113,10 +134,13 @@ func (c *PahoClient) Publish(topic string, qos byte, retained bool, payload []by
 
 // Subscribe subscribes to a topic pattern.
 func (c *PahoClient) Subscribe(topic string, qos byte, handler MessageHandler) error {
+	slog.Debug("subscribing to MQTT topic", slog.String("topic", topic), slog.Int("qos", int(qos)))
 	token := c.client.Subscribe(topic, qos, func(_ paho.Client, m paho.Message) {
+		slog.Debug("received MQTT message", slog.String("topic", m.Topic()), slog.Int("bytes", len(m.Payload())))
 		handler(m.Topic(), m.Payload())
 	})
 	if token.Wait() && token.Error() != nil {
+		slog.Error("MQTT subscribe failed", slog.String("topic", topic), slog.Any("error", token.Error()))
 		return token.Error()
 	}
 	return nil

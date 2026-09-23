@@ -3,6 +3,7 @@ package drivers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ type SiemensDriver struct {
 
 // NewSiemensDriver creates a new SiemensDriver.
 func NewSiemensDriver(runner ATRunner) *SiemensDriver {
+	slog.Debug("siemens driver instance created")
 	return &SiemensDriver{
 		BaseDriver: NewBaseDriver(runner),
 	}
@@ -23,8 +25,11 @@ func NewSiemensDriver(runner ATRunner) *SiemensDriver {
 
 // Init synchronizes the auto-baud rate on RS-232 and executes Siemens-specific initialization.
 func (d *SiemensDriver) Init(ctx context.Context) error {
+	slog.Debug("starting siemens driver initialization sequence")
+
 	// Ping AT to synchronize baud rate
 	for attempt := 0; attempt < 3; attempt++ {
+		slog.Debug("siemens baud synchronization attempt", slog.Int("attempt", attempt+1))
 		resp, err := d.runner.Send("AT", 1*time.Second)
 		if err == nil && resp.OK {
 			break
@@ -42,11 +47,14 @@ func (d *SiemensDriver) Init(ctx context.Context) error {
 
 	for _, cmd := range initCmds {
 		time.Sleep(50 * time.Millisecond)
+		slog.Debug("executing siemens init command", slog.String("cmd", cmd))
 		resp, err := d.runner.Send(cmd, 3*time.Second)
 		if err != nil {
+			slog.Error("siemens init command failed", slog.String("cmd", cmd), slog.Any("error", err))
 			return fmt.Errorf("siemens init command %q failed: %w", cmd, err)
 		}
 		if resp.Error {
+			slog.Error("siemens init command returned error", slog.String("cmd", cmd), slog.Any("lines", resp.Lines))
 			return fmt.Errorf("siemens init command %q returned error: %v", cmd, resp.Lines)
 		}
 	}
@@ -61,19 +69,27 @@ func (d *SiemensDriver) Init(ctx context.Context) error {
 	var cnmiErr error
 	cnmiSuccess := false
 	for _, cnmi := range cnmiCandidates {
+		slog.Debug("testing siemens CNMI configuration", slog.String("cnmi", cnmi))
 		resp, err := d.runner.Send(cnmi, 3*time.Second)
 		if err == nil && !resp.Error {
 			cnmiSuccess = true
+			slog.Debug("siemens CNMI accepted", slog.String("cnmi", cnmi))
 			break
 		}
 		cnmiErr = err
 	}
 	if !cnmiSuccess && cnmiErr != nil {
+		slog.Error("siemens CNMI setup failed", slog.Any("error", cnmiErr))
 		return fmt.Errorf("siemens CNMI setup failed: %w", cnmiErr)
 	}
 
 	// Set default SMS storage to SIM card
 	_, _ = d.runner.Send("AT+CPMS=\"SM\",\"SM\",\"SM\"", 3*time.Second)
+
+	// Check and log SMSC
+	if csca, err := d.runner.Send("AT+CSCA?", 2*time.Second); err == nil && len(csca.Lines) > 0 {
+		slog.Info("siemens SMS center configured", slog.String("smsc", strings.Join(csca.Lines, " ")))
+	}
 
 	return nil
 }
@@ -81,6 +97,7 @@ func (d *SiemensDriver) Init(ctx context.Context) error {
 // Identify returns hardware information about the Siemens modem using ATI and standard registers.
 func (d *SiemensDriver) Identify() (*modem.Info, error) {
 	info := &modem.Info{}
+	slog.Debug("identifying siemens modem via ATI")
 
 	// Siemens ATI returns 3 lines: Manufacturer, Model, Revision
 	resp, err := d.runner.Send("ATI", 2*time.Second)
@@ -118,6 +135,13 @@ func (d *SiemensDriver) Identify() (*modem.Info, error) {
 	info.IMEI = d.queryClean("AT+CGSN")
 	time.Sleep(50 * time.Millisecond)
 	info.IMSI = d.queryClean("AT+CIMI")
+
+	slog.Info("siemens modem identified",
+		slog.String("manufacturer", info.Manufacturer),
+		slog.String("model", info.Model),
+		slog.String("revision", info.Revision),
+		slog.String("imei", info.IMEI),
+	)
 
 	return info, nil
 }

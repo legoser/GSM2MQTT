@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +58,8 @@ func (e *Engine) Send(cmd string, timeout time.Duration) (*Response, error) {
 	e.activeCmd = cleanCmd
 	e.respMu.Unlock()
 
+	slog.Debug("AT command TX", slog.String("cmd", sanitizeAT(cleanCmd)))
+
 	fullCmd := cleanCmd + "\r\n"
 	if _, err := e.port.Write([]byte(fullCmd)); err != nil {
 		e.clearInFlight()
@@ -65,9 +68,19 @@ func (e *Engine) Send(cmd string, timeout time.Duration) (*Response, error) {
 
 	select {
 	case resp := <-respChan:
+		slog.Debug("AT command RX",
+			slog.String("cmd", sanitizeAT(cleanCmd)),
+			slog.Bool("ok", resp.OK),
+			slog.Bool("error", resp.Error),
+			slog.Any("lines", resp.Lines),
+		)
 		return resp, nil
 	case <-time.After(timeout):
 		e.clearInFlight()
+		slog.Warn("AT command timeout",
+			slog.String("cmd", sanitizeAT(cleanCmd)),
+			slog.Duration("timeout", timeout),
+		)
 		return nil, ErrTimeout
 	}
 }
@@ -111,6 +124,8 @@ func (e *Engine) SendPDU(cmdLength int, pduHex string, timeout time.Duration) (*
 
 	defer e.clearInFlight()
 
+	slog.Debug("AT sending PDU header", slog.Int("cmd_length", cmdLength))
+
 	// 1. Send AT+CMGS=<length>\r
 	cmd := fmt.Sprintf("AT+CMGS=%d\r", cmdLength)
 	if _, err := e.port.Write([]byte(cmd)); err != nil {
@@ -120,10 +135,13 @@ func (e *Engine) SendPDU(cmdLength int, pduHex string, timeout time.Duration) (*
 	// 2. Wait for '>' prompt or early error
 	select {
 	case <-promptChan:
+		slog.Debug("AT prompt received ('>')")
 	case resp := <-respChan:
 		return resp, nil
 	case <-time.After(3 * time.Second):
 	}
+
+	slog.Debug("AT PDU payload transmitted", slog.Int("pdu_hex_len", len(pduHex)))
 
 	// 3. Write PDU and Ctrl-Z (\x1A)
 	if _, err := e.port.Write([]byte(pduHex + "\x1A")); err != nil {
@@ -134,11 +152,20 @@ func (e *Engine) SendPDU(cmdLength int, pduHex string, timeout time.Duration) (*
 	// 4. Wait for final response (+CMGS: <ref> and OK)
 	select {
 	case resp := <-respChan:
+		slog.Debug("AT PDU final response", slog.Bool("ok", resp.OK), slog.Bool("error", resp.Error), slog.Any("lines", resp.Lines))
 		return resp, nil
 	case <-time.After(timeout):
 		_, _ = e.port.Write([]byte("\x1B"))
+		slog.Warn("AT PDU transmission timeout", slog.Duration("timeout", timeout))
 		return nil, ErrTimeout
 	}
+}
+
+func sanitizeAT(cmd string) string {
+	if strings.Contains(strings.ToUpper(cmd), "CPIN") {
+		return "AT+CPIN=***"
+	}
+	return cmd
 }
 
 // Start starts the background read loop for handling responses and URCs.

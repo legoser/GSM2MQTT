@@ -4,6 +4,7 @@ package drivers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ func (d *BaseDriver) Init(ctx context.Context) error {
 	}
 
 	for _, cmd := range initCmds {
+		slog.Debug("driver sending init command", slog.String("cmd", cmd))
 		resp, err := d.runner.Send(cmd, 3*time.Second)
 		if err != nil {
 			return fmt.Errorf("init command %q failed: %w", cmd, err)
@@ -73,9 +75,11 @@ const DefaultDialTimeout = 30 * time.Second
 // Dial places an outgoing voice call.
 func (d *BaseDriver) Dial(number string) error {
 	cleanNum := strings.TrimSpace(number)
+	slog.Info("modem dialing voice call", slog.String("number", cleanNum))
 	cmd := fmt.Sprintf("ATD%s;", cleanNum)
 	err := d.execSimple(cmd, DefaultDialTimeout)
 	if err != nil {
+		slog.Error("modem voice call dial failed", slog.String("number", cleanNum), slog.Any("error", err))
 		// Clean up any half-opened voice call on modem
 		_ = d.execSimple("ATH", 3*time.Second)
 	}
@@ -84,16 +88,19 @@ func (d *BaseDriver) Dial(number string) error {
 
 // Answer answers an incoming voice call.
 func (d *BaseDriver) Answer() error {
+	slog.Info("modem answering voice call")
 	return d.execSimple("ATA", 5*time.Second)
 }
 
 // Hangup terminates the current call.
 func (d *BaseDriver) Hangup() error {
+	slog.Info("modem terminating voice call")
 	return d.execSimple("ATH", 5*time.Second)
 }
 
 // SendDTMF sends a single DTMF tone during an active call.
 func (d *BaseDriver) SendDTMF(digit string) error {
+	slog.Debug("modem sending DTMF tone", slog.String("digit", digit))
 	cmd := fmt.Sprintf("AT+VTS=%s", strings.TrimSpace(digit))
 	return d.execSimple(cmd, 3*time.Second)
 }
@@ -147,31 +154,6 @@ func (d *BaseDriver) NetworkRegistration() (*modem.NetworkStatus, error) {
 	return nil, fmt.Errorf("unable to determine network registration")
 }
 
-func parseRegLine(lines []string, prefix string, defaultTech string) *modem.NetworkStatus {
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, prefix) {
-			body := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
-			parts := strings.Split(body, ",")
-			statIdx := 1
-			if len(parts) == 1 {
-				statIdx = 0
-			}
-			if len(parts) > statIdx {
-				stat, err := strconv.Atoi(strings.TrimSpace(parts[statIdx]))
-				if err == nil {
-					return &modem.NetworkStatus{
-						Registered: stat == 1 || stat == 5,
-						Roaming:    stat == 5,
-						Technology: defaultTech,
-					}
-				}
-			}
-		}
-	}
-	return nil
-}
-
 // OperatorName retrieves the current network operator name.
 func (d *BaseDriver) OperatorName() (string, error) {
 	resp, err := d.runner.Send("AT+COPS?", 5*time.Second)
@@ -184,7 +166,9 @@ func (d *BaseDriver) OperatorName() (string, error) {
 			if firstQuote != -1 {
 				secondQuote := strings.Index(line[firstQuote+1:], "\"")
 				if secondQuote != -1 {
-					return line[firstQuote+1 : firstQuote+1+secondQuote], nil
+					op := line[firstQuote+1 : firstQuote+1+secondQuote]
+					slog.Debug("driver queried operator name", slog.String("operator", op))
+					return op, nil
 				}
 			}
 		}
@@ -201,16 +185,19 @@ func (d *BaseDriver) SIMStatus() (modem.SIMState, error) {
 	for _, line := range resp.Lines {
 		if strings.HasPrefix(line, "+CPIN:") {
 			status := strings.TrimSpace(strings.TrimPrefix(line, "+CPIN:"))
+			var simState modem.SIMState
 			switch status {
 			case "READY":
-				return modem.SIMReady, nil
+				simState = modem.SIMReady
 			case "SIM PIN":
-				return modem.SIMPINRequired, nil
+				simState = modem.SIMPINRequired
 			case "SIM PUK":
-				return modem.SIMPUKRequired, nil
+				simState = modem.SIMPUKRequired
 			default:
-				return modem.SIMState(status), nil
+				simState = modem.SIMState(status)
 			}
+			slog.Debug("driver queried SIM status", slog.String("status", string(simState)))
+			return simState, nil
 		}
 	}
 	return modem.SIMError, fmt.Errorf("unknown CPIN response: %v", resp.Lines)
@@ -218,6 +205,7 @@ func (d *BaseDriver) SIMStatus() (modem.SIMState, error) {
 
 // SendUSSD submits a USSD code request.
 func (d *BaseDriver) SendUSSD(code string) (string, error) {
+	slog.Debug("driver submitting USSD code", slog.String("code", code))
 	cmd := fmt.Sprintf("AT+CUSD=1,%q,15", code)
 	resp, err := d.runner.Send(cmd, 10*time.Second)
 	if err != nil {
@@ -231,6 +219,7 @@ func (d *BaseDriver) SendUSSD(code string) (string, error) {
 
 // SendRawAT sends an arbitrary AT command.
 func (d *BaseDriver) SendRawAT(cmd string) (string, error) {
+	slog.Debug("driver sending raw AT command", slog.String("cmd", cmd))
 	resp, err := d.runner.Send(cmd, 10*time.Second)
 	if err != nil {
 		return "", err

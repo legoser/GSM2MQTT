@@ -1,13 +1,16 @@
 package at
 
 import (
+	"log/slog"
 	"strings"
 )
 
 func (e *Engine) dispatchURC(line string) {
+	slog.Debug("AT URC received", slog.String("line", line))
 	select {
 	case e.urcChan <- line:
 	default:
+		slog.Warn("AT URC buffer full, notification dropped", slog.String("line", line))
 	}
 }
 

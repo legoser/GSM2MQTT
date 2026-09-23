@@ -141,10 +141,21 @@ func (s *SMSService) dispatchPDUs(pdus []pdu.PDU, normNumber, text string, reque
 			return nil, fmt.Errorf("failed to send PDU part %d/%d: %w", i+1, len(pdus), err)
 		}
 		refs[i] = ref
+		slog.Debug("PDU part transmitted successfully",
+			slog.String("modem", s.cfg.ModemID),
+			slog.Int("part", i+1),
+			slog.Int("total", len(pdus)),
+			slog.Int("ref", int(ref)),
+		)
 
 		if requestReport && s.tracker != nil {
 			s.tracker.Track(ref, normNumber, text, s.cfg.ModemID)
 		}
 	}
+	slog.Info("SMS sent successfully",
+		slog.String("modem", s.cfg.ModemID),
+		slog.String("target", normNumber),
+		slog.Int("parts", len(pdus)),
+	)
 	return refs, nil
 }

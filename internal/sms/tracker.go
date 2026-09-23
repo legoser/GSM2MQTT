@@ -1,6 +1,7 @@
 package sms
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 
@@ -69,6 +70,7 @@ func (t *Tracker) Track(ref byte, to, text, modemID string) {
 	}
 
 	t.pending[ref] = item
+	slog.Debug("tracking SMS delivery", slog.String("modem", modemID), slog.String("to", to), slog.Int("ref", int(ref)))
 
 	if t.onUpdate != nil {
 		t.onUpdate(DeliveryEvent{
@@ -104,6 +106,8 @@ func (t *Tracker) HandleReport(report *pdu.StatusReport) {
 		}
 	}
 
+	slog.Info("SMS delivery report processed", slog.String("modem", item.modemID), slog.String("to", item.to), slog.Int("ref", int(report.MessageRef)), slog.String("status", string(status)))
+
 	if t.onUpdate != nil {
 		t.onUpdate(DeliveryEvent{
 			MessageRef: report.MessageRef,
@@ -124,6 +128,7 @@ func (t *Tracker) handleTimeout(ref byte) {
 	}
 
 	delete(t.pending, ref)
+	slog.Warn("SMS delivery report expired (timeout)", slog.String("modem", item.modemID), slog.String("to", item.to), slog.Int("ref", int(ref)))
 
 	if t.onUpdate != nil {
 		t.onUpdate(DeliveryEvent{

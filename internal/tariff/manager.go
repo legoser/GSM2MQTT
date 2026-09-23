@@ -1,6 +1,7 @@
 package tariff
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -132,6 +133,7 @@ func (m *Manager) RecordSMS(count int) {
 
 	m.smsDayCount += count
 	m.smsMonthCount += count
+	slog.Debug("tariff SMS usage recorded", slog.String("modem", m.modemID), slog.Int("count", count), slog.Int("day_total", m.smsDayCount), slog.Int("month_total", m.smsMonthCount))
 	m.evaluateSMSLimits()
 	m.persistLocked()
 }
@@ -153,6 +155,7 @@ func (m *Manager) RecordCallMinutes(minutes float64) {
 	defer m.mu.Unlock()
 
 	m.callMinutesUsed += minutes
+	slog.Debug("tariff call usage recorded", slog.String("modem", m.modemID), slog.Float64("minutes", minutes), slog.Float64("month_total", m.callMinutesUsed))
 	m.evaluateCallLimits()
 	m.persistLocked()
 }
@@ -166,6 +169,7 @@ func (m *Manager) RecordData(bytes int64) {
 	defer m.mu.Unlock()
 
 	m.dataBytesUsed += bytes
+	slog.Debug("tariff data usage recorded", slog.String("modem", m.modemID), slog.Int64("bytes", bytes), slog.Int64("month_total", m.dataBytesUsed))
 	m.evaluateDataLimits()
 	m.persistLocked()
 }
@@ -180,6 +184,7 @@ func (m *Manager) UpdateBalance(balance float64, currency string) {
 		m.currency = currency
 	}
 	m.lastBalanceCheck = time.Now()
+	slog.Info("tariff balance updated", slog.String("modem", m.modemID), slog.Float64("balance", balance), slog.String("currency", m.currency))
 	m.evaluateBalanceLimits(balance)
 	m.persistLocked()
 }

@@ -1,6 +1,7 @@
 package security
 
 import (
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +66,7 @@ func (r *RateLimiter) Check(number string) error {
 
 	now := time.Now()
 	if now.Before(r.cooldownUntil) {
+		slog.Warn("sms rate limiter in cooldown", slog.String("number", trimmed), slog.Time("cooldown_until", r.cooldownUntil))
 		return ErrRateLimitCooldown
 	}
 
@@ -73,9 +75,11 @@ func (r *RateLimiter) Check(number string) error {
 		if r.cfg.Cooldown > 0 {
 			r.cooldownUntil = now.Add(r.cfg.Cooldown)
 		}
+		slog.Warn("sms rate limit exceeded", slog.String("number", cleaned), slog.Any("error", err), slog.Duration("cooldown", r.cfg.Cooldown))
 		return err
 	}
 
+	slog.Debug("sms rate limit passed", slog.String("number", cleaned))
 	r.recordSend(now, cleaned)
 	return nil
 }
