@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/metrics"
@@ -123,6 +122,7 @@ func (r *ModemRunner) wireServices(
 		payload := fmt.Sprintf(`{"rssi":%d,"dbm":%d}`, rssi, dbm)
 		_ = r.mqttClient.Publish(r.topics.SignalStrength(), 1, false, []byte(payload))
 	}, func(h ModemHealth) {
+		h.ModemID = r.mCfg.ID
 		r.updateHealth(h)
 		stVal := 0.0
 		if h.Status == "ready" {
@@ -136,87 +136,6 @@ func (r *ModemRunner) wireServices(
 	return smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc
 }
 
-func (r *ModemRunner) subscribeMQTT(
-	
-	smsSvc *SMSService,
-	callSvc *CallService,
-	ussdSvc *USSDService,
-	tariffMgr *tariff.Manager,
-	diagSvc *DiagnosticService,
-	driver modem.Driver,
-) {
-	sanitizer := security.NewSanitizer(r.cfg.Security.AllowRawAT, r.cfg.Security.BlockedATCommands)
-
-	_ = r.mqttClient.Subscribe(r.topics.SMSSend(), 1, func(_ string, payload []byte) {
-		var req SendSMSRequest
-		if err := json.Unmarshal(payload, &req); err == nil {
-			refs, err := smsSvc.Send(context.Background(), req)
-			if err != nil {
-				metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "failed"})
-				slog.Error("sms send failure", slog.String("modem", r.mCfg.ID), slog.Any("error", err))
-				if r.cfg.Tariff.AutoCheckOnError {
-					rep, _ := diagSvc.RunDiagnostic(context.Background(), "sms_send_failure")
-					if rep != nil {
-						dPayload, _ := json.Marshal(rep)
-						_ = r.mqttClient.Publish(r.topics.Diagnostic(), 1, false, dPayload)
-					}
-				}
-			} else {
-				metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "sent"})
-				tariffMgr.RecordSMS(len(refs))
-				st := tariffMgr.Status()
-				stPayload, _ := json.Marshal(st)
-				_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, false, stPayload)
-			}
-		}
-	})
-
-	_ = r.mqttClient.Subscribe(r.topics.CallDial(), 1, func(_ string, payload []byte) {
-		var req struct {
-			Number string `json:"number"`
-		}
-		if err := json.Unmarshal(payload, &req); err == nil && req.Number != "" {
-			_ = callSvc.Dial(context.Background(), req.Number)
-		}
-	})
-
-	_ = r.mqttClient.Subscribe(r.topics.CallHangup(), 1, func(_ string, _ []byte) {
-		_ = callSvc.Hangup(context.Background())
-	})
-
-	_ = r.mqttClient.Subscribe(r.topics.USSDSend(), 1, func(_ string, payload []byte) {
-		raw := strings.TrimSpace(string(payload))
-		code := raw
-		var req struct {
-			Code string `json:"code"`
-		}
-		if err := json.Unmarshal(payload, &req); err == nil && req.Code != "" {
-			code = req.Code
-		}
-		code = strings.Trim(code, "\"")
-		if code != "" {
-			metrics.DefaultRegistry.IncCounter("gsm2mqtt_ussd_requests_total", map[string]string{"modem": r.mCfg.ID})
-			resp, err := ussdSvc.Send(context.Background(), code)
-			if err == nil && resp != nil {
-				r.applyParsedBalance(resp.Message)
-			}
-		}
-	})
-
-	_ = r.mqttClient.Subscribe(r.topics.CommandRaw(), 1, func(_ string, payload []byte) {
-		cmd := strings.TrimSpace(string(payload))
-		if err := sanitizer.Validate(cmd); err != nil {
-			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(fmt.Sprintf("REJECTED: %v", err)))
-			return
-		}
-		out, err := driver.SendRawAT(cmd)
-		if err != nil {
-			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(fmt.Sprintf("ERROR: %v", err)))
-		} else {
-			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(out))
-		}
-	})
-}
 
 func (r *ModemRunner) startBalanceLoop(ctx context.Context) {
 	if !r.cfg.Tariff.Enabled {

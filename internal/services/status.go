@@ -21,6 +21,7 @@ type ModemHealth struct {
 	Operator  string `json:"operator,omitempty"`
 	Network   string `json:"network,omitempty"`
 	SIM       string `json:"sim"`
+	ModemID   string `json:"modem_id,omitempty"`
 }
 
 // StatusService polls modem state and publishes telemetry.

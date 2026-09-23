@@ -43,6 +43,7 @@ type ModemRunner struct {
 	callSvc      *CallService
 	tariffMgr    *tariff.Manager
 	receivedSMS  []ReceivedSMS
+	slotIndex    int
 }
 
 // DefaultCurrency defines standard currency when none is specified.
@@ -62,6 +63,7 @@ func NewModemRunner(
 		mqttClient:   mqttClient,
 		topics:       mqtt.NewTopics(cfg.MQTT.TopicPrefix, mCfg.ID),
 		lastCurrency: DefaultCurrency,
+		slotIndex:    1,
 	}
 	r.loadInbox()
 	return r

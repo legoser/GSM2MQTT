@@ -6,16 +6,12 @@ import (
 	"testing"
 )
 
-func TestBuildSignalDiscovery(t *testing.T) {
-	msg, err := BuildSignalDiscovery("homeassistant", "gsm2mqtt", "siemens_tc35", "Siemens", "TC35")
+func TestBuildGatewayDiscovery(t *testing.T) {
+	msg, err := BuildGatewayDiscovery("homeassistant", "gsm2mqtt", "1.2.0")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if msg == nil {
-		t.Fatal("expected non-nil discovery message")
-	}
-
-	expectedTopic := "homeassistant/sensor/gsm2mqtt_siemens_tc35_signal/config"
+	expectedTopic := "homeassistant/sensor/gsm2mqtt_gateway_status/config"
 	if msg.Topic != expectedTopic {
 		t.Errorf("expected topic %q, got %q", expectedTopic, msg.Topic)
 	}
@@ -25,31 +21,80 @@ func TestBuildSignalDiscovery(t *testing.T) {
 		t.Fatalf("invalid JSON payload: %v", err)
 	}
 
-	if payload["device_class"] != "signal_strength" {
-		t.Errorf("expected device_class 'signal_strength', got %v", payload["device_class"])
+	if payload["unique_id"] != "gsm2mqtt_gateway_status" {
+		t.Errorf("expected unique_id gsm2mqtt_gateway_status, got %v", payload["unique_id"])
 	}
-	if payload["unit_of_measurement"] != "dBm" {
-		t.Errorf("expected unit 'dBm', got %v", payload["unit_of_measurement"])
+
+	devRaw, ok := payload["device"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected device dictionary in gateway discovery")
 	}
-	if payload["value_template"] != "{{ value_json.dbm }}" {
-		t.Errorf("expected value_template '{{ value_json.dbm }}', got %v", payload["value_template"])
+	if devRaw["name"] != "GSM2MQTT Gateway" {
+		t.Errorf("expected device name 'GSM2MQTT Gateway', got %v", devRaw["name"])
 	}
-	expectedStateTopic := "gsm2mqtt/modem/siemens_tc35/signal"
-	if payload["state_topic"] != expectedStateTopic {
-		t.Errorf("expected state_topic %q, got %v", expectedStateTopic, payload["state_topic"])
+	ids, ok := devRaw["identifiers"].([]interface{})
+	if !ok || len(ids) == 0 || ids[0] != "gsm2mqtt_gateway" {
+		t.Errorf("expected identifier 'gsm2mqtt_gateway', got %v", ids)
+	}
+}
+
+func TestBuildSignalDiscovery(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "siemens_tc35",
+		Manufacturer:    "Siemens",
+		Model:           "TC35",
+		SlotIndex:       1,
+	}
+	msg, err := BuildSignalDiscovery(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msg == nil {
+		t.Fatal("expected non-nil discovery message")
+	}
+
+	expectedTopic := "homeassistant/sensor/gsm2mqtt_modem_1_signal/config"
+	if msg.Topic != expectedTopic {
+		t.Errorf("expected topic %q, got %q", expectedTopic, msg.Topic)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatalf("invalid JSON payload: %v", err)
+	}
+
+	if payload["unique_id"] != "gsm2mqtt_modem_1_signal" {
+		t.Errorf("expected unique_id gsm2mqtt_modem_1_signal, got %v", payload["unique_id"])
+	}
+	if payload["object_id"] != "gsm_modem_signal" {
+		t.Errorf("expected object_id gsm_modem_signal, got %v", payload["object_id"])
 	}
 
 	devRaw, ok := payload["device"].(map[string]interface{})
 	if !ok {
 		t.Fatal("expected device dictionary in discovery payload")
 	}
-	if !strings.Contains(devRaw["name"].(string), "Siemens") {
-		t.Errorf("expected device name to mention 'Siemens', got %v", devRaw["name"])
+	if devRaw["name"] != "GSM Modem" {
+		t.Errorf("expected device name 'GSM Modem', got %v", devRaw["name"])
+	}
+	if devRaw["via_device"] != "gsm2mqtt_gateway" {
+		t.Errorf("expected via_device 'gsm2mqtt_gateway', got %v", devRaw["via_device"])
 	}
 }
 
-func TestBuildModemDiscoveries(t *testing.T) {
-	msgs, err := BuildModemDiscoveries("homeassistant", "gsm2mqtt", "neoway_m590", "Undefined", "M590", "RUB")
+func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "neoway_m590",
+		Manufacturer:    "Undefined",
+		Model:           "M590",
+		Currency:        "RUB",
+		SlotIndex:       1,
+	}
+	msgs, err := BuildModemDiscoveries(params)
 	if err != nil {
 		t.Fatalf("BuildModemDiscoveries failed: %v", err)
 	}
@@ -58,16 +103,16 @@ func TestBuildModemDiscoveries(t *testing.T) {
 	}
 
 	expectedIDs := map[string]bool{
-		"gsm2mqtt_neoway_m590_signal":        false,
-		"gsm2mqtt_neoway_m590_balance":       false,
-		"gsm2mqtt_neoway_m590_status":        false,
-		"gsm2mqtt_neoway_m590_operator":      false,
-		"gsm2mqtt_neoway_m590_last_sms":      false,
-		"gsm2mqtt_neoway_m590_ussd_response": false,
-		"gsm2mqtt_neoway_m590_btn_balance":   false,
-		"gsm2mqtt_neoway_m590_btn_hangup":    false,
-		"gsm2mqtt_neoway_m590_incoming_call": false,
-		"gsm2mqtt_neoway_m590_new_sms":       false,
+		"gsm2mqtt_modem_1_signal":        false,
+		"gsm2mqtt_modem_1_balance":       false,
+		"gsm2mqtt_modem_1_status":        false,
+		"gsm2mqtt_modem_1_operator":      false,
+		"gsm2mqtt_modem_1_last_sms":      false,
+		"gsm2mqtt_modem_1_ussd_response": false,
+		"gsm2mqtt_modem_1_btn_balance":   false,
+		"gsm2mqtt_modem_1_btn_hangup":    false,
+		"gsm2mqtt_modem_1_incoming_call": false,
+		"gsm2mqtt_modem_1_new_sms":       false,
 	}
 
 	for _, msg := range msgs {
@@ -93,14 +138,53 @@ func TestBuildModemDiscoveries(t *testing.T) {
 			t.Errorf("expected sanitized manufacturer 'Unknown', got %q", mfg)
 		}
 		devName, _ := dev["name"].(string)
-		if devName != "Unknown M590" {
-			t.Errorf("expected device name 'Unknown M590', got %q", devName)
+		if devName != "GSM Modem" {
+			t.Errorf("expected device name 'GSM Modem', got %q", devName)
+		}
+		viaDev, _ := dev["via_device"].(string)
+		if viaDev != "gsm2mqtt_gateway" {
+			t.Errorf("expected via_device 'gsm2mqtt_gateway', got %q", viaDev)
 		}
 	}
 
 	for id, found := range expectedIDs {
 		if !found {
 			t.Errorf("expected discovery message for %s was not produced", id)
+		}
+	}
+}
+
+func TestBuildModemDiscoveries_OptionB_Slot2(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "siemens_mc35i",
+		Manufacturer:    "SIEMENS",
+		Model:           "MC35i",
+		Currency:        "RUB",
+		SlotIndex:       2,
+	}
+	msgs, err := BuildModemDiscoveries(params)
+	if err != nil {
+		t.Fatalf("BuildModemDiscoveries failed: %v", err)
+	}
+
+	for _, msg := range msgs {
+		var payload map[string]interface{}
+		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+			t.Fatalf("failed to unmarshal discovery payload: %v", err)
+		}
+		uID := payload["unique_id"].(string)
+		if !strings.HasPrefix(uID, "gsm2mqtt_modem_2_") {
+			t.Errorf("expected slot 2 prefix 'gsm2mqtt_modem_2_', got %s", uID)
+		}
+		oID := payload["object_id"].(string)
+		if !strings.HasPrefix(oID, "gsm_modem_2_") {
+			t.Errorf("expected slot 2 object_id prefix 'gsm_modem_2_', got %s", oID)
+		}
+		dev := payload["device"].(map[string]interface{})
+		if dev["name"] != "GSM Modem 2" {
+			t.Errorf("expected device name 'GSM Modem 2', got %v", dev["name"])
 		}
 	}
 }

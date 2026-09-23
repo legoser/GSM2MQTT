@@ -140,6 +140,23 @@ func (r *ModemRunner) createDriver(engine *at.Engine) modem.Driver {
 	}
 }
 
+// SetSlotIndex sets the 1-based modem slot index for Home Assistant auto-discovery.
+func (r *ModemRunner) SetSlotIndex(index int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if index <= 0 {
+		index = 1
+	}
+	r.slotIndex = index
+}
+
+// SlotIndex returns the 1-based modem slot index.
+func (r *ModemRunner) SlotIndex() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.slotIndex
+}
+
 func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 	if !r.cfg.MQTT.Discovery {
 		return
@@ -147,9 +164,11 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 	info, _ := driver.Identify()
 	mfg := ""
 	model := ""
+	sw := ""
 	if info != nil {
 		mfg = info.Manufacturer
 		model = info.Model
+		sw = info.Revision
 	}
 	if mfg == "" || strings.EqualFold(mfg, "undefined") {
 		mfg = "Unknown"
@@ -158,14 +177,20 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 		model = r.mCfg.Type
 	}
 
-	messages, err := mqtt.BuildModemDiscoveries(
-		r.cfg.MQTT.DiscoveryPrefix,
-		r.cfg.MQTT.TopicPrefix,
-		r.mCfg.ID,
-		mfg,
-		model,
-		r.lastCurrency,
-	)
+	if gwMsg, err := mqtt.BuildGatewayDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(gwMsg.Topic, 1, true, gwMsg.Payload)
+	}
+
+	messages, err := mqtt.BuildModemDiscoveries(mqtt.ModemDiscoveryParams{
+		DiscoveryPrefix: r.cfg.MQTT.DiscoveryPrefix,
+		TopicPrefix:     r.cfg.MQTT.TopicPrefix,
+		ModemID:         r.mCfg.ID,
+		Manufacturer:    mfg,
+		Model:           model,
+		SwVersion:       sw,
+		Currency:        r.lastCurrency,
+		SlotIndex:       r.SlotIndex(),
+	})
 	if err == nil && r.mqttClient.IsConnected() {
 		for _, msg := range messages {
 			_ = r.mqttClient.Publish(msg.Topic, 1, true, msg.Payload)

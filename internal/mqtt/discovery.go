@@ -2,7 +2,6 @@ package mqtt
 
 import (
 	"fmt"
-	"strings"
 )
 
 // DiscoveryMessage represents a Home Assistant MQTT Auto Discovery payload.
@@ -17,6 +16,8 @@ type DeviceInfo struct {
 	Name         string   `json:"name"`
 	Manufacturer string   `json:"manufacturer,omitempty"`
 	Model        string   `json:"model,omitempty"`
+	SwVersion    string   `json:"sw_version,omitempty"`
+	ViaDevice    string   `json:"via_device,omitempty"`
 }
 
 // SensorDiscoveryPayload represents Home Assistant MQTT sensor configuration.
@@ -68,51 +69,21 @@ type BinarySensorDiscoveryPayload struct {
 	Device              *DeviceInfo `json:"device"`
 }
 
-func sanitizeDevice(modemID, manufacturer, model string) (cleanMfg, cleanModel, deviceName string) {
-	cleanMfg = strings.TrimSpace(manufacturer)
-	cleanModel = strings.TrimSpace(model)
-
-	if strings.EqualFold(cleanMfg, "undefined") || cleanMfg == "" {
-		cleanMfg = "Unknown"
-	}
-
-	if cleanModel == "" {
-		cleanModel = "Modem"
-	}
-
-	if cleanMfg == "Unknown" && cleanModel == "Modem" {
-		deviceName = fmt.Sprintf("GSM Modem (%s)", modemID)
-	} else {
-		deviceName = fmt.Sprintf("%s %s", cleanMfg, cleanModel)
-	}
-	return cleanMfg, cleanModel, deviceName
-}
-
-func buildDeviceInfo(modemID, manufacturer, model string) *DeviceInfo {
-	cleanMfg, cleanModel, deviceName := sanitizeDevice(modemID, manufacturer, model)
-	return &DeviceInfo{
-		Identifiers:  []string{fmt.Sprintf("gsm2mqtt_%s", modemID)},
-		Name:         deviceName,
-		Manufacturer: cleanMfg,
-		Model:        cleanModel,
-	}
-}
-
 func buildAvailability(topicPrefix string) (string, string, string) {
 	return fmt.Sprintf("%s/status", topicPrefix), "online", "offline"
 }
 
 // BuildSignalDiscovery generates the MQTT Auto-Discovery configuration for GSM signal strength sensor.
-func BuildSignalDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, model string) (*DiscoveryMessage, error) {
-	uniqueID := fmt.Sprintf("gsm2mqtt_%s_signal", modemID)
-	topic := fmt.Sprintf("%s/sensor/%s/config", discoveryPrefix, uniqueID)
-	stateTopic := fmt.Sprintf("%s/modem/%s/signal", topicPrefix, modemID)
-	availTopic, avail, notAvail := buildAvailability(topicPrefix)
+func BuildSignalDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("signal")
+	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/signal", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
 
 	payload := SensorDiscoveryPayload{
 		Name:                "Signal Strength",
 		UniqueID:            uniqueID,
-		ObjectID:            fmt.Sprintf("%s_signal", modemID),
+		ObjectID:            p.EntityObjectID("signal"),
 		StateTopic:          stateTopic,
 		UnitOfMeasurement:   "dBm",
 		DeviceClass:         "signal_strength",
@@ -121,19 +92,20 @@ func BuildSignalDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, m
 		AvailabilityTopic:   availTopic,
 		PayloadAvailable:    avail,
 		PayloadNotAvailable: notAvail,
-		Device:              buildDeviceInfo(modemID, manufacturer, model),
+		Device:              buildDeviceInfo(p),
 	}
 
 	return marshalDiscovery(topic, payload)
 }
 
 // BuildBalanceDiscovery generates discovery for SIM card monetary balance sensor.
-func BuildBalanceDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, model, currency string) (*DiscoveryMessage, error) {
-	uniqueID := fmt.Sprintf("gsm2mqtt_%s_balance", modemID)
-	topic := fmt.Sprintf("%s/sensor/%s/config", discoveryPrefix, uniqueID)
-	stateTopic := fmt.Sprintf("%s/modem/%s/balance", topicPrefix, modemID)
-	availTopic, avail, notAvail := buildAvailability(topicPrefix)
+func BuildBalanceDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("balance")
+	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/balance", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
 
+	currency := p.Currency
 	if currency == "" {
 		currency = "RUB"
 	}
@@ -141,7 +113,7 @@ func BuildBalanceDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, 
 	payload := SensorDiscoveryPayload{
 		Name:                "Balance",
 		UniqueID:            uniqueID,
-		ObjectID:            fmt.Sprintf("%s_balance", modemID),
+		ObjectID:            p.EntityObjectID("balance"),
 		StateTopic:          stateTopic,
 		UnitOfMeasurement:   currency,
 		DeviceClass:         "monetary",
@@ -149,24 +121,25 @@ func BuildBalanceDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, 
 		AvailabilityTopic:   availTopic,
 		PayloadAvailable:    avail,
 		PayloadNotAvailable: notAvail,
-		Device:              buildDeviceInfo(modemID, manufacturer, model),
+		Device:              buildDeviceInfo(p),
 	}
 
 	return marshalDiscovery(topic, payload)
 }
 
 // BuildStatusDiscovery generates discovery for modem operational health status sensor.
-func BuildStatusDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, model string) (*DiscoveryMessage, error) {
-	uniqueID := fmt.Sprintf("gsm2mqtt_%s_status", modemID)
-	topic := fmt.Sprintf("%s/sensor/%s/config", discoveryPrefix, uniqueID)
-	stateTopic := fmt.Sprintf("%s/modem/%s/health", topicPrefix, modemID)
-	availTopic, avail, notAvail := buildAvailability(topicPrefix)
+func BuildStatusDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("status")
+	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/health", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
 
 	payload := SensorDiscoveryPayload{
 		Name:                "Status",
 		UniqueID:            uniqueID,
-		ObjectID:            fmt.Sprintf("%s_status", modemID),
+		ObjectID:            p.EntityObjectID("status"),
 		StateTopic:          stateTopic,
+		JSONAttributesTopic: stateTopic,
 		DeviceClass:         "enum",
 		Options:             []string{"ready", "degraded", "not_ready", "error"},
 		ValueTemplate:       "{{ value_json.status }}",
@@ -174,46 +147,46 @@ func BuildStatusDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, m
 		AvailabilityTopic:   availTopic,
 		PayloadAvailable:    avail,
 		PayloadNotAvailable: notAvail,
-		Device:              buildDeviceInfo(modemID, manufacturer, model),
+		Device:              buildDeviceInfo(p),
 	}
 
 	return marshalDiscovery(topic, payload)
 }
 
 // BuildOperatorDiscovery generates discovery for network operator name sensor.
-func BuildOperatorDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, model string) (*DiscoveryMessage, error) {
-	uniqueID := fmt.Sprintf("gsm2mqtt_%s_operator", modemID)
-	topic := fmt.Sprintf("%s/sensor/%s/config", discoveryPrefix, uniqueID)
-	stateTopic := fmt.Sprintf("%s/modem/%s/health", topicPrefix, modemID)
-	availTopic, avail, notAvail := buildAvailability(topicPrefix)
+func BuildOperatorDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("operator")
+	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/health", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
 
 	payload := SensorDiscoveryPayload{
 		Name:                "Operator",
 		UniqueID:            uniqueID,
-		ObjectID:            fmt.Sprintf("%s_operator", modemID),
+		ObjectID:            p.EntityObjectID("operator"),
 		StateTopic:          stateTopic,
 		ValueTemplate:       "{{ value_json.operator }}",
 		Icon:                "mdi:cellphone-tower",
 		AvailabilityTopic:   availTopic,
 		PayloadAvailable:    avail,
 		PayloadNotAvailable: notAvail,
-		Device:              buildDeviceInfo(modemID, manufacturer, model),
+		Device:              buildDeviceInfo(p),
 	}
 
 	return marshalDiscovery(topic, payload)
 }
 
 // BuildLastSMSDiscovery generates discovery for last incoming SMS sensor.
-func BuildLastSMSDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, model string) (*DiscoveryMessage, error) {
-	uniqueID := fmt.Sprintf("gsm2mqtt_%s_last_sms", modemID)
-	topic := fmt.Sprintf("%s/sensor/%s/config", discoveryPrefix, uniqueID)
-	stateTopic := fmt.Sprintf("%s/modem/%s/sms/received", topicPrefix, modemID)
-	availTopic, avail, notAvail := buildAvailability(topicPrefix)
+func BuildLastSMSDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("last_sms")
+	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/sms/received", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
 
 	payload := SensorDiscoveryPayload{
 		Name:                "Last Incoming SMS",
 		UniqueID:            uniqueID,
-		ObjectID:            fmt.Sprintf("%s_last_sms", modemID),
+		ObjectID:            p.EntityObjectID("last_sms"),
 		StateTopic:          stateTopic,
 		ValueTemplate:       "{{ value_json.text }}",
 		JSONAttributesTopic: stateTopic,
@@ -221,30 +194,30 @@ func BuildLastSMSDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, 
 		AvailabilityTopic:   availTopic,
 		PayloadAvailable:    avail,
 		PayloadNotAvailable: notAvail,
-		Device:              buildDeviceInfo(modemID, manufacturer, model),
+		Device:              buildDeviceInfo(p),
 	}
 
 	return marshalDiscovery(topic, payload)
 }
 
 // BuildUSSDResponseDiscovery generates discovery for USSD response text sensor.
-func BuildUSSDResponseDiscovery(discoveryPrefix, topicPrefix, modemID, manufacturer, model string) (*DiscoveryMessage, error) {
-	uniqueID := fmt.Sprintf("gsm2mqtt_%s_ussd_response", modemID)
-	topic := fmt.Sprintf("%s/sensor/%s/config", discoveryPrefix, uniqueID)
-	stateTopic := fmt.Sprintf("%s/modem/%s/ussd/response", topicPrefix, modemID)
-	availTopic, avail, notAvail := buildAvailability(topicPrefix)
+func BuildUSSDResponseDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("ussd_response")
+	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/ussd/response", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
 
 	payload := SensorDiscoveryPayload{
 		Name:                "USSD Response",
 		UniqueID:            uniqueID,
-		ObjectID:            fmt.Sprintf("%s_ussd_response", modemID),
+		ObjectID:            p.EntityObjectID("ussd_response"),
 		StateTopic:          stateTopic,
 		ValueTemplate:       "{{ value_json.message }}",
 		Icon:                "mdi:phone-incoming",
 		AvailabilityTopic:   availTopic,
 		PayloadAvailable:    avail,
 		PayloadNotAvailable: notAvail,
-		Device:              buildDeviceInfo(modemID, manufacturer, model),
+		Device:              buildDeviceInfo(p),
 	}
 
 	return marshalDiscovery(topic, payload)

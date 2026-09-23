@@ -73,9 +73,10 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 	modemPool := initPool(ctx, cfg, mqttClient, logger)
 	var wg sync.WaitGroup
 
-	for _, mCfg := range cfg.Modems {
+	for i, mCfg := range cfg.Modems {
 		wg.Add(1)
 		runner := services.NewModemRunner(mCfg, cfg, opener, mqttClient)
+		runner.SetSlotIndex(i + 1)
 		manager.Register(runner)
 		if modemPool != nil {
 			modemPool.Register(runner)
