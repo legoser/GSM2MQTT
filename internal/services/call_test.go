@@ -2,8 +2,10 @@ package services
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type mockCaller struct {
@@ -255,3 +257,54 @@ func TestCallService_Status_Busy(t *testing.T) {
 		t.Errorf("expected state 'busy' after BUSY, got %q", st.State)
 	}
 }
+
+func TestCallService_Dial_Normalization(t *testing.T) {
+	mock := &mockCaller{}
+	svc := NewCallService("neoway_m590", mock, nil)
+
+	ctx := context.Background()
+	if err := svc.Dial(ctx, "8 (996) 412-66-70"); err != nil {
+		t.Fatalf("unexpected dial error: %v", err)
+	}
+
+	mock.mu.Lock()
+	dialed := mock.dialed
+	mock.mu.Unlock()
+
+	if dialed != "+79964126670" {
+		t.Errorf("expected normalized dialed number '+79964126670', got %q", dialed)
+	}
+}
+
+func TestCallService_Dial_AutoDropTimeout(t *testing.T) {
+	mock := &mockCaller{}
+	var events []CallEvent
+	svc := NewCallService("neoway_m590", mock, func(event CallEvent) {
+		events = append(events, event)
+	})
+	svc.SetAutoDropTimeout(50 * time.Millisecond)
+
+	ctx := context.Background()
+	if err := svc.Dial(ctx, "+79964126670"); err != nil {
+		t.Fatalf("unexpected dial error: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	mock.mu.Lock()
+	hungup := mock.hungup
+	mock.mu.Unlock()
+
+	if !hungup {
+		t.Errorf("expected auto-hangup after timeout")
+	}
+
+	st := svc.Status()
+	if st.State != CallStateCompleted {
+		t.Errorf("expected state 'completed', got %q", st.State)
+	}
+	if !strings.Contains(st.Message, "timeout") {
+		t.Errorf("expected message to mention timeout, got %q", st.Message)
+	}
+}
+

@@ -166,8 +166,15 @@ func TestServer_RootUI(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
-	if !bytes.Contains(w.Body.Bytes(), []byte("GSM2MQTT")) {
-		t.Errorf("expected HTML title mentioning GSM2MQTT, got: %s", w.Body.String())
+	ct := w.Header().Get("Content-Type")
+	if !bytes.Contains([]byte(ct), []byte("text/html")) {
+		t.Errorf("expected text/html content type, got: %s", ct)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("GSM2MQTT Control Center")) {
+		t.Errorf("expected HTML to contain GSM2MQTT Control Center, got: %s", w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("📟")) {
+		t.Errorf("expected HTML to contain pager emoji, got: %s", w.Body.String())
 	}
 }
 
@@ -303,4 +310,25 @@ func TestServer_GetCallStatus(t *testing.T) {
 		t.Errorf("expected ringing state, got: %v", res.State)
 	}
 }
+
+func TestServer_Favicon(t *testing.T) {
+	mock := &mockModemManager{}
+	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080}, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	ct := w.Header().Get("Content-Type")
+	if !bytes.Contains([]byte(ct), []byte("image/svg+xml")) {
+		t.Errorf("expected image/svg+xml content type, got: %s", ct)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("📟")) {
+		t.Errorf("expected favicon SVG to contain pager emoji")
+	}
+}
+
 

@@ -530,7 +530,7 @@ func TestNeowayDriver_Init(t *testing.T) {
 		t.Fatalf("Neoway Init error: %v", err)
 	}
 
-	expectedCmds := []string{"AT", "ATE0", "AT+CMEE=2", "AT+CMGF=0", "AT+CNMI=2,1,0,1,0", "AT+CLIP=1"}
+	expectedCmds := []string{"AT", "ATE0", "AT+CMEE=2", "AT+CMGF=0", "AT+CNMI=2,1,0,1,0", "AT+CLIP=1", "AT+COLP=1", "AT+CSCS=\"GSM\""}
 	for _, expected := range expectedCmds {
 		found := false
 		for _, cmd := range runner.commands {
@@ -605,6 +605,12 @@ func TestNeowayDriver_SendUSSD_UCS2Hex(t *testing.T) {
 	}
 	if !strings.Contains(resp, "+CUSD: 0,") {
 		t.Errorf("expected CUSD response line, got %q", resp)
+	}
+
+	// Verify that character set was restored to GSM upon exit
+	lastCmd := runner.commands[len(runner.commands)-1]
+	if lastCmd != `AT+CSCS="GSM"` {
+		t.Errorf("expected last command to restore AT+CSCS=\"GSM\", got %q", lastCmd)
 	}
 }
 

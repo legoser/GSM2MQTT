@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GSM2MQTT Control Center</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📟</text></svg>">
+<style>
+:root {
+  --primary: #1976d2;
+  --primary-hover: #1565c0;
+  --bg: #f4f6f9;
+  --card-bg: #ffffff;
+  --text: #212529;
+  --text-muted: #6c757d;
+  --success: #2e7d32;
+  --warning: #ed6c02;
+  --danger: #d32f2f;
+  --border: #e0e0e0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+body { background: var(--bg); color: var(--text); padding: 1.5rem; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+.header h1 { font-size: 1.75rem; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; }
+.gateway-badge { background: #e8f5e9; color: var(--success); padding: 0.35rem 0.75rem; border-radius: 999px; font-weight: 600; font-size: 0.875rem; border: 1px solid #c8e6c9; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem; }
+.card { background: var(--card-bg); border-radius: 10px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border: 1px solid var(--border); }
+.card h2 { font-size: 1.15rem; margin-bottom: 1rem; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; }
+table { width: 100%; border-collapse: collapse; text-align: left; }
+th, td { padding: 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+th { background: #fafafa; color: var(--text-muted); font-weight: 600; }
+.badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; }
+.badge-ready { background: #e8f5e9; color: var(--success); }
+.badge-error { background: #ffebee; color: var(--danger); }
+.badge-warning { background: #fff3e0; color: var(--warning); }
+.sig-bar-container { background: #e0e0e0; border-radius: 4px; height: 8px; width: 80px; display: inline-block; vertical-align: middle; margin-right: 6px; overflow: hidden; }
+.sig-bar { height: 100%; border-radius: 4px; transition: width 0.3s; }
+.form-group { margin-bottom: 0.85rem; }
+label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.3rem; color: var(--text-muted); }
+input, select, textarea { width: 100%; padding: 0.55rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); }
+.btn-group { display: flex; gap: 0.5rem; }
+button { flex: 1; padding: 0.65rem 1rem; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 0.9rem; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: #b71c1c; }
+.btn-secondary { background: #e0e0e0; color: #333; }
+.btn-secondary:hover { background: #d5d5d5; }
+.quick-chips { display: flex; gap: 0.4rem; margin-top: 0.3rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+.chip { padding: 0.2rem 0.5rem; background: #e3f2fd; color: #1565c0; border-radius: 4px; font-size: 0.8rem; cursor: pointer; user-select: none; }
+.chip:hover { background: #bbdefb; }
+.res-box { background: #f8f9fa; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; font-family: monospace; font-size: 0.85rem; margin-top: 0.75rem; min-height: 48px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+.res-box.status-active { background: #e3f2fd; border-color: #90caf9; color: #0d47a1; }
+.res-box.status-success { background: #e8f5e9; border-color: #a5d6a7; color: #1b5e20; }
+.res-box.status-error { background: #ffebee; border-color: #ef9a9a; color: #b71c1c; }
+.inbox-table { max-height: 250px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1><span>📟</span> GSM2MQTT Control Center</h1>
+  <div>
+    <span class="gateway-badge">● Gateway Online</span>
+    <button onclick="refreshAll()" style="margin-left:8px; padding:0.35rem 0.75rem;" class="btn-secondary">↻ Refresh</button>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+  <h2><span>📡</span> Modems Status & Telemetry</h2>
+  <div style="overflow-x: auto;">
+    <table id="modemsTable">
+      <thead>
+        <tr>
+          <th>Modem ID</th><th>Type</th><th>Status</th><th>Signal Strength</th><th>Operator</th><th>SIM Status</th><th>Balance</th>
+        </tr>
+      </thead>
+      <tbody id="modemsBody">
+        <tr><td colspan="7" style="text-align:center; color:#888;">Loading telemetry...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid">
+  <!-- USSD Commands -->
+  <div class="card">
+    <h2><span>⚡</span> USSD Command & Balance</h2>
+    <div class="form-group">
+      <label>Modem:</label><select id="ussdModem"></select>
+    </div>
+    <div class="form-group">
+      <label>USSD Code:</label>
+      <input type="text" id="ussdCode" value="*100#" placeholder="*100#">
+      <div class="quick-chips">
+        <span class="chip" onclick="setUSSD('*100#')">*100# (МТС/Tele2/Мегафон)</span>
+        <span class="chip" onclick="setUSSD('*105#')">*105# (Личный кабинет)</span>
+        <span class="chip" onclick="setUSSD('*102#')">*102# (Билайн)</span>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="sendUSSD()">Execute USSD Query</button>
+    <div id="ussdResult" class="res-box">USSD response will appear here...</div>
+  </div>
+
+  <!-- Voice Calls -->
+  <div class="card">
+    <h2><span>📞</span> Voice Call (Call-Drop Alert)</h2>
+    <div class="form-group">
+      <label>Modem:</label><select id="callModem" onchange="updateCallStatusDisplay()"></select>
+    </div>
+    <div class="form-group">
+      <label>Phone Number:</label>
+      <input type="text" id="callNumber" placeholder="+79001234567">
+    </div>
+    <div class="btn-group">
+      <button class="btn-primary" onclick="dialCall()">Dial Call</button>
+      <button class="btn-danger" onclick="hangupCall()">Hangup</button>
+    </div>
+    <div id="callResult" class="res-box">Call status: Idle</div>
+  </div>
+
+  <!-- Send SMS -->
+  <div class="card">
+    <h2><span>✉️</span> Send SMS</h2>
+    <div class="form-group">
+      <label>Modem:</label><select id="smsModem"></select>
+    </div>
+    <div class="form-group">
+      <label>Phone Number:</label>
+      <input type="text" id="smsTo" placeholder="+79001234567">
+    </div>
+    <div class="form-group">
+      <label>Message Text:</label>
+      <textarea id="smsText" rows="2" placeholder="Test SMS from GSM2MQTT Dashboard"></textarea>
+    </div>
+    <button class="btn-primary" onclick="sendSMS()">Send Message</button>
+    <div id="smsResult" class="res-box">SMS dispatch status...</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+  <details id="atDetails">
+    <summary style="cursor: pointer; font-size: 1.15rem; font-weight: 600; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; user-select: none;">
+      <span>🛠️</span> AT Command Console (Direct Modem Debug)
+    </summary>
+    <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
+      <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <div class="form-group" style="flex: 1; min-width: 200px;">
+          <label>Modem:</label>
+          <select id="atModem"></select>
+        </div>
+        <div class="form-group" style="flex: 3; min-width: 280px;">
+          <label>AT Command:</label>
+          <input type="text" id="atCommand" placeholder="AT+CSQ" onkeydown="if(event.key==='Enter') sendAT()">
+        </div>
+      </div>
+      <div class="quick-chips">
+        <span class="chip" onclick="setAT('AT+CSQ')">AT+CSQ (Signal)</span>
+        <span class="chip" onclick="setAT('AT+CBC')">AT+CBC (Battery/Voltage)</span>
+        <span class="chip" onclick="setAT('AT+CSCS?')">AT+CSCS? (TE Charset)</span>
+        <span class="chip" onclick="setAT('AT+COLP?')">AT+COLP? (Connected Line)</span>
+        <span class="chip" onclick="setAT('AT+CSCA?')">AT+CSCA? (SMS Service Center)</span>
+        <span class="chip" onclick="setAT('ATI')">ATI (Modem Model)</span>
+        <span class="chip" onclick="setAT('AT+GSN')">AT+GSN (IMEI)</span>
+        <span class="chip" onclick="setAT('AT+CPIN?')">AT+CPIN? (SIM PIN)</span>
+      </div>
+      <button class="btn-primary" onclick="sendAT()" style="max-width: 220px;">Send AT Command</button>
+      <div id="atResult" class="res-box" style="min-height: 56px; max-height: 180px;">AT response will appear here...</div>
+    </div>
+  </details>
+</div>
+
+<div class="card">
+  <h2><span>📥</span> Received SMS Inbox</h2>
+  <div class="inbox-table">
+    <table>
+      <thead>
+        <tr><th>Time</th><th>From</th><th>Modem</th><th>Message</th></tr>
+      </thead>
+      <tbody id="inboxBody">
+        <tr><td colspan="4" style="text-align:center; color:#888;">No messages received yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function setUSSD(c) { document.getElementById('ussdCode').value = c; }
+function setAT(c) { document.getElementById('atCommand').value = c; }
+
+function getSignalHTML(rssi, dbm) {
+  let pct = Math.min(100, Math.round((rssi / 31) * 100));
+  let color = pct > 50 ? '#2e7d32' : pct > 25 ? '#ed6c02' : '#d32f2f';
+  return '<div class="sig-bar-container"><div class="sig-bar" style="width:'+pct+'%; background:'+color+'"></div></div>' +
+         '<span>' + rssi + ' / 31 (' + dbm + ' dBm)</span>';
+}
+
+function getBadge(status) {
+  let s = (status || 'unknown').toLowerCase();
+  let cls = s === 'ready' ? 'badge-ready' : s.includes('error') ? 'badge-error' : 'badge-warning';
+  return '<span class="badge ' + cls + '">' + (status || 'OFFLINE') + '</span>';
+}
+
+function updateModemSelects(modems) {
+  ['ussdModem', 'callModem', 'smsModem', 'atModem'].forEach(id => {
+    let sel = document.getElementById(id);
+    let cur = sel.value;
+    sel.innerHTML = modems.map(m => '<option value="' + m.id + '">' + m.id + ' (' + m.type + ')</option>').join('');
+    if (cur) sel.value = cur;
+  });
+}
+
+function fetchModems() {
+  fetch('/api/modems')
+    .then(r => r.json())
+    .then(modems => {
+      updateModemSelects(modems);
+      let body = document.getElementById('modemsBody');
+      if (!modems || modems.length === 0) {
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center;">No modems registered</td></tr>';
+        return;
+      }
+      body.innerHTML = modems.map(m => {
+        let h = m.health || {};
+        return '<tr>' +
+          '<td><strong>' + m.id + '</strong></td>' +
+          '<td>' + m.type + '</td>' +
+          '<td>' + getBadge(h.status) + '</td>' +
+          '<td>' + getSignalHTML(h.signal || 0, h.signal_dbm || 0) + '</td>' +
+          '<td>' + (h.operator || 'Unknown') + '</td>' +
+          '<td>' + (h.sim || 'N/A') + '</td>' +
+          '<td><strong>' + (m.balance !== undefined ? m.balance.toFixed(2) : '0.00') + ' ' + (m.currency || 'RUB') + '</strong></td>' +
+        '</tr>';
+      }).join('');
+    })
+    .catch(e => console.error('failed fetching modems', e));
+}
+
+function fetchInbox() {
+  fetch('/api/sms/inbox')
+    .then(r => r.json())
+    .then(list => {
+      let body = document.getElementById('inboxBody');
+      if (!list || list.length === 0) {
+        body.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#888;">No messages received yet</td></tr>';
+        return;
+      }
+      body.innerHTML = list.map(m => '<tr>' +
+        '<td>' + m.timestamp + '</td>' +
+        '<td><strong>' + m.sender + '</strong></td>' +
+        '<td>' + m.modem_id + '</td>' +
+        '<td>' + m.text + '</td>' +
+      '</tr>').join('');
+    })
+    .catch(e => console.error('failed fetching inbox', e));
+}
+
+function sendUSSD() {
+  let m = document.getElementById('ussdModem').value;
+  let code = document.getElementById('ussdCode').value;
+  let out = document.getElementById('ussdResult');
+  out.className = 'res-box status-active';
+  out.innerText = 'Executing ' + code + '...';
+  fetch('/api/ussd/send', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({modem_id: m, code: code})
+  })
+  .then(r => r.json())
+  .then(d => {
+    out.className = d.success ? 'res-box status-success' : 'res-box status-error';
+    out.innerText = d.message || JSON.stringify(d);
+    fetchModems();
+  })
+  .catch(e => {
+    out.className = 'res-box status-error';
+    out.innerText = 'Error: ' + e;
+  });
+}
+
+function sendAT() {
+  let m = document.getElementById('atModem').value;
+  let cmd = document.getElementById('atCommand').value;
+  let out = document.getElementById('atResult');
+  if (!cmd) return;
+  out.className = 'res-box status-active';
+  out.innerText = 'Sending ' + cmd + '...';
+  fetch('/api/at/send', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({modem_id: m, command: cmd})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      out.className = 'res-box status-success';
+      out.innerText = d.reply !== undefined ? (d.reply || 'OK (Empty response)') : JSON.stringify(d);
+    } else {
+      out.className = 'res-box status-error';
+      out.innerText = 'Error: ' + d.error;
+    }
+  })
+  .catch(e => {
+    out.className = 'res-box status-error';
+    out.innerText = 'Network error: ' + e;
+  });
+}
+
+let callTimer = null;
+function setCallDisplay(st) {
+  let out = document.getElementById('callResult');
+  if (!st) return;
+  let txt = st.message || st.state;
+  if (st.state === 'dialing' || st.state === 'ringing') {
+    out.className = 'res-box status-active';
+  } else if (st.state === 'completed' || st.state === 'answered') {
+    out.className = 'res-box status-success';
+  } else if (st.state === 'busy' || st.state === 'failed') {
+    out.className = 'res-box status-error';
+  } else {
+    out.className = 'res-box';
+  }
+  out.innerText = txt;
+}
+
+function pollCall(m) {
+  if (callTimer) clearInterval(callTimer);
+  callTimer = setInterval(() => {
+    fetch('/api/call/status?modem_id=' + encodeURIComponent(m))
+      .then(r => r.json())
+      .then(st => {
+        if (!st) return;
+        setCallDisplay(st);
+        if (st.state === 'completed' || st.state === 'busy' || st.state === 'failed' || st.state === 'idle') {
+          clearInterval(callTimer);
+          callTimer = null;
+        }
+      }).catch(() => {});
+  }, 1000);
+}
+
+function updateCallStatusDisplay() {
+  let m = document.getElementById('callModem').value;
+  if (!m) return;
+  fetch('/api/call/status?modem_id=' + encodeURIComponent(m))
+    .then(r => r.json())
+    .then(st => { setCallDisplay(st); })
+    .catch(() => {});
+}
+
+function dialCall() {
+  let m = document.getElementById('callModem').value;
+  let num = document.getElementById('callNumber').value;
+  let out = document.getElementById('callResult');
+  out.className = 'res-box status-active';
+  out.innerText = 'Dialing ' + num + '...';
+  fetch('/api/call/dial', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({modem_id: m, number: num})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      out.innerText = 'Ringing ' + num + ' (Call-Drop)...';
+      pollCall(m);
+    } else {
+      out.className = 'res-box status-error';
+      out.innerText = 'Error: ' + d.error;
+    }
+  })
+  .catch(e => {
+    out.className = 'res-box status-error';
+    out.innerText = 'Dial error: ' + e;
+  });
+}
+
+function hangupCall() {
+  if (callTimer) { clearInterval(callTimer); callTimer = null; }
+  let m = document.getElementById('callModem').value;
+  let out = document.getElementById('callResult');
+  fetch('/api/call/hangup', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({modem_id: m})
+  })
+  .then(r => r.json())
+  .then(d => {
+    out.className = 'res-box';
+    out.innerText = 'Call terminated (Idle)';
+  })
+  .catch(e => {
+    out.className = 'res-box status-error';
+    out.innerText = 'Hangup error: ' + e;
+  });
+}
+
+function sendSMS() {
+  let m = document.getElementById('smsModem').value;
+  let to = document.getElementById('smsTo').value;
+  let txt = document.getElementById('smsText').value;
+  let out = document.getElementById('smsResult');
+  out.className = 'res-box status-active';
+  out.innerText = 'Sending SMS...';
+  fetch('/api/sms/send', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({modem_id: m, to: to, text: txt})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      out.className = 'res-box status-success';
+      out.innerText = 'SMS Sent! Ref IDs: ' + JSON.stringify(d.refs);
+    } else {
+      out.className = 'res-box status-error';
+      out.innerText = 'Error: ' + d.error;
+    }
+  })
+  .catch(e => {
+    out.className = 'res-box status-error';
+    out.innerText = 'Send error: ' + e;
+  });
+}
+
+function refreshAll() {
+  fetchModems();
+  fetchInbox();
+}
+
+setInterval(refreshAll, 3000);
+refreshAll();
+</script>
+</body>
+</html>

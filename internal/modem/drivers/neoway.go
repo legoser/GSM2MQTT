@@ -38,6 +38,8 @@ func (d *NeowayDriver) Init(ctx context.Context) error {
 		"AT+CMGF=0",         // PDU mode for SMS
 		"AT+CNMI=2,1,0,1,0", // New message notifications
 		"AT+CLIP=1",         // Enable caller ID presentation
+		"AT+COLP=1",         // Enable connected line presentation for call-drop auto hangup
+		"AT+CSCS=\"GSM\"",   // Standard GSM character set for SMS and voice dialing
 	}
 
 	for _, cmd := range initCmds {
@@ -136,6 +138,12 @@ func (d *NeowayDriver) SendUSSD(code string) (string, error) {
 
 	// Reset any existing session
 	_, _ = d.runner.Send("AT+CUSD=2", 1*time.Second)
+
+	// Ensure TE character set is always restored to GSM upon completion
+	defer func() {
+		slog.Debug("restoring neoway TE character set to GSM")
+		_, _ = d.runner.Send("AT+CSCS=\"GSM\"", 1*time.Second)
+	}()
 
 	// Ensure TE character set is UCS2
 	_, _ = d.runner.Send("AT+CSCS=\"UCS2\"", 1*time.Second)

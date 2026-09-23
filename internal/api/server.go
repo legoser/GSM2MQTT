@@ -100,6 +100,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/call/status", s.handleCallStatus)
 	s.mux.HandleFunc("POST /api/at/send", s.handleSendAT)
 	s.mux.HandleFunc("GET /api/sms/inbox", s.handleGetInbox)
+	s.mux.HandleFunc("GET /favicon.ico", s.handleFavicon)
 	s.mux.HandleFunc("GET /", s.handleRootUI)
 }
 
@@ -250,13 +251,18 @@ func (s *Server) handleGetInbox(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(msgs)
 }
 
+func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	_, _ = w.Write(getFaviconSVG())
+}
+
 func (s *Server) handleRootUI(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(dashboardHTML))
+	_, _ = w.Write(getDashboardHTML())
 }
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
