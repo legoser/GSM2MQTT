@@ -204,8 +204,144 @@ func TestSIMComDriver_Init(t *testing.T) {
 	if err := driver.Init(ctx); err != nil {
 		t.Fatalf("SIMCom Init error: %v", err)
 	}
-	if len(runner.commands) == 0 {
-		t.Fatal("expected commands to be sent")
+
+	expectedCmds := []string{"AT", "AT+CSCLK=0", "AT+CFUN=1", "ATE0", "AT+CMEE=2", "AT+CMGF=0", "AT+CNMI=2,1,0,1,0", "AT+CLIP=1"}
+	for _, expected := range expectedCmds {
+		found := false
+		for _, cmd := range runner.commands {
+			if cmd == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected command %q to be sent during Init, commands sent: %v", expected, runner.commands)
+		}
+	}
+}
+
+func TestSIMComDriver_BatteryStatus(t *testing.T) {
+	tests := []struct {
+		name          string
+		response      *at.Response
+		errExpected   bool
+		expectedBatt  *modem.BatteryInfo
+	}{
+		{
+			name: "valid not charging",
+			response: &at.Response{
+				OK:    true,
+				Lines: []string{"+CBC: 0,85,4120"},
+			},
+			errExpected: false,
+			expectedBatt: &modem.BatteryInfo{
+				Charging:   false,
+				Percent:    85,
+				Millivolts: 4120,
+			},
+		},
+		{
+			name: "valid charging",
+			response: &at.Response{
+				OK:    true,
+				Lines: []string{"+CBC: 1,98,4215"},
+			},
+			errExpected: false,
+			expectedBatt: &modem.BatteryInfo{
+				Charging:   true,
+				Percent:    98,
+				Millivolts: 4215,
+			},
+		},
+		{
+			name: "at command error",
+			response: &at.Response{
+				Error: true,
+				Lines: []string{"+CME ERROR: 58"},
+			},
+			errExpected: true,
+		},
+		{
+			name: "malformed response missing fields",
+			response: &at.Response{
+				OK:    true,
+				Lines: []string{"+CBC: not_a_number"},
+			},
+			errExpected: true,
+		},
+		{
+			name: "empty response lines",
+			response: &at.Response{
+				OK:    true,
+				Lines: []string{},
+			},
+			errExpected: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := newMockATRunner()
+			runner.responses["AT+CBC"] = tc.response
+			driver := NewSIMComDriver(runner)
+
+			batt, err := driver.BatteryStatus()
+			if tc.errExpected {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if batt.Charging != tc.expectedBatt.Charging {
+				t.Errorf("expected Charging %v, got %v", tc.expectedBatt.Charging, batt.Charging)
+			}
+			if batt.Percent != tc.expectedBatt.Percent {
+				t.Errorf("expected Percent %d, got %d", tc.expectedBatt.Percent, batt.Percent)
+			}
+			if batt.Millivolts != tc.expectedBatt.Millivolts {
+				t.Errorf("expected Millivolts %d, got %d", tc.expectedBatt.Millivolts, batt.Millivolts)
+			}
+		})
+	}
+}
+
+func TestSIMComDriver_Audio(t *testing.T) {
+	runner := newMockATRunner()
+	driver := NewSIMComDriver(runner)
+
+	// Valid volume
+	if err := driver.SetVolume(80); err != nil {
+		t.Errorf("unexpected error setting volume: %v", err)
+	}
+	if len(runner.commands) == 0 || runner.commands[len(runner.commands)-1] != "AT+CLVL=80" {
+		t.Errorf("expected AT+CLVL=80 to be sent, got %v", runner.commands)
+	}
+
+	// Invalid volume
+	if err := driver.SetVolume(-1); err == nil {
+		t.Errorf("expected error for negative volume")
+	}
+	if err := driver.SetVolume(101); err == nil {
+		t.Errorf("expected error for volume > 100")
+	}
+
+	// Valid mic gain
+	if err := driver.SetMicGain(10); err != nil {
+		t.Errorf("unexpected error setting mic gain: %v", err)
+	}
+	if len(runner.commands) == 0 || runner.commands[len(runner.commands)-1] != "AT+CMIC=0,10" {
+		t.Errorf("expected AT+CMIC=0,10 to be sent, got %v", runner.commands)
+	}
+
+	// Invalid mic gain
+	if err := driver.SetMicGain(-1); err == nil {
+		t.Errorf("expected error for negative mic gain")
+	}
+	if err := driver.SetMicGain(16); err == nil {
+		t.Errorf("expected error for mic gain > 15")
 	}
 }
 

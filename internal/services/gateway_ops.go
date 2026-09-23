@@ -118,7 +118,7 @@ func (r *ModemRunner) createDriver(engine *at.Engine) modem.Driver {
 	switch strings.ToLower(r.mCfg.Type) {
 	case "siemens":
 		return drivers.NewSiemensDriver(engine)
-	case "simcom":
+	case "simcom", "sim800", "sim800l", "sim800c", "sim900", "sim7000", "sim7600":
 		return drivers.NewSIMComDriver(engine)
 	case "huawei":
 		return drivers.NewHuaweiDriver(engine)
