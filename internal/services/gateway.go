@@ -230,6 +230,16 @@ func (r *ModemRunner) SendUSSD(ctx context.Context, code string) (string, error)
 	return resp.Message, nil
 }
 
+// GetCallStatus returns the current voice call status for this modem runner.
+func (r *ModemRunner) GetCallStatus() CallStatus {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.callSvc != nil {
+		return r.callSvc.Status()
+	}
+	return CallStatus{State: CallStateIdle, Message: "Idle"}
+}
+
 func (r *ModemRunner) updateHealth(h ModemHealth) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

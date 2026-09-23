@@ -78,6 +78,15 @@ func (m *GatewayManager) HangupCall(ctx context.Context, modemID string) error {
 	return runner.Hangup(ctx)
 }
 
+// GetCallStatus returns the real-time call status for the requested modem.
+func (m *GatewayManager) GetCallStatus(modemID string) CallStatus {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return CallStatus{State: CallStateIdle, Message: "Modem not found"}
+	}
+	return runner.GetCallStatus()
+}
+
 // GetReceivedSMS collects all recent received SMS across all modems.
 func (m *GatewayManager) GetReceivedSMS() []ReceivedSMS {
 	m.mu.RLock()

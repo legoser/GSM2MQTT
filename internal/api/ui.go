@@ -7,13 +7,7 @@ const dashboardHTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GSM2MQTT Control Center</title>
 <style>
-:root {
-  --primary: #1976d2; --primary-hover: #1565c0;
-  --bg: #f4f6f9; --card-bg: #ffffff;
-  --text: #212529; --text-muted: #6c757d;
-  --success: #2e7d32; --warning: #ed6c02; --danger: #d32f2f;
-  --border: #e0e0e0;
-}
+:root { --primary: #1976d2; --primary-hover: #1565c0; --bg: #f4f6f9; --card-bg: #ffffff; --text: #212529; --text-muted: #6c757d; --success: #2e7d32; --warning: #ed6c02; --danger: #d32f2f; --border: #e0e0e0; }
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 body { background: var(--bg); color: var(--text); padding: 1.5rem; }
 .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
@@ -26,9 +20,7 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 th, td { padding: 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
 th { background: #fafafa; color: var(--text-muted); font-weight: 600; }
 .badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; }
-.badge-ready { background: #e8f5e9; color: var(--success); }
-.badge-error { background: #ffebee; color: var(--danger); }
-.badge-warning { background: #fff3e0; color: var(--warning); }
+.badge-ready { background: #e8f5e9; color: var(--success); } .badge-error { background: #ffebee; color: var(--danger); } .badge-warning { background: #fff3e0; color: var(--warning); }
 .sig-bar-container { background: #e0e0e0; border-radius: 4px; height: 8px; width: 80px; display: inline-block; vertical-align: middle; margin-right: 6px; overflow: hidden; }
 .sig-bar { height: 100%; border-radius: 4px; transition: width 0.3s; }
 .form-group { margin-bottom: 0.85rem; }
@@ -37,15 +29,9 @@ input, select, textarea { width: 100%; padding: 0.55rem 0.75rem; border: 1px sol
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); }
 .btn-group { display: flex; gap: 0.5rem; }
 button { flex: 1; padding: 0.65rem 1rem; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 0.9rem; }
-.btn-primary { background: var(--primary); color: #fff; }
-.btn-primary:hover { background: var(--primary-hover); }
-.btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { background: #b71c1c; }
-.btn-secondary { background: #e0e0e0; color: #333; }
-.btn-secondary:hover { background: #d5d5d5; }
+.btn-primary { background: var(--primary); color: #fff; } .btn-primary:hover { background: var(--primary-hover); } .btn-danger { background: var(--danger); color: #fff; } .btn-danger:hover { background: #b71c1c; } .btn-secondary { background: #e0e0e0; color: #333; } .btn-secondary:hover { background: #d5d5d5; }
 .quick-chips { display: flex; gap: 0.4rem; margin-top: 0.3rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
-.chip { padding: 0.2rem 0.5rem; background: #e3f2fd; color: #1565c0; border-radius: 4px; font-size: 0.8rem; cursor: pointer; user-select: none; }
-.chip:hover { background: #bbdefb; }
+.chip { padding: 0.2rem 0.5rem; background: #e3f2fd; color: #1565c0; border-radius: 4px; font-size: 0.8rem; cursor: pointer; user-select: none; } .chip:hover { background: #bbdefb; }
 .res-box { background: #f8f9fa; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; font-family: monospace; font-size: 0.85rem; margin-top: 0.75rem; min-height: 48px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
 .inbox-table { max-height: 250px; overflow-y: auto; }
 </style>
@@ -230,6 +216,23 @@ function sendUSSD() {
   .catch(e => { out.innerText = 'Error: ' + e; });
 }
 
+let callTimer = null;
+function pollCall(m) {
+  if (callTimer) clearInterval(callTimer);
+  callTimer = setInterval(() => {
+    fetch('/api/call/status?modem_id=' + encodeURIComponent(m))
+      .then(r => r.json())
+      .then(st => {
+        let out = document.getElementById('callResult');
+        if (!st) return;
+        out.innerText = st.message || st.state;
+        if (st.state === 'completed' || st.state === 'busy' || st.state === 'failed' || st.state === 'idle') {
+          clearInterval(callTimer); callTimer = null;
+        }
+      }).catch(() => {});
+  }, 1000);
+}
+
 function dialCall() {
   let m = document.getElementById('callModem').value;
   let num = document.getElementById('callNumber').value;
@@ -241,11 +244,19 @@ function dialCall() {
     body: JSON.stringify({modem_id: m, number: num})
   })
   .then(r => r.json())
-  .then(d => { out.innerText = d.success ? 'Calling ' + num + ' (Active)' : d.error; })
+  .then(d => {
+    if (d.success) {
+      out.innerText = 'Ringing ' + num + '...';
+      pollCall(m);
+    } else {
+      out.innerText = 'Error: ' + d.error;
+    }
+  })
   .catch(e => { out.innerText = 'Dial error: ' + e; });
 }
 
 function hangupCall() {
+  if (callTimer) { clearInterval(callTimer); callTimer = null; }
   let m = document.getElementById('callModem').value;
   let out = document.getElementById('callResult');
   fetch('/api/call/hangup', {

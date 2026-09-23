@@ -5,9 +5,34 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/modem"
 )
+
+// CallState represents the current lifecycle state of a voice call.
+type CallState string
+
+const (
+	CallStateIdle      CallState = "idle"
+	CallStateDialing   CallState = "dialing"
+	CallStateRinging   CallState = "ringing"
+	CallStateAnswered  CallState = "answered"
+	CallStateCompleted CallState = "completed"
+	CallStateBusy      CallState = "busy"
+	CallStateFailed    CallState = "failed"
+)
+
+// CallStatus contains real-time state and details about ongoing or recent voice call.
+type CallStatus struct {
+	State     CallState `json:"state"`
+	Number    string    `json:"number,omitempty"`
+	Direction string    `json:"direction,omitempty"` // "outgoing" or "incoming"
+	Message   string    `json:"message"`
+	StartedAt time.Time `json:"started_at,omitempty"`
+	EndedAt   time.Time `json:"ended_at,omitempty"`
+}
 
 // CallEvent represents an incoming or state-changed call event.
 type CallEvent struct {
@@ -22,6 +47,8 @@ type CallService struct {
 	caller  modem.Caller
 	modemID string
 	onEvent func(event CallEvent)
+	mu      sync.RWMutex
+	status  CallStatus
 }
 
 // NewCallService creates a new voice call service.
@@ -30,16 +57,49 @@ func NewCallService(modemID string, caller modem.Caller, onEvent func(event Call
 		modemID: modemID,
 		caller:  caller,
 		onEvent: onEvent,
+		status: CallStatus{
+			State:   CallStateIdle,
+			Message: "Idle",
+		},
 	}
 }
 
-// Dial initiates an outgoing voice call.
+// Status returns the current call state and details.
+func (s *CallService) Status() CallStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.status
+}
+
+// Dial initiates an outgoing voice call and updates status to ringing.
 func (s *CallService) Dial(ctx context.Context, number string) error {
+	s.mu.Lock()
+	s.status = CallStatus{
+		State:     CallStateDialing,
+		Number:    number,
+		Direction: "outgoing",
+		Message:   "Dialing " + number + "...",
+		StartedAt: time.Now(),
+	}
+	s.mu.Unlock()
+
 	slog.Info("modem dialing voice call", slog.String("modem", s.modemID), slog.String("number", number))
 	if err := s.caller.Dial(number); err != nil {
+		s.mu.Lock()
+		s.status.State = CallStateFailed
+		s.status.Message = err.Error()
+		s.status.EndedAt = time.Now()
+		s.mu.Unlock()
+
 		slog.Error("modem voice call dial failed", slog.String("modem", s.modemID), slog.String("number", number), slog.Any("error", err))
 		return err
 	}
+
+	s.mu.Lock()
+	s.status.State = CallStateRinging
+	s.status.Message = "Ringing " + number + "..."
+	s.mu.Unlock()
+
 	slog.Info("modem voice call dial command accepted", slog.String("modem", s.modemID), slog.String("number", number))
 	return nil
 }
@@ -51,14 +111,27 @@ func (s *CallService) Answer(ctx context.Context) error {
 		slog.Error("modem voice call answer failed", slog.String("modem", s.modemID), slog.Any("error", err))
 		return err
 	}
+	s.mu.Lock()
+	s.status.State = CallStateAnswered
+	s.status.Message = "Call active"
+	s.mu.Unlock()
+
 	slog.Info("modem voice call answered", slog.String("modem", s.modemID))
 	return nil
 }
 
-// Hangup terminates the current call.
+// Hangup terminates the current call and marks status completed.
 func (s *CallService) Hangup(ctx context.Context) error {
 	slog.Info("modem terminating voice call", slog.String("modem", s.modemID))
-	if err := s.caller.Hangup(); err != nil {
+	err := s.caller.Hangup()
+
+	s.mu.Lock()
+	s.status.State = CallStateCompleted
+	s.status.Message = "Call terminated"
+	s.status.EndedAt = time.Now()
+	s.mu.Unlock()
+
+	if err != nil {
 		slog.Error("modem voice call hangup failed", slog.String("modem", s.modemID), slog.Any("error", err))
 		return err
 	}
@@ -71,37 +144,93 @@ func (s *CallService) SendDTMF(ctx context.Context, digit string) error {
 	return s.caller.SendDTMF(digit)
 }
 
-// HandleURC processes incoming modem URC notifications related to voice calls (+CLIP, +DTMF, NO CARRIER, BUSY).
+// HandleURC processes incoming modem URC notifications related to voice calls.
 func (s *CallService) HandleURC(urc string) {
-	if s.onEvent == nil {
-		return
-	}
-
 	trimmed := strings.TrimSpace(urc)
 	switch {
 	case strings.HasPrefix(trimmed, "+CLIP:"):
 		from := parseClipNumber(trimmed)
+		s.mu.Lock()
+		s.status = CallStatus{
+			State:     CallStateRinging,
+			Number:    from,
+			Direction: "incoming",
+			Message:   "Incoming call from " + from,
+			StartedAt: time.Now(),
+		}
+		s.mu.Unlock()
+
 		slog.Info("modem incoming call ringing", slog.String("modem", s.modemID), slog.String("from", from))
-		s.onEvent(CallEvent{
-			Type:    "incoming",
-			From:    from,
-			ModemID: s.modemID,
-		})
+		if s.onEvent != nil {
+			s.onEvent(CallEvent{
+				Type:    "incoming",
+				From:    from,
+				ModemID: s.modemID,
+			})
+		}
+
+	case strings.HasPrefix(trimmed, "+COLP:"):
+		slog.Info("modem connected line (+COLP) received: call answered, initiating auto-hangup (call-drop)", slog.String("modem", s.modemID))
+		s.mu.Lock()
+		s.status.State = CallStateAnswered
+		s.status.Message = "Answered! Auto-hanging up (call-drop)..."
+		s.mu.Unlock()
+
+		if s.onEvent != nil {
+			s.onEvent(CallEvent{Type: "answered", ModemID: s.modemID})
+		}
+
+		_ = s.caller.Hangup()
+
+		s.mu.Lock()
+		s.status.State = CallStateCompleted
+		s.status.Message = "Call answered and dropped successfully"
+		s.status.EndedAt = time.Now()
+		s.mu.Unlock()
+
+		if s.onEvent != nil {
+			s.onEvent(CallEvent{Type: "ended", ModemID: s.modemID})
+		}
 
 	case strings.HasPrefix(trimmed, "+DTMF:"):
 		digit := parseDTMFDigit(trimmed)
-		s.onEvent(CallEvent{
-			Type:    "dtmf",
-			Digit:   digit,
-			ModemID: s.modemID,
-		})
+		if s.onEvent != nil {
+			s.onEvent(CallEvent{
+				Type:    "dtmf",
+				Digit:   digit,
+				ModemID: s.modemID,
+			})
+		}
 
-	case trimmed == "NO CARRIER" || trimmed == "BUSY":
+	case trimmed == "NO CARRIER":
 		slog.Info("modem call ended event", slog.String("modem", s.modemID), slog.String("event", trimmed))
-		s.onEvent(CallEvent{
-			Type:    "ended",
-			ModemID: s.modemID,
-		})
+		s.mu.Lock()
+		s.status.State = CallStateCompleted
+		s.status.Message = "Call completed (NO CARRIER)"
+		s.status.EndedAt = time.Now()
+		s.mu.Unlock()
+
+		if s.onEvent != nil {
+			s.onEvent(CallEvent{
+				Type:    "ended",
+				ModemID: s.modemID,
+			})
+		}
+
+	case trimmed == "BUSY":
+		slog.Info("modem call busy event", slog.String("modem", s.modemID), slog.String("event", trimmed))
+		s.mu.Lock()
+		s.status.State = CallStateBusy
+		s.status.Message = "Line busy / Rejected (BUSY)"
+		s.status.EndedAt = time.Now()
+		s.mu.Unlock()
+
+		if s.onEvent != nil {
+			s.onEvent(CallEvent{
+				Type:    "ended",
+				ModemID: s.modemID,
+			})
+		}
 	}
 }
 

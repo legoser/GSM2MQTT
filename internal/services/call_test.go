@@ -181,3 +181,77 @@ func TestCallService_EndedURC(t *testing.T) {
 		t.Errorf("expected ModemID 'siemens_tc35', got %q", receivedEvent.ModemID)
 	}
 }
+
+func TestCallService_CallDrop_AutoHangup_On_COLP(t *testing.T) {
+	mock := &mockCaller{}
+	var events []CallEvent
+	svc := NewCallService("neoway_m590", mock, func(event CallEvent) {
+		events = append(events, event)
+	})
+
+	// Initial status must be idle
+	st := svc.Status()
+	if st.State != CallStateIdle {
+		t.Errorf("expected initial state 'idle', got %q", st.State)
+	}
+
+	ctx := context.Background()
+	if err := svc.Dial(ctx, "+79964126670"); err != nil {
+		t.Fatalf("unexpected dial error: %v", err)
+	}
+
+	// Status after dial should be ringing/dialing
+	st = svc.Status()
+	if st.State != CallStateRinging {
+		t.Errorf("expected state 'ringing', got %q", st.State)
+	}
+
+	// Simulate incoming +COLP URC (call answered by recipient)
+	svc.HandleURC(`+COLP: "+79964126670",145`)
+
+	// Should trigger auto-hangup for call-drop
+	mock.mu.Lock()
+	hungup := mock.hungup
+	mock.mu.Unlock()
+
+	if !hungup {
+		t.Errorf("expected auto-hangup on COLP answer")
+	}
+
+	st = svc.Status()
+	if st.State != CallStateCompleted && st.State != CallStateAnswered {
+		t.Errorf("expected state 'completed' or 'answered', got %q", st.State)
+	}
+}
+
+func TestCallService_Status_EndedOnNoCarrier(t *testing.T) {
+	mock := &mockCaller{}
+	svc := NewCallService("neoway_m590", mock, nil)
+
+	ctx := context.Background()
+	_ = svc.Dial(ctx, "+79964126670")
+
+	// URC NO CARRIER arrives
+	svc.HandleURC("NO CARRIER")
+
+	st := svc.Status()
+	if st.State != CallStateCompleted {
+		t.Errorf("expected state 'completed' after NO CARRIER, got %q", st.State)
+	}
+}
+
+func TestCallService_Status_Busy(t *testing.T) {
+	mock := &mockCaller{}
+	svc := NewCallService("neoway_m590", mock, nil)
+
+	ctx := context.Background()
+	_ = svc.Dial(ctx, "+79964126670")
+
+	// URC BUSY arrives
+	svc.HandleURC("BUSY")
+
+	st := svc.Status()
+	if st.State != CallStateBusy {
+		t.Errorf("expected state 'busy' after BUSY, got %q", st.State)
+	}
+}

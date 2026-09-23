@@ -47,6 +47,10 @@ func (m *mockModemManager) HangupCall(ctx context.Context, modemID string) error
 	return nil
 }
 
+func (m *mockModemManager) GetCallStatus(modemID string) CallStatus {
+	return CallStatus{State: services.CallStateRinging, Message: "Ringing"}
+}
+
 func (m *mockModemManager) SendRawAT(ctx context.Context, modemID, cmd string) (string, error) {
 	return "OK", nil
 }
@@ -276,6 +280,27 @@ func TestServer_SendAT(t *testing.T) {
 	}
 	if res["reply"] != "OK" {
 		t.Errorf("expected OK reply, got: %v", res)
+	}
+}
+
+func TestServer_GetCallStatus(t *testing.T) {
+	mock := &mockModemManager{}
+	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080}, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/call/status?modem_id=test_modem", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var res CallStatus
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("json unmarshal failed: %v", err)
+	}
+	if res.State != services.CallStateRinging {
+		t.Errorf("expected ringing state, got: %v", res.State)
 	}
 }
 

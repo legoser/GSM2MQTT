@@ -24,6 +24,9 @@ type ModemSummary = services.ModemSummary
 // ReceivedSMS is an alias to services.ReceivedSMS for API presentation.
 type ReceivedSMS = services.ReceivedSMS
 
+// CallStatus is an alias to services.CallStatus for API presentation.
+type CallStatus = services.CallStatus
+
 // ModemManager is the interface required by the API to query state and dispatch operations.
 type ModemManager interface {
 	GetModems() []ModemSummary
@@ -31,6 +34,7 @@ type ModemManager interface {
 	SendUSSD(ctx context.Context, modemID, code string) (string, error)
 	DialCall(ctx context.Context, modemID, number string) error
 	HangupCall(ctx context.Context, modemID string) error
+	GetCallStatus(modemID string) CallStatus
 	SendRawAT(ctx context.Context, modemID, cmd string) (string, error)
 	GetReceivedSMS() []ReceivedSMS
 }
@@ -93,6 +97,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/ussd/send", s.handleSendUSSD)
 	s.mux.HandleFunc("POST /api/call/dial", s.handleCallDial)
 	s.mux.HandleFunc("POST /api/call/hangup", s.handleCallHangup)
+	s.mux.HandleFunc("GET /api/call/status", s.handleCallStatus)
 	s.mux.HandleFunc("POST /api/at/send", s.handleSendAT)
 	s.mux.HandleFunc("GET /api/sms/inbox", s.handleGetInbox)
 	s.mux.HandleFunc("GET /", s.handleRootUI)
@@ -207,6 +212,13 @@ func (s *Server) handleCallHangup(w http.ResponseWriter, r *http.Request) {
 	slog.Info("api call hangup succeeded", slog.String("modem", req.ModemID))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (s *Server) handleCallStatus(w http.ResponseWriter, r *http.Request) {
+	modemID := r.URL.Query().Get("modem_id")
+	status := s.manager.GetCallStatus(modemID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func (s *Server) handleSendAT(w http.ResponseWriter, r *http.Request) {
