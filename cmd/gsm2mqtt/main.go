@@ -69,6 +69,7 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 
 	opener := transport.NewSerialOpener()
 	manager := services.NewGatewayManager()
+	manager.SetMQTT(mqttClient, &cfg.MQTT)
 	modemPool := initPool(ctx, cfg, mqttClient, logger)
 	var wg sync.WaitGroup
 

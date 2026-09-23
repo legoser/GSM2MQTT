@@ -21,11 +21,11 @@ type IncomingPart struct {
 
 // AssembledSMS represents a complete received SMS message.
 type AssembledSMS struct {
-	From      string
-	Text      string
-	Timestamp time.Time
-	Segments  int
-	Encoding  string
+	From      string    `json:"from"`
+	Text      string    `json:"text"`
+	Timestamp time.Time `json:"timestamp"`
+	Segments  int       `json:"segments"`
+	Encoding  string    `json:"encoding"`
 }
 
 type partialMessage struct {

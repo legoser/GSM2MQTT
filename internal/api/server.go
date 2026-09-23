@@ -27,6 +27,9 @@ type ReceivedSMS = services.ReceivedSMS
 // CallStatus is an alias to services.CallStatus for API presentation.
 type CallStatus = services.CallStatus
 
+// MQTTStatus is an alias to services.MQTTStatus for API presentation.
+type MQTTStatus = services.MQTTStatus
+
 // ModemManager is the interface required by the API to query state and dispatch operations.
 type ModemManager interface {
 	GetModems() []ModemSummary
@@ -37,6 +40,7 @@ type ModemManager interface {
 	GetCallStatus(modemID string) CallStatus
 	SendRawAT(ctx context.Context, modemID, cmd string) (string, error)
 	GetReceivedSMS() []ReceivedSMS
+	GetMQTTStatus() MQTTStatus
 }
 
 // Server provides Web UI and REST API endpoints for GSM2MQTT.
@@ -98,6 +102,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/call/dial", s.handleCallDial)
 	s.mux.HandleFunc("POST /api/call/hangup", s.handleCallHangup)
 	s.mux.HandleFunc("GET /api/call/status", s.handleCallStatus)
+	s.mux.HandleFunc("GET /api/mqtt/status", s.handleMQTTStatus)
 	s.mux.HandleFunc("POST /api/at/send", s.handleSendAT)
 	s.mux.HandleFunc("GET /api/sms/inbox", s.handleGetInbox)
 	s.mux.HandleFunc("GET /favicon.ico", s.handleFavicon)
@@ -218,6 +223,12 @@ func (s *Server) handleCallHangup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCallStatus(w http.ResponseWriter, r *http.Request) {
 	modemID := r.URL.Query().Get("modem_id")
 	status := s.manager.GetCallStatus(modemID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(status)
+}
+
+func (s *Server) handleMQTTStatus(w http.ResponseWriter, r *http.Request) {
+	status := s.manager.GetMQTTStatus()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(status)
 }

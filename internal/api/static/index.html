@@ -66,6 +66,26 @@ button { flex: 1; padding: 0.65rem 1rem; border: none; border-radius: 6px; font-
   </div>
 </div>
 
+<div class="card" style="margin-bottom: 1.25rem; padding: 0.75rem 1.25rem;">
+  <details id="mqttDetails" style="font-size: 0.9rem;">
+    <summary style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none;">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <span style="font-size: 1.15rem;">🔌</span>
+        <strong>MQTT Broker:</strong>
+        <span id="mqttStatusBadge" class="badge badge-warning">CHECKING</span>
+        <span id="mqttBrokerUri" style="font-size: 0.85rem; color: #666; font-family: monospace;">-</span>
+      </div>
+      <span style="color: var(--primary); font-size: 0.8rem; font-weight: 500;">⚙️ Connection Details ▾</span>
+    </summary>
+    <div style="margin-top: 0.75rem; padding-top: 0.6rem; border-top: 1px solid var(--border); font-family: monospace; font-size: 0.82rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem; color: #444;">
+      <div><strong>Client ID:</strong> <span id="mqttClientID">-</span></div>
+      <div><strong>Topic Prefix:</strong> <span id="mqttTopicPrefix">-</span></div>
+      <div><strong>Port:</strong> <span id="mqttPort">-</span></div>
+      <div><strong>Discovery:</strong> <span id="mqttDiscovery">-</span></div>
+    </div>
+  </details>
+</div>
+
 <div class="card" style="margin-bottom: 1.5rem;">
   <h2><span>📡</span> Modems Status & Telemetry</h2>
   <div style="overflow-x: auto;">
@@ -467,9 +487,38 @@ function sendSMS() {
   });
 }
 
+function fetchMQTTStatus() {
+  fetch('/api/mqtt/status')
+    .then(r => r.json())
+    .then(st => {
+      let badge = document.getElementById('mqttStatusBadge');
+      let uri = document.getElementById('mqttBrokerUri');
+      if (st.connected) {
+        badge.className = 'badge badge-ready';
+        badge.innerText = 'CONNECTED';
+      } else {
+        badge.className = 'badge badge-error';
+        badge.innerText = 'DISCONNECTED';
+      }
+      uri.innerText = st.broker || (st.port ? 'port ' + st.port : '-');
+      document.getElementById('mqttClientID').innerText = st.client_id || '-';
+      document.getElementById('mqttTopicPrefix').innerText = st.topic_prefix || '-';
+      document.getElementById('mqttPort').innerText = st.port || '-';
+      document.getElementById('mqttDiscovery').innerText = st.discovery ? ('Enabled (' + (st.discovery_prefix || 'homeassistant') + ')') : 'Disabled';
+    })
+    .catch(e => {
+      let badge = document.getElementById('mqttStatusBadge');
+      if (badge) {
+        badge.className = 'badge badge-error';
+        badge.innerText = 'ERROR';
+      }
+    });
+}
+
 function refreshAll() {
   fetchModems();
   fetchInbox();
+  fetchMQTTStatus();
 }
 
 setInterval(refreshAll, 3000);

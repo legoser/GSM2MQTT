@@ -151,7 +151,7 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 }
 
 func (r *ModemRunner) startStorageCheckLoop(ctx context.Context, smsSvc *SMSService) {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -160,17 +160,14 @@ func (r *ModemRunner) startStorageCheckLoop(ctx context.Context, smsSvc *SMSServ
 			return
 		case <-ticker.C:
 			cap, err := smsSvc.CheckStorageCapacity()
-			if err == nil && cap != nil && cap.Total > 0 {
-				ratio := float64(cap.Used) / float64(cap.Total)
-				if ratio >= 0.8 {
-					slog.Warn("SMS storage capacity high, triggering sync & purge",
-						slog.String("modem", r.mCfg.ID),
-						slog.String("storage", cap.Name),
-						slog.Int("used", cap.Used),
-						slog.Int("total", cap.Total),
-					)
-					_, _ = smsSvc.SyncStoredMessages(ctx, "SM", "ME")
-				}
+			if err == nil && cap != nil && cap.Used > 0 {
+				slog.Info("unprocessed SMS detected in storage, triggering sync & purge",
+					slog.String("modem", r.mCfg.ID),
+					slog.String("storage", cap.Name),
+					slog.Int("used", cap.Used),
+					slog.Int("total", cap.Total),
+				)
+				_, _ = smsSvc.SyncStoredMessages(ctx, "SM", "ME")
 			}
 		}
 	}

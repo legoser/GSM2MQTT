@@ -67,6 +67,16 @@ func (m *mockModemManager) GetReceivedSMS() []ReceivedSMS {
 	return m.inbox
 }
 
+func (m *mockModemManager) GetMQTTStatus() MQTTStatus {
+	return MQTTStatus{
+		Connected:   true,
+		Broker:      "tcp://mosquitto:1883",
+		Port:        1883,
+		ClientID:    "gsm2mqtt-test",
+		TopicPrefix: "gsm2mqtt",
+	}
+}
+
 func TestServer_Health(t *testing.T) {
 	mock := &mockModemManager{}
 	server := NewServer(ServerConfig{Port: 8080}, mock)
@@ -339,6 +349,30 @@ func TestServer_Favicon(t *testing.T) {
 	}
 	if !bytes.Contains(w.Body.Bytes(), []byte("📟")) {
 		t.Errorf("expected favicon SVG to contain pager emoji")
+	}
+}
+
+func TestServer_GetMQTTStatus(t *testing.T) {
+	mock := &mockModemManager{}
+	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080}, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/mqtt/status", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var res MQTTStatus
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("json unmarshal failed: %v", err)
+	}
+	if !res.Connected {
+		t.Error("expected connected true")
+	}
+	if res.Broker != "tcp://mosquitto:1883" {
+		t.Errorf("expected broker tcp://mosquitto:1883, got %s", res.Broker)
 	}
 }
 

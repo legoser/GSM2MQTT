@@ -18,6 +18,9 @@ func (s *SMSService) SetStorageManager(mgr modem.StorageManager) {
 // SyncStoredMessages reads all stored SMS messages from the specified storages (e.g. "SM", "ME"),
 // dispatches them through the assembler, and deletes them from the modem memory.
 func (s *SMSService) SyncStoredMessages(ctx context.Context, storageNames ...string) (int, error) {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+
 	if s.storageMgr == nil {
 		return 0, nil
 	}

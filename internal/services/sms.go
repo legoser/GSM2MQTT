@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
+	"sync"
 
 	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/sms"
@@ -48,9 +48,13 @@ type SMSService struct {
 	filter     NumberFilter
 	limiter    RateLimiter
 	tracker    *sms.Tracker
-	assembler  *sms.Assembler
-	onReceived func(msg *sms.AssembledSMS)
-	storageMgr modem.StorageManager
+	assembler    *sms.Assembler
+	onReceived   func(msg *sms.AssembledSMS)
+	storageMgr   modem.StorageManager
+	syncMu       sync.Mutex
+	urcMu        sync.Mutex
+	expectingCMT bool
+	expectingCDS bool
 }
 
 // NewSMSService constructs a new SMSService orchestrator.
@@ -114,18 +118,6 @@ func (s *SMSService) Send(ctx context.Context, req SendSMSRequest) ([]byte, erro
 	return s.dispatchPDUs(pdus, normNumber, text, requestReport)
 }
 
-// HandleURC processes incoming SMS indications (+CDS, +CMT).
-func (s *SMSService) HandleURC(urc string) {
-	trimmed := strings.TrimSpace(urc)
-
-	switch {
-	case strings.HasPrefix(trimmed, "+CDS:"):
-		s.handleDeliveryReportURC(trimmed)
-	case strings.HasPrefix(trimmed, "+CMT:"):
-		s.handleIncomingSMSURC(trimmed)
-	}
-}
-
 func (s *SMSService) dispatchPDUs(pdus []pdu.PDU, normNumber, text string, requestReport bool) ([]byte, error) {
 	refs := make([]byte, len(pdus))
 	for i, part := range pdus {
@@ -146,57 +138,4 @@ func (s *SMSService) dispatchPDUs(pdus []pdu.PDU, normNumber, text string, reque
 		}
 	}
 	return refs, nil
-}
-
-func (s *SMSService) handleDeliveryReportURC(urc string) {
-	if s.tracker == nil {
-		return
-	}
-	pduHex := extractLastHexToken(urc)
-	if pduHex == "" {
-		return
-	}
-	report, err := pdu.DecodeStatusReport(pduHex)
-	if err == nil {
-		s.tracker.HandleReport(report)
-	}
-}
-
-func (s *SMSService) handleIncomingSMSURC(urc string) {
-	if s.assembler == nil {
-		return
-	}
-	pduHex := extractLastHexToken(urc)
-	if pduHex == "" {
-		return
-	}
-	decoded, err := pdu.DecodeSMS(pduHex)
-	if err != nil {
-		return
-	}
-
-	part := sms.IncomingPart{
-		From:        decoded.From,
-		Text:        decoded.Text,
-		Timestamp:   decoded.Timestamp,
-		IsMultipart: decoded.HasUDH,
-		Reference:   decoded.Reference,
-		PartNumber:  decoded.PartNumber,
-		TotalParts:  decoded.TotalParts,
-		Encoding:    string(decoded.Encoding),
-	}
-
-	assembled, complete := s.assembler.AddPart(part)
-	if complete && s.onReceived != nil {
-		slog.Info("incoming SMS assembled", slog.String("modem", s.cfg.ModemID), slog.String("from", assembled.From), slog.Int("segments", assembled.Segments))
-		s.onReceived(assembled)
-	}
-}
-
-func extractLastHexToken(s string) string {
-	parts := strings.Fields(s)
-	if len(parts) == 0 {
-		return ""
-	}
-	return parts[len(parts)-1]
 }

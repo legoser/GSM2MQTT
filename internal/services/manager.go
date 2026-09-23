@@ -4,13 +4,18 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/legoser/gsm2mqtt/internal/config"
+	"github.com/legoser/gsm2mqtt/internal/mqtt"
 )
 
 // GatewayManager coordinates multiple ModemRunner instances and provides an aggregate facade.
 type GatewayManager struct {
-	mu      sync.RWMutex
-	runners map[string]*ModemRunner
-	order   []string
+	mu         sync.RWMutex
+	runners    map[string]*ModemRunner
+	order      []string
+	mqttClient mqtt.MQTTClient
+	mqttCfg    config.MQTTConfig
 }
 
 // NewGatewayManager creates a new GatewayManager.
@@ -134,4 +139,47 @@ func (m *GatewayManager) findRunner(modemID string) (*ModemRunner, error) {
 		return m.runners[m.order[0]], nil
 	}
 	return nil, fmt.Errorf("no modems available")
+}
+
+// MQTTStatus contains connection state and non-sensitive configuration for the MQTT broker.
+type MQTTStatus struct {
+	Connected       bool   `json:"connected"`
+	Broker          string `json:"broker"`
+	Port            int    `json:"port"`
+	ClientID        string `json:"client_id"`
+	TopicPrefix     string `json:"topic_prefix"`
+	Username        string `json:"username,omitempty"`
+	Discovery       bool   `json:"discovery"`
+	DiscoveryPrefix string `json:"discovery_prefix,omitempty"`
+}
+
+// SetMQTT stores the MQTT client and configuration for reporting.
+func (m *GatewayManager) SetMQTT(client mqtt.MQTTClient, cfg *config.MQTTConfig) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mqttClient = client
+	if cfg != nil {
+		m.mqttCfg = *cfg
+	}
+}
+
+// GetMQTTStatus returns the current connection state and broker configuration.
+func (m *GatewayManager) GetMQTTStatus() MQTTStatus {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	connected := false
+	if m.mqttClient != nil {
+		connected = m.mqttClient.IsConnected()
+	}
+	return MQTTStatus{
+		Connected:       connected,
+		Broker:          m.mqttCfg.Broker,
+		Port:            m.mqttCfg.Port,
+		ClientID:        m.mqttCfg.ClientID,
+		TopicPrefix:     m.mqttCfg.TopicPrefix,
+		Username:        m.mqttCfg.Username,
+		Discovery:       m.mqttCfg.Discovery,
+		DiscoveryPrefix: m.mqttCfg.DiscoveryPrefix,
+	}
 }
