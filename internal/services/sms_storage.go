@@ -43,6 +43,7 @@ func (s *SMSService) SyncStoredMessages(ctx context.Context, storageNames ...str
 		}
 
 		if st != nil && st.Used == 0 {
+			slog.Debug("modem storage is empty", slog.String("storage", storageName))
 			continue
 		}
 
@@ -51,6 +52,7 @@ func (s *SMSService) SyncStoredMessages(ctx context.Context, storageNames ...str
 			slog.Warn("failed to list stored messages", slog.String("storage", storageName), slog.Any("error", err))
 			continue
 		}
+		slog.Debug("retrieved stored messages from modem", slog.String("storage", storageName), slog.Int("count", len(msgs)))
 
 		syncedInStorage := s.processAndPurgeMessages(msgs, storageName)
 		totalSynced += syncedInStorage

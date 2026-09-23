@@ -96,12 +96,14 @@ func (s *SMSService) handleIncomingSMSURC(urc string) {
 	s.urcMu.Lock()
 	s.expectingCMT = true
 	s.urcMu.Unlock()
+	slog.Debug("expecting CMT PDU payload on next URC line", slog.String("modem", s.cfg.ModemID))
 }
 
 func (s *SMSService) decodeAndDispatchPDU(pduHex string) {
 	if s.assembler == nil {
 		return
 	}
+	slog.Debug("decoding incoming SMS PDU", slog.String("modem", s.cfg.ModemID), slog.Int("len", len(pduHex)))
 	decoded, err := pdu.DecodeSMS(pduHex)
 	if err != nil {
 		slog.Warn("failed to decode incoming SMS PDU", slog.String("modem", s.cfg.ModemID), slog.Any("error", err))
@@ -135,6 +137,7 @@ func (s *SMSService) handleDeliveryReportURC(urc string) {
 	s.urcMu.Lock()
 	s.expectingCDS = true
 	s.urcMu.Unlock()
+	slog.Debug("expecting CDS delivery report PDU on next URC line", slog.String("modem", s.cfg.ModemID))
 }
 
 func (s *SMSService) decodeAndDispatchReport(pduHex string) {
