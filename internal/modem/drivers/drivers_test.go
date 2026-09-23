@@ -521,3 +521,72 @@ func TestBaseDriver_DeleteMessage(t *testing.T) {
 	}
 }
 
+func TestNeowayDriver_Init(t *testing.T) {
+	runner := newMockATRunner()
+	driver := NewNeowayDriver(runner)
+
+	ctx := context.Background()
+	if err := driver.Init(ctx); err != nil {
+		t.Fatalf("Neoway Init error: %v", err)
+	}
+
+	expectedCmds := []string{"AT", "ATE0", "AT+CMEE=2", "AT+CMGF=0", "AT+CNMI=2,1,0,1,0", "AT+CLIP=1"}
+	for _, expected := range expectedCmds {
+		found := false
+		for _, cmd := range runner.commands {
+			if cmd == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected command %q during Neoway Init, sent: %v", expected, runner.commands)
+		}
+	}
+}
+
+func TestNeowayDriver_Dial_CallDrop(t *testing.T) {
+	runner := newMockATRunner()
+	driver := NewNeowayDriver(runner)
+
+	err := driver.Dial("+79964126670")
+	if err != nil {
+		t.Fatalf("unexpected dial error: %v", err)
+	}
+
+	foundDial := false
+	for _, cmd := range runner.commands {
+		if cmd == "ATD+79964126670;" {
+			foundDial = true
+			break
+		}
+	}
+	if !foundDial {
+		t.Errorf("expected ATD+79964126670; to be sent, sent: %v", runner.commands)
+	}
+
+	if err := driver.Hangup(); err != nil {
+		t.Fatalf("unexpected hangup error: %v", err)
+	}
+	if len(runner.commands) == 0 || runner.commands[len(runner.commands)-1] != "ATH" {
+		t.Errorf("expected ATH to be sent on hangup, sent: %v", runner.commands)
+	}
+}
+
+func TestNeowayDriver_BatteryStatus(t *testing.T) {
+	runner := newMockATRunner()
+	runner.responses["AT+CBC"] = &at.Response{
+		OK:    true,
+		Lines: []string{"+CBC: 0,90,4050"},
+	}
+	driver := NewNeowayDriver(runner)
+
+	batt, err := driver.BatteryStatus()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if batt.Charging || batt.Percent != 90 || batt.Millivolts != 4050 {
+		t.Errorf("unexpected battery status: %+v", batt)
+	}
+}
+

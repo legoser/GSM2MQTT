@@ -122,6 +122,8 @@ func (r *ModemRunner) createDriver(engine *at.Engine) modem.Driver {
 		return drivers.NewSIMComDriver(engine)
 	case "huawei":
 		return drivers.NewHuaweiDriver(engine)
+	case "neoway", "m590", "m590e", "m580":
+		return drivers.NewNeowayDriver(engine)
 	default:
 		return drivers.NewGenericDriver(engine)
 	}

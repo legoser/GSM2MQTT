@@ -540,4 +540,54 @@ func TestEngine_SIMComURC_DuringInFlight(t *testing.T) {
 	}
 }
 
+func TestEngine_NeowayURC_DuringInFlight(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	// Simulate Neoway startup URC lines arriving while AT+CSQ is running
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		port.FeedResponse("\r\nMODEM:STARTUP\r\n")
+		port.FeedResponse("\r\n+PBREADY\r\n")
+		port.FeedResponse("\r\n+CSQ: 18,0\r\nOK\r\n")
+	}()
+
+	resp, err := engine.Send("AT+CSQ", 1*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.OK {
+		t.Errorf("expected OK")
+	}
+
+	if len(resp.Lines) != 1 || resp.Lines[0] != "+CSQ: 18,0" {
+		t.Errorf("expected lines to contain only [+CSQ: 18,0], got: %v", resp.Lines)
+	}
+
+	select {
+	case urc := <-engine.URC():
+		if urc != "MODEM:STARTUP" {
+			t.Errorf("expected first URC 'MODEM:STARTUP', got: %q", urc)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Errorf("timeout waiting for MODEM:STARTUP URC")
+	}
+
+	select {
+	case urc := <-engine.URC():
+		if urc != "+PBREADY" {
+			t.Errorf("expected second URC '+PBREADY', got: %q", urc)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Errorf("timeout waiting for +PBREADY URC")
+	}
+}
+
 var _ io.ReadWriter = (*mockPort)(nil)

@@ -54,6 +54,8 @@ func isURC(line string) bool {
 		"RDY", "Call Ready", "SMS Ready", "NORMAL POWER DOWN",
 		"UNDER-VOLTAGE WARNNING", "UNDER-VOLTAGE POWER DOWN",
 		"OVER-VOLTAGE WARNNING", "OVER-VOLTAGE POWER DOWN",
+		// Neoway M590 / M590E hardware event lines
+		"MODEM:STARTUP", "+PBREADY", "+ZUSIMR:",
 	}
 	for _, p := range urcPrefixes {
 		if strings.HasPrefix(line, p) {

@@ -14,6 +14,7 @@ const (
 	TypeSIMCom  Type = "simcom"
 	TypeHuawei  Type = "huawei"
 	TypeQuectel Type = "quectel"
+	TypeNeoway  Type = "neoway"
 )
 
 // ATCommander sends an AT command and returns the response string.
@@ -58,6 +59,11 @@ func classifyModem(text string) Type {
 	quectelKeywords := []string{"QUECTEL", "EC25", "EC21", "M95", "BG96", "MC60"}
 	if containsAny(upper, quectelKeywords) {
 		return TypeQuectel
+	}
+
+	neowayKeywords := []string{"NEOWAY", "M590", "M590E", "M580"}
+	if containsAny(upper, neowayKeywords) {
+		return TypeNeoway
 	}
 
 	return TypeGeneric
