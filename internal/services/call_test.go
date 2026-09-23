@@ -370,5 +370,8 @@ func TestCallService_CallDrop_AutoHangup_On_CheckCallState(t *testing.T) {
 	if !strings.Contains(st.Message, "answered") {
 		t.Errorf("expected message to mention answered, got %q", st.Message)
 	}
+	if len(st.Logs) < 2 {
+		t.Errorf("expected at least 2 log entries in call status, got %d", len(st.Logs))
+	}
 }
 

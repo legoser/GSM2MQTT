@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/services"
 )
@@ -48,7 +49,14 @@ func (m *mockModemManager) HangupCall(ctx context.Context, modemID string) error
 }
 
 func (m *mockModemManager) GetCallStatus(modemID string) CallStatus {
-	return CallStatus{State: services.CallStateRinging, Message: "Ringing"}
+	return CallStatus{
+		State:   services.CallStateRinging,
+		Message: "Ringing",
+		Logs: []services.CallLogEntry{
+			{Time: time.Now(), Message: "Dialing..."},
+			{Time: time.Now(), Message: "Ringing..."},
+		},
+	}
 }
 
 func (m *mockModemManager) SendRawAT(ctx context.Context, modemID, cmd string) (string, error) {
@@ -308,6 +316,9 @@ func TestServer_GetCallStatus(t *testing.T) {
 	}
 	if res.State != services.CallStateRinging {
 		t.Errorf("expected ringing state, got: %v", res.State)
+	}
+	if len(res.Logs) != 2 {
+		t.Errorf("expected 2 log entries, got: %d", len(res.Logs))
 	}
 }
 

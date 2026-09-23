@@ -33,14 +33,21 @@ type CallStateChecker interface {
 	CheckCallState() (string, error)
 }
 
+// CallLogEntry records a timestamped lifecycle event in a voice call.
+type CallLogEntry struct {
+	Time    time.Time `json:"time"`
+	Message string    `json:"message"`
+}
+
 // CallStatus contains real-time state and details about ongoing or recent voice call.
 type CallStatus struct {
-	State     CallState `json:"state"`
-	Number    string    `json:"number,omitempty"`
-	Direction string    `json:"direction,omitempty"` // "outgoing" or "incoming"
-	Message   string    `json:"message"`
-	StartedAt time.Time `json:"started_at,omitempty"`
-	EndedAt   time.Time `json:"ended_at,omitempty"`
+	State     CallState      `json:"state"`
+	Number    string         `json:"number,omitempty"`
+	Direction string         `json:"direction,omitempty"` // "outgoing" or "incoming"
+	Message   string         `json:"message"`
+	StartedAt time.Time      `json:"started_at,omitempty"`
+	EndedAt   time.Time      `json:"ended_at,omitempty"`
+	Logs      []CallLogEntry `json:"logs,omitempty"`
 }
 
 // CallEvent represents an incoming or state-changed call event.
@@ -86,6 +93,16 @@ func (s *CallService) SetAutoDropTimeout(d time.Duration) {
 	s.autoDropTimeout = d
 }
 
+func (s *CallService) addLogLocked(msg string) {
+	s.status.Logs = append(s.status.Logs, CallLogEntry{
+		Time:    time.Now(),
+		Message: msg,
+	})
+	if len(s.status.Logs) > 20 {
+		s.status.Logs = s.status.Logs[len(s.status.Logs)-20:]
+	}
+}
+
 func (s *CallService) stopDropTimer() {
 	if s.dropTimer != nil {
 		s.dropTimer.Stop()
@@ -107,6 +124,7 @@ func (s *CallService) onAutoDropTimeout() {
 	s.status.State = CallStateFailed
 	s.status.Message = "Call timed out (no answer)"
 	s.status.EndedAt = time.Now()
+	s.addLogLocked("Call timed out (no answer)")
 	if s.monitorStop != nil {
 		close(s.monitorStop)
 		s.monitorStop = nil
@@ -154,6 +172,9 @@ func (s *CallService) Dial(ctx context.Context, number string) error {
 		Direction: "outgoing",
 		Message:   "Dialing " + clean + "...",
 		StartedAt: time.Now(),
+		Logs: []CallLogEntry{
+			{Time: time.Now(), Message: "Initiating outgoing call to " + clean + "..."},
+		},
 	}
 	s.mu.Unlock()
 
@@ -163,15 +184,23 @@ func (s *CallService) Dial(ctx context.Context, number string) error {
 		s.status.State = CallStateFailed
 		s.status.Message = err.Error()
 		s.status.EndedAt = time.Now()
+		s.addLogLocked("Dial failed: " + err.Error())
 		s.mu.Unlock()
 
 		slog.Error("modem voice call dial failed", slog.String("modem", s.modemID), slog.String("number", clean), slog.Any("error", err))
 		return err
 	}
 
+	s.startDialMonitoring(clean)
+	slog.Info("modem voice call dial command accepted", slog.String("modem", s.modemID), slog.String("number", clean))
+	return nil
+}
+
+func (s *CallService) startDialMonitoring(clean string) {
 	s.mu.Lock()
 	s.status.State = CallStateRinging
 	s.status.Message = "Ringing " + clean + "..."
+	s.addLogLocked("Modem accepted dial command, connecting network...")
 	timeout := s.autoDropTimeout
 	if timeout <= 0 {
 		timeout = DefaultAutoDropTimeout
@@ -188,9 +217,6 @@ func (s *CallService) Dial(ctx context.Context, number string) error {
 	if checker, ok := s.caller.(CallStateChecker); ok {
 		go s.monitorCall(checker, stopCh, interval)
 	}
-
-	slog.Info("modem voice call dial command accepted", slog.String("modem", s.modemID), slog.String("number", clean))
-	return nil
 }
 
 // Answer answers an active incoming call.
@@ -207,6 +233,7 @@ func (s *CallService) Answer(ctx context.Context) error {
 	s.mu.Lock()
 	s.status.State = CallStateAnswered
 	s.status.Message = "Call active"
+	s.addLogLocked("Call answered (active)")
 	s.mu.Unlock()
 
 	slog.Info("modem voice call answered", slog.String("modem", s.modemID))
@@ -221,6 +248,7 @@ func (s *CallService) Hangup(ctx context.Context) error {
 	s.status.State = CallStateCompleted
 	s.status.Message = "Call terminated"
 	s.status.EndedAt = time.Now()
+	s.addLogLocked("Call terminated by user")
 	s.mu.Unlock()
 
 	err := s.caller.Hangup()

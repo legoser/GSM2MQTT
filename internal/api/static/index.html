@@ -117,6 +117,7 @@ button { flex: 1; padding: 0.65rem 1rem; border: none; border-radius: 6px; font-
       <button class="btn-danger" onclick="hangupCall()">Hangup</button>
     </div>
     <div id="callResult" class="res-box">Call status: Idle</div>
+    <div id="callLogs" style="margin-top: 0.5rem; font-family: monospace; font-size: 0.8rem; max-height: 120px; overflow-y: auto; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 0.4rem 0.6rem; display: none;"></div>
   </div>
 
   <!-- Send SMS -->
@@ -208,6 +209,7 @@ function updateModemSelects(modems) {
     sel.innerHTML = modems.map(m => '<option value="' + m.id + '">' + m.id + ' (' + m.type + ')</option>').join('');
     if (cur) sel.value = cur;
   });
+  if (!callTimer) updateCallStatusDisplay();
 }
 
 function fetchModems() {
@@ -306,9 +308,17 @@ function sendAT() {
   });
 }
 
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 let callTimer = null;
+let trailingPolls = 0;
+
 function setCallDisplay(st) {
   let out = document.getElementById('callResult');
+  let logsDiv = document.getElementById('callLogs');
   if (!st) return;
   let txt = st.message || st.state;
   if (st.state === 'dialing' || st.state === 'ringing') {
@@ -321,22 +331,47 @@ function setCallDisplay(st) {
     out.className = 'res-box';
   }
   out.innerText = txt;
+
+  if (logsDiv && st.logs && st.logs.length > 0) {
+    logsDiv.style.display = 'block';
+    logsDiv.innerHTML = st.logs.map(l => {
+      let t = l.time ? new Date(l.time).toLocaleTimeString() : '';
+      let color = '#333';
+      let msg = l.message || '';
+      if (msg.includes('answered') || msg.includes('dropped') || msg.includes('completed')) {
+        color = '#2e7d32';
+      } else if (msg.includes('failed') || msg.includes('busy') || msg.includes('rejected') || msg.includes('timeout') || msg.includes('NO CARRIER')) {
+        color = '#d32f2f';
+      } else if (msg.includes('Ringing') || msg.includes('Dialing') || msg.includes('connecting') || msg.includes('alerting')) {
+        color = '#1976d2';
+      }
+      return '<div style="margin-bottom: 2px; color: ' + color + ';"><span style="color:#888;">[' + t + ']</span> ' + escapeHtml(msg) + '</div>';
+    }).join('');
+    logsDiv.scrollTop = logsDiv.scrollHeight;
+  }
 }
 
 function pollCall(m) {
   if (callTimer) clearInterval(callTimer);
+  trailingPolls = 0;
   callTimer = setInterval(() => {
     fetch('/api/call/status?modem_id=' + encodeURIComponent(m))
       .then(r => r.json())
       .then(st => {
         if (!st) return;
         setCallDisplay(st);
-        if (st.state === 'completed' || st.state === 'busy' || st.state === 'failed' || st.state === 'idle') {
-          clearInterval(callTimer);
-          callTimer = null;
+        let isTerminal = (st.state === 'completed' || st.state === 'busy' || st.state === 'failed' || st.state === 'idle');
+        if (isTerminal) {
+          trailingPolls++;
+          if (trailingPolls >= 3) {
+            clearInterval(callTimer);
+            callTimer = null;
+          }
+        } else {
+          trailingPolls = 0;
         }
       }).catch(() => {});
-  }, 1000);
+  }, 400);
 }
 
 function updateCallStatusDisplay() {
@@ -352,8 +387,14 @@ function dialCall() {
   let m = document.getElementById('callModem').value;
   let num = document.getElementById('callNumber').value;
   let out = document.getElementById('callResult');
+  let logsDiv = document.getElementById('callLogs');
+  if (logsDiv) {
+    logsDiv.style.display = 'block';
+    logsDiv.innerHTML = '<div style="color:#888;">Initiating outgoing call...</div>';
+  }
   out.className = 'res-box status-active';
   out.innerText = 'Dialing ' + num + '...';
+  pollCall(m);
   fetch('/api/call/dial', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -362,16 +403,17 @@ function dialCall() {
   .then(r => r.json())
   .then(d => {
     if (d.success) {
-      out.innerText = 'Ringing ' + num + ' (Call-Drop)...';
-      pollCall(m);
+      updateCallStatusDisplay();
     } else {
       out.className = 'res-box status-error';
       out.innerText = 'Error: ' + d.error;
+      if (callTimer) { clearInterval(callTimer); callTimer = null; }
     }
   })
   .catch(e => {
     out.className = 'res-box status-error';
     out.innerText = 'Dial error: ' + e;
+    if (callTimer) { clearInterval(callTimer); callTimer = null; }
   });
 }
 
@@ -387,13 +429,15 @@ function hangupCall() {
   .then(r => r.json())
   .then(d => {
     out.className = 'res-box';
-    out.innerText = 'Call terminated (Idle)';
+    out.innerText = 'Call terminated (Hangup)';
+    updateCallStatusDisplay();
   })
   .catch(e => {
     out.className = 'res-box status-error';
     out.innerText = 'Hangup error: ' + e;
   });
 }
+
 
 function sendSMS() {
   let m = document.getElementById('smsModem').value;

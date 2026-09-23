@@ -78,9 +78,11 @@ func (s *CallService) handleNoCarrierURC() {
 	if s.status.State == CallStateAnswered {
 		s.status.State = CallStateCompleted
 		s.status.Message = "Call finished"
+		s.addLogLocked("Call finished (NO CARRIER)")
 	} else {
 		s.status.State = CallStateFailed
 		s.status.Message = "Call ended (no answer / disconnected)"
+		s.addLogLocked("Call ended: NO CARRIER (no answer / disconnected)")
 	}
 	s.status.EndedAt = time.Now()
 	s.mu.Unlock()
@@ -100,6 +102,7 @@ func (s *CallService) handleBusyURC() {
 	s.status.State = CallStateBusy
 	s.status.Message = "Line busy / Rejected"
 	s.status.EndedAt = time.Now()
+	s.addLogLocked("Line busy / Call rejected (BUSY)")
 	s.mu.Unlock()
 
 	if s.onEvent != nil {
@@ -138,6 +141,7 @@ func (s *CallService) monitorCall(checker CallStateChecker, stopCh <-chan struct
 				if s.status.State == CallStateDialing {
 					s.status.State = CallStateRinging
 					s.status.Message = "Ringing " + s.status.Number + "..."
+					s.addLogLocked("Remote party is ringing (alerting)...")
 				}
 				s.mu.Unlock()
 			case "answered":
@@ -156,6 +160,7 @@ func (s *CallService) handleCallAnsweredDrop() {
 	s.stopDropTimer()
 	s.status.State = CallStateAnswered
 	s.status.Message = "Answered! Auto-hanging up (call-drop)..."
+	s.addLogLocked("Call answered by recipient! Initiating auto-hangup (call-drop)...")
 	s.mu.Unlock()
 
 	if s.onEvent != nil {
@@ -168,6 +173,7 @@ func (s *CallService) handleCallAnsweredDrop() {
 	s.status.State = CallStateCompleted
 	s.status.Message = "Call answered and dropped successfully"
 	s.status.EndedAt = time.Now()
+	s.addLogLocked("Call dropped successfully (call completed)")
 	s.mu.Unlock()
 
 	if s.onEvent != nil {
