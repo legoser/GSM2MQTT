@@ -161,22 +161,25 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildModemDiscoveries failed: %v", err)
 	}
-	if len(msgs) != 11 {
-		t.Fatalf("expected 11 discovery messages, got %d", len(msgs))
+	if len(msgs) != 14 {
+		t.Fatalf("expected 14 discovery messages, got %d", len(msgs))
 	}
 
 	expectedIDs := map[string]bool{
-		"gsm2mqtt_modem_1_signal":        false,
-		"gsm2mqtt_modem_1_balance":       false,
-		"gsm2mqtt_modem_1_status":        false,
-		"gsm2mqtt_modem_1_operator":      false,
-		"gsm2mqtt_modem_1_last_sms":      false,
-		"gsm2mqtt_modem_1_ussd_response": false,
-		"gsm2mqtt_modem_1_btn_balance":   false,
-		"gsm2mqtt_modem_1_btn_hangup":    false,
-		"gsm2mqtt_modem_1_incoming_call": false,
-		"gsm2mqtt_modem_1_new_sms":       false,
-		"gsm2mqtt_modem_1_notify":        false,
+		"gsm2mqtt_modem_1_signal":                 false,
+		"gsm2mqtt_modem_1_balance":                false,
+		"gsm2mqtt_modem_1_status":                 false,
+		"gsm2mqtt_modem_1_operator":               false,
+		"gsm2mqtt_modem_1_last_sms":               false,
+		"gsm2mqtt_modem_1_ussd_response":          false,
+		"gsm2mqtt_modem_1_btn_balance":            false,
+		"gsm2mqtt_modem_1_btn_hangup":             false,
+		"gsm2mqtt_modem_1_incoming_call":          false,
+		"gsm2mqtt_modem_1_new_sms":                false,
+		"gsm2mqtt_modem_1_notify":                 false,
+		"gsm2mqtt_modem_1_sms_remaining":          false,
+		"gsm2mqtt_modem_1_call_minutes_remaining": false,
+		"gsm2mqtt_modem_1_btn_tariff_reset":       false,
 	}
 
 	for _, msg := range msgs {

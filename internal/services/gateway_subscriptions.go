@@ -26,6 +26,7 @@ func (r *ModemRunner) subscribeMQTT(
 	r.subscribeCall(callSvc)
 	r.subscribeUSSD(ussdSvc)
 	r.subscribeRawAT(driver, sanitizer)
+	r.subscribeTariff(tariffMgr)
 }
 
 func (r *ModemRunner) subscribeSMS(
@@ -201,4 +202,72 @@ func (r *ModemRunner) subscribeRawAT(driver modem.Driver, sanitizer *security.Sa
 	if r.SlotIndex() == 1 {
 		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/command/raw", r.cfg.MQTT.TopicPrefix), 1, handler)
 	}
+}
+
+func (r *ModemRunner) subscribeTariff(tariffMgr *tariff.Manager) {
+	if tariffMgr == nil {
+		return
+	}
+
+	setHandler := func(_ string, payload []byte) {
+		var req struct {
+			SMSLimit         *int     `json:"sms_limit"`
+			CallMinutesLimit *float64 `json:"call_minutes_limit"`
+			ResetDayOfMonth  *int     `json:"reset_day_of_month"`
+			MinBalanceAlert  *float64 `json:"min_balance_alert"`
+			BalanceUSSD      *string  `json:"balance_ussd"`
+			OperatorPreset   *string  `json:"operator_preset"`
+		}
+		if err := json.Unmarshal(payload, &req); err != nil {
+			slog.Warn("invalid tariff config json received via MQTT", slog.String("modem", r.mCfg.ID), slog.Any("error", err))
+			return
+		}
+		current := tariffMgr.GetConfig()
+		if req.SMSLimit != nil {
+			current.SMSLimit = *req.SMSLimit
+		}
+		if req.CallMinutesLimit != nil {
+			current.CallMinutesLimit = *req.CallMinutesLimit
+		}
+		if req.ResetDayOfMonth != nil {
+			current.ResetDayOfMonth = *req.ResetDayOfMonth
+		}
+		if req.MinBalanceAlert != nil {
+			current.MinBalanceAlert = *req.MinBalanceAlert
+		}
+		if req.BalanceUSSD != nil {
+			current.BalanceUSSD = *req.BalanceUSSD
+		}
+		if req.OperatorPreset != nil {
+			current.OperatorPreset = *req.OperatorPreset
+		}
+		tariffMgr.UpdateConfig(current)
+		r.publishAccountingStatus(tariffMgr)
+	}
+
+	resetHandler := func(_ string, _ []byte) {
+		slog.Info("tariff quota reset requested via MQTT", slog.String("modem", r.mCfg.ID))
+		tariffMgr.ResetQuotas()
+		r.publishAccountingStatus(tariffMgr)
+	}
+
+	_ = r.mqttClient.Subscribe(r.topics.TariffSet(), 1, setHandler)
+	_ = r.mqttClient.Subscribe(r.topics.TariffReset(), 1, resetHandler)
+	if r.SlotIndex() == 1 {
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/tariff/set", r.cfg.MQTT.TopicPrefix), 1, setHandler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/tariff/reset", r.cfg.MQTT.TopicPrefix), 1, resetHandler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/tariff/set", r.cfg.MQTT.TopicPrefix), 1, setHandler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/tariff/reset", r.cfg.MQTT.TopicPrefix), 1, resetHandler)
+	}
+}
+
+func (r *ModemRunner) publishAccountingStatus(tariffMgr *tariff.Manager) {
+	if tariffMgr == nil || r.mqttClient == nil || !r.mqttClient.IsConnected() {
+		return
+	}
+	st := tariffMgr.Status()
+	metrics.DefaultRegistry.SetGauge("gsm2mqtt_tariff_sms_used", map[string]string{"modem": r.mCfg.ID}, float64(st.SMSMonthCount))
+	metrics.DefaultRegistry.SetGauge("gsm2mqtt_tariff_sms_limit", map[string]string{"modem": r.mCfg.ID}, float64(st.SMSLimit))
+	stPayload, _ := json.Marshal(st)
+	_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, true, stPayload)
 }

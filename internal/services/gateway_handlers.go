@@ -138,20 +138,22 @@ func (r *ModemRunner) wireServices(
 
 
 func (r *ModemRunner) startBalanceLoop(ctx context.Context) {
-	if !r.cfg.Tariff.Enabled {
+	if !r.cfg.Tariff.Enabled || r.cfg.Tariff.CheckInterval <= 0 {
+		slog.Info("periodic balance checking is disabled", slog.String("modem", r.mCfg.ID))
 		return
 	}
 
 	interval := r.cfg.Tariff.CheckInterval
-	if interval <= 0 {
-		interval = 24 * time.Hour
-	}
-
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Initial balance check
-	r.checkBalance(ctx)
+	// Initial balance check only if balance was never queried
+	r.mu.RLock()
+	hasBalance := r.lastBalance != 0
+	r.mu.RUnlock()
+	if !hasBalance {
+		r.checkBalance(ctx)
+	}
 
 	for {
 		select {
@@ -165,9 +167,13 @@ func (r *ModemRunner) startBalanceLoop(ctx context.Context) {
 
 func (r *ModemRunner) checkBalance(ctx context.Context) {
 	r.mu.Lock()
-	if !r.lastBalanceCheck.IsZero() && time.Since(r.lastBalanceCheck) < 1*time.Hour {
+	minInterval := 1 * time.Hour
+	if r.cfg.Tariff.CheckInterval > minInterval {
+		minInterval = r.cfg.Tariff.CheckInterval
+	}
+	if !r.lastBalanceCheck.IsZero() && time.Since(r.lastBalanceCheck) < minInterval {
 		r.mu.Unlock()
-		slog.Debug("automatic balance check throttled (min 1 hour between checks)", slog.String("modem", r.mCfg.ID))
+		slog.Debug("automatic balance check throttled", slog.String("modem", r.mCfg.ID))
 		return
 	}
 	r.lastBalanceCheck = time.Now()

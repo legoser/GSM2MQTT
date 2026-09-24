@@ -10,15 +10,19 @@ import (
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/services"
+	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
 
 type mockModemManager struct {
-	modems   []ModemSummary
-	sentSMS  map[string]string
-	sentUSSD string
-	dialNum  string
-	hangup   bool
-	inbox    []ReceivedSMS
+	modems       []ModemSummary
+	sentSMS      map[string]string
+	sentUSSD     string
+	dialNum      string
+	hangup       bool
+	inbox        []ReceivedSMS
+	tariffStatus *tariff.UsageStatus
+	tariffConfig tariff.Config
+	tariffReset  bool
 }
 
 func (m *mockModemManager) GetModems() []ModemSummary {
@@ -75,6 +79,29 @@ func (m *mockModemManager) GetMQTTStatus() MQTTStatus {
 		ClientID:    "gsm2mqtt-test",
 		TopicPrefix: "gsm2mqtt",
 	}
+}
+
+func (m *mockModemManager) UpdateTariffConfig(modemID string, cfg tariff.Config) error {
+	m.tariffConfig = cfg
+	return nil
+}
+
+func (m *mockModemManager) ResetTariffQuotas(modemID string) error {
+	m.tariffReset = true
+	return nil
+}
+
+func (m *mockModemManager) GetTariffStatus(modemID string) (*tariff.UsageStatus, error) {
+	if m.tariffStatus != nil {
+		return m.tariffStatus, nil
+	}
+	return &tariff.UsageStatus{
+		Balance:       123.45,
+		Currency:      "RUB",
+		SMSMonthCount: 15,
+		SMSLimit:      100,
+		SMSRemaining:  85,
+	}, nil
 }
 
 func TestServer_Health(t *testing.T) {
@@ -373,6 +400,64 @@ func TestServer_GetMQTTStatus(t *testing.T) {
 	}
 	if res.Broker != "tcp://mosquitto:1883" {
 		t.Errorf("expected broker tcp://mosquitto:1883, got %s", res.Broker)
+	}
+}
+
+func TestServer_TariffStatus(t *testing.T) {
+	mock := &mockModemManager{}
+	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080}, mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tariff/status?modem_id=modem1", nil)
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var res tariff.UsageStatus
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to unmarshal tariff status: %v", err)
+	}
+	if res.SMSRemaining != 85 || res.SMSLimit != 100 {
+		t.Errorf("unexpected tariff status response: %+v", res)
+	}
+}
+
+func TestServer_TariffConfig(t *testing.T) {
+	mock := &mockModemManager{}
+	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080}, mock)
+
+	smsLimit := 250
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"modem_id":  "modem1",
+		"sms_limit": smsLimit,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/tariff/config", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if mock.tariffConfig.SMSLimit != 250 {
+		t.Errorf("expected SMSLimit 250, got %d", mock.tariffConfig.SMSLimit)
+	}
+}
+
+func TestServer_TariffReset(t *testing.T) {
+	mock := &mockModemManager{}
+	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080}, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tariff/reset", bytes.NewReader([]byte(`{"modem_id":"modem1"}`)))
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !mock.tariffReset {
+		t.Errorf("expected tariffReset to be true")
 	}
 }
 

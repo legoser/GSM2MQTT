@@ -8,6 +8,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/config"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/security"
+	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
 
 // GatewayManager coordinates multiple ModemRunner instances and provides an aggregate facade.
@@ -124,6 +125,33 @@ func (m *GatewayManager) SendRawAT(ctx context.Context, modemID, cmd string) (st
 		return "", err
 	}
 	return runner.SendRawAT(ctx, cmd)
+}
+
+// UpdateTariffConfig updates tariff settings on the requested (or first available) modem.
+func (m *GatewayManager) UpdateTariffConfig(modemID string, cfg tariff.Config) error {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return err
+	}
+	return runner.UpdateTariffConfig(cfg)
+}
+
+// ResetTariffQuotas resets monthly quota counters on the requested (or first available) modem.
+func (m *GatewayManager) ResetTariffQuotas(modemID string) error {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return err
+	}
+	return runner.ResetTariffQuotas()
+}
+
+// GetTariffStatus returns current tariff usage statistics on the requested (or first available) modem.
+func (m *GatewayManager) GetTariffStatus(modemID string) (*tariff.UsageStatus, error) {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return nil, err
+	}
+	return runner.GetTariffStatus()
 }
 
 func (m *GatewayManager) findRunner(modemID string) (*ModemRunner, error) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/legoser/gsm2mqtt/internal/metrics"
 	"github.com/legoser/gsm2mqtt/internal/services"
+	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
 
 // ServerConfig configures the embedded HTTP Web and REST server.
@@ -41,6 +42,9 @@ type ModemManager interface {
 	SendRawAT(ctx context.Context, modemID, cmd string) (string, error)
 	GetReceivedSMS() []ReceivedSMS
 	GetMQTTStatus() MQTTStatus
+	UpdateTariffConfig(modemID string, cfg tariff.Config) error
+	ResetTariffQuotas(modemID string) error
+	GetTariffStatus(modemID string) (*tariff.UsageStatus, error)
 }
 
 // Server provides Web UI and REST API endpoints for GSM2MQTT.
@@ -105,6 +109,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/mqtt/status", s.handleMQTTStatus)
 	s.mux.HandleFunc("POST /api/at/send", s.handleSendAT)
 	s.mux.HandleFunc("GET /api/sms/inbox", s.handleGetInbox)
+	s.mux.HandleFunc("GET /api/tariff/status", s.handleTariffStatus)
+	s.mux.HandleFunc("POST /api/tariff/config", s.handleTariffConfig)
+	s.mux.HandleFunc("POST /api/tariff/reset", s.handleTariffReset)
 	s.mux.HandleFunc("GET /favicon.ico", s.handleFavicon)
 	s.mux.HandleFunc("GET /", s.handleRootUI)
 }

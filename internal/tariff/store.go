@@ -23,6 +23,12 @@ type State struct {
 	LastBalanceCheck      time.Time `json:"last_balance_check,omitempty"`
 	LastDailyResetDate    string    `json:"last_daily_reset_date,omitempty"`
 	LastMonthlyResetMonth string    `json:"last_monthly_reset_month,omitempty"`
+	SMSLimit              int       `json:"sms_limit,omitempty"`
+	CallMinutesLimit      float64   `json:"call_minutes_limit,omitempty"`
+	ResetDayOfMonth       int       `json:"reset_day_of_month,omitempty"`
+	MinBalanceAlert       float64   `json:"min_balance_alert,omitempty"`
+	BalanceUSSD           string    `json:"balance_ussd,omitempty"`
+	OperatorPreset        string    `json:"operator_preset,omitempty"`
 }
 
 // Store persists and loads tariff state.

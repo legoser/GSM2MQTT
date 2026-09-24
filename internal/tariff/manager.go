@@ -60,67 +60,48 @@ func (m *Manager) SetStore(store Store) {
 	m.restoreFromStore()
 }
 
-func (m *Manager) restoreFromStore() {
-	if m.store == nil {
-		return
-	}
-	state, err := m.store.Load(m.modemID)
-	if err != nil || state == nil {
-		return
-	}
+// UpdateConfig dynamically modifies tariff limits and parameters, persisting them.
+func (m *Manager) UpdateConfig(newCfg Config) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	today := time.Now().UTC().Format("2006-01-02")
-	thisMonth := time.Now().UTC().Format("2006-01")
-
-	m.balance = state.Balance
-	if state.Currency != "" {
-		m.currency = state.Currency
+	if newCfg.SMSLimit >= 0 {
+		m.cfg.SMSLimit = newCfg.SMSLimit
 	}
-	m.lastBalanceCheck = state.LastBalanceCheck
-	m.dataBytesUsed = state.DataBytesUsed
-	m.callMinutesUsed = state.CallMinutesUsed
-
-	if state.LastDailyResetDate == today {
-		m.smsDayCount = state.SMSDayCount
-		m.lastDailyResetDate = state.LastDailyResetDate
-	} else {
-		m.smsDayCount = 0
-		m.lastDailyResetDate = today
+	if newCfg.CallMinutesLimit >= 0 {
+		m.cfg.CallMinutesLimit = newCfg.CallMinutesLimit
 	}
-
-	if state.LastMonthlyResetMonth == thisMonth {
-		m.smsMonthCount = state.SMSMonthCount
-		m.lastMonthlyResetMonth = state.LastMonthlyResetMonth
-	} else {
-		m.smsMonthCount = 0
-		m.lastMonthlyResetMonth = thisMonth
+	if newCfg.ResetDayOfMonth >= 1 && newCfg.ResetDayOfMonth <= 31 {
+		m.cfg.ResetDayOfMonth = newCfg.ResetDayOfMonth
 	}
+	if newCfg.MinBalanceAlert >= 0 {
+		m.cfg.MinBalanceAlert = newCfg.MinBalanceAlert
+	}
+	if newCfg.BalanceUSSD != "" {
+		m.cfg.BalanceUSSD = newCfg.BalanceUSSD
+	}
+	if newCfg.OperatorPreset != "" {
+		m.cfg.OperatorPreset = newCfg.OperatorPreset
+	}
+	slog.Info("tariff configuration updated",
+		slog.String("modem", m.modemID),
+		slog.Int("sms_limit", m.cfg.SMSLimit),
+		slog.Float64("call_minutes_limit", m.cfg.CallMinutesLimit),
+		slog.Int("reset_day", m.cfg.ResetDayOfMonth),
+	)
+	m.persistLocked()
 }
 
-func (m *Manager) persistLocked() {
-	if m.store == nil {
-		return
-	}
-	today := time.Now().UTC().Format("2006-01-02")
-	thisMonth := time.Now().UTC().Format("2006-01")
-	if m.lastDailyResetDate == "" {
-		m.lastDailyResetDate = today
-	}
-	if m.lastMonthlyResetMonth == "" {
-		m.lastMonthlyResetMonth = thisMonth
-	}
+// GetConfig returns the current active tariff configuration.
+func (m *Manager) GetConfig() Config {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cfg
+}
 
-	_ = m.store.Save(m.modemID, State{
-		Balance:               m.balance,
-		Currency:              m.currency,
-		SMSDayCount:           m.smsDayCount,
-		SMSMonthCount:         m.smsMonthCount,
-		CallMinutesUsed:       m.callMinutesUsed,
-		DataBytesUsed:         m.dataBytesUsed,
-		LastBalanceCheck:      m.lastBalanceCheck,
-		LastDailyResetDate:    m.lastDailyResetDate,
-		LastMonthlyResetMonth: m.lastMonthlyResetMonth,
-	})
+// ResetQuotas zeroes monthly quota counters and resets warning flags.
+func (m *Manager) ResetQuotas() {
+	m.ResetMonthly()
 }
 
 // RecordSMS increments daily and monthly message counters and evaluates quotas.

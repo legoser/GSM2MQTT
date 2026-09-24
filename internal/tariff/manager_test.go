@@ -149,3 +149,58 @@ func TestManager_ResetCounters(t *testing.T) {
 		t.Errorf("expected SMSMonthCount = 0 after monthly reset, got %d", st.SMSMonthCount)
 	}
 }
+
+func TestManager_UpdateConfigAndResetQuotas(t *testing.T) {
+	tempDir := t.TempDir()
+	store := NewFileStore(tempDir)
+
+	initialCfg := Config{
+		Enabled:         true,
+		SMSLimit:        100,
+		ResetDayOfMonth: 1,
+	}
+
+	m := NewManager("modem_test", initialCfg, nil)
+	m.SetStore(store)
+	m.RecordSMS(15)
+
+	// Update configuration dynamically
+	m.UpdateConfig(Config{
+		SMSLimit:         300,
+		CallMinutesLimit: 60,
+		ResetDayOfMonth:  15,
+		MinBalanceAlert:  40.0,
+		BalanceUSSD:      "*105#",
+	})
+
+	cfg := m.GetConfig()
+	if cfg.SMSLimit != 300 || cfg.CallMinutesLimit != 60 || cfg.ResetDayOfMonth != 15 || cfg.MinBalanceAlert != 40.0 || cfg.BalanceUSSD != "*105#" {
+		t.Errorf("unexpected updated config: %+v", cfg)
+	}
+
+	status := m.Status()
+	if status.SMSLimit != 300 {
+		t.Errorf("expected SMSLimit = 300, got %d", status.SMSLimit)
+	}
+	if status.SMSRemaining != 285 {
+		t.Errorf("expected SMSRemaining = 285, got %d", status.SMSRemaining)
+	}
+
+	// Reset quotas
+	m.ResetQuotas()
+	status = m.Status()
+	if status.SMSMonthCount != 0 {
+		t.Errorf("expected SMSMonthCount = 0 after ResetQuotas, got %d", status.SMSMonthCount)
+	}
+	if status.SMSRemaining != 300 {
+		t.Errorf("expected SMSRemaining = 300 after ResetQuotas, got %d", status.SMSRemaining)
+	}
+
+	// Create new manager instance and verify dynamic config restored from disk
+	m2 := NewManager("modem_test", Config{SMSLimit: 100}, nil)
+	m2.SetStore(store)
+	cfg2 := m2.GetConfig()
+	if cfg2.SMSLimit != 300 || cfg2.CallMinutesLimit != 60 || cfg2.ResetDayOfMonth != 15 || cfg2.MinBalanceAlert != 40.0 || cfg2.BalanceUSSD != "*105#" {
+		t.Errorf("expected restored config to match persisted dynamic values, got %+v", cfg2)
+	}
+}

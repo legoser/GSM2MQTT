@@ -176,6 +176,15 @@ func BuildModemDiscoveries(p ModemDiscoveryParams) ([]*DiscoveryMessage, error) 
 		func() (*DiscoveryMessage, error) {
 			return BuildNotifyDiscovery(p)
 		},
+		func() (*DiscoveryMessage, error) {
+			return BuildTariffSMSDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildTariffCallMinutesDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildTariffResetButtonDiscovery(p)
+		},
 	}
 
 	var messages []*DiscoveryMessage

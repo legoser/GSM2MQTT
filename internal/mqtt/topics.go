@@ -102,6 +102,16 @@ func (t *Topics) TariffSetPreset() string {
 	return fmt.Sprintf("%s/modem/%s/tariff/set_preset", t.prefix, t.modemID)
 }
 
+// TariffSet returns the topic for dynamically updating tariff configuration.
+func (t *Topics) TariffSet() string {
+	return fmt.Sprintf("%s/modem/%s/tariff/set", t.prefix, t.modemID)
+}
+
+// TariffReset returns the topic for resetting monthly quota usage.
+func (t *Topics) TariffReset() string {
+	return fmt.Sprintf("%s/modem/%s/tariff/reset", t.prefix, t.modemID)
+}
+
 // AccountingStatus returns the topic for reporting SMS and data quotas.
 func (t *Topics) AccountingStatus() string {
 	return fmt.Sprintf("%s/modem/%s/accounting/status", t.prefix, t.modemID)

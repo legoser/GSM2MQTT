@@ -127,7 +127,7 @@ tariff:
   enabled: true
   operator_preset: "generic"          # mts, megafon, beeline, tele2, generic
   balance_ussd: "*100#"
-  check_interval: 24h
+  check_interval: 168h                # Balance check interval (e.g. 168h = 7 days, or 0s = disable periodic USSD check)
   min_balance_alert: 50.0
   sms_limit: 100
   reset_day_of_month: 1
