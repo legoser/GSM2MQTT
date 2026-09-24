@@ -14,7 +14,6 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
-	"github.com/legoser/gsm2mqtt/internal/transport"
 )
 
 // ModemSummary represents the consolidated live state of a managed modem.
@@ -28,24 +27,25 @@ type ModemSummary struct {
 
 // ModemRunner manages the complete lifecycle, AT engine, and MQTT bridging for a single modem.
 type ModemRunner struct {
-	mCfg         config.ModemConfig
-	cfg          *config.Config
-	opener       transport.Opener
-	mqttClient   mqtt.MQTTClient
-	topics       *mqtt.Topics
-	mu           sync.RWMutex
-	lastHealth   ModemHealth
-	lastBalance  float64
+	mCfg             config.ModemConfig
+	cfg              *config.Config
+	connector        *modem.Connector
+	mqttClient       mqtt.MQTTClient
+	topics           *mqtt.Topics
+	mu               sync.RWMutex
+	lastHealth       ModemHealth
+	lastBalance      float64
 	lastCurrency     string
 	lastBalanceCheck time.Time
 	driver           modem.Driver
-	smsSvc       *SMSService
-	ussdSvc      *USSDService
-	callSvc      *CallService
-	tariffMgr    *tariff.Manager
-	receivedSMS   []ReceivedSMS
-	slotIndex     int
-	recipientsMgr *security.RecipientsManager
+	smsSvc           *SMSService
+	ussdSvc          *USSDService
+	callSvc          *CallService
+	tariffMgr        *tariff.Manager
+	receivedSMS      []ReceivedSMS
+	slotIndex        int
+	recipientsMgr    *security.RecipientsManager
+	sanitizer        *security.Sanitizer
 }
 
 // DefaultCurrency defines standard currency when none is specified.
@@ -55,17 +55,18 @@ const DefaultCurrency = tariff.DefaultCurrency
 func NewModemRunner(
 	mCfg config.ModemConfig,
 	cfg *config.Config,
-	opener transport.Opener,
+	connector *modem.Connector,
 	mqttClient mqtt.MQTTClient,
 ) *ModemRunner {
 	r := &ModemRunner{
 		mCfg:         mCfg,
 		cfg:          cfg,
-		opener:       opener,
+		connector:    connector,
 		mqttClient:   mqttClient,
 		topics:       mqtt.NewTopics(cfg.MQTT.TopicPrefix, mCfg.ID),
 		lastCurrency: DefaultCurrency,
 		slotIndex:    1,
+		sanitizer:    security.NewSanitizer(cfg.Security.AllowRawAT, cfg.Security.AllowedATCommands),
 	}
 	r.loadInbox()
 	return r
@@ -98,30 +99,17 @@ func (r *ModemRunner) Run(ctx context.Context) error {
 	}
 }
 
-func (r *ModemRunner) openPort() (transport.Port, error) {
-	return r.opener.Open(transport.PortConfig{
-		Device:      r.mCfg.Port,
-		BaudRate:    r.mCfg.BaudRate,
-		DataBits:    r.mCfg.DataBits,
-		StopBits:    r.mCfg.StopBits,
-		Parity:      r.mCfg.Parity,
-		FlowControl: r.mCfg.FlowControl,
-	})
-}
-
 func (r *ModemRunner) runOnce(ctx context.Context) error {
 	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	port, err := r.openPort()
+	engine, closer, err := r.connector.Open(r.mCfg)
 	if err != nil {
 		return fmt.Errorf("failed to open modem port %s: %w", r.mCfg.Port, err)
 	}
-	defer port.Close()
+	defer closer()
 
 	slog.Info("modem port opened successfully", slog.String("modem", r.mCfg.ID), slog.String("port", r.mCfg.Port))
-
-	engine := at.NewEngine(port)
 	engineErrCh := make(chan error, 1)
 	go func() {
 		engineErrCh <- engine.Start(childCtx)
@@ -228,6 +216,7 @@ func (r *ModemRunner) SendSMS(ctx context.Context, to, text string) ([]byte, err
 	refs, err := svc.Send(ctx, SendSMSRequest{To: to, Text: text})
 	if err == nil && tm != nil && len(refs) > 0 {
 		tm.RecordSMS(len(refs))
+		r.publishAccountingStatus(tm)
 	}
 	return refs, err
 }
@@ -288,4 +277,3 @@ func (r *ModemRunner) urcLoop(
 		}
 	}
 }
-

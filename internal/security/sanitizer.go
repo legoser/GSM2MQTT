@@ -5,25 +5,24 @@ import (
 	"unicode"
 )
 
-// Sanitizer validates and filters raw AT commands to prevent destructive or unauthorized operations.
 type Sanitizer struct {
 	allowRaw        bool
-	blockedPrefixes []string
+	allowedPrefixes []string
 }
 
 // NewSanitizer creates a new AT command Sanitizer.
-func NewSanitizer(allowRaw bool, blockedCommands []string) *Sanitizer {
-	normalizedBlocked := make([]string, 0, len(blockedCommands))
-	for _, cmd := range blockedCommands {
+func NewSanitizer(allowRaw bool, allowedCommands []string) *Sanitizer {
+	normalizedAllowed := make([]string, 0, len(allowedCommands))
+	for _, cmd := range allowedCommands {
 		cleaned := canonicalizeCommand(cmd)
 		if cleaned != "" {
-			normalizedBlocked = append(normalizedBlocked, cleaned)
+			normalizedAllowed = append(normalizedAllowed, cleaned)
 		}
 	}
 
 	return &Sanitizer{
 		allowRaw:        allowRaw,
-		blockedPrefixes: normalizedBlocked,
+		allowedPrefixes: normalizedAllowed,
 	}
 }
 
@@ -35,7 +34,7 @@ func (s *Sanitizer) IsAllowed(cmd string) bool {
 // Validate checks whether the raw AT command is permitted to execute.
 // It returns a typed sentinel error if rejected or invalid.
 func (s *Sanitizer) Validate(cmd string) error {
-	if strings.ContainsAny(cmd, "\x00\x1A\r\n") {
+	if strings.ContainsAny(cmd, "\x00\x1A\x1B\x07\x0B\x0C\x7F\r\n") {
 		return ErrDangerousChars
 	}
 
@@ -49,13 +48,15 @@ func (s *Sanitizer) Validate(cmd string) error {
 	}
 
 	canonicalCmd := canonicalizeCommand(trimmed)
-	for _, blocked := range s.blockedPrefixes {
-		if strings.HasPrefix(canonicalCmd, blocked) {
-			return ErrCommandBlocked
+
+	// Check allowlist
+	for _, allowed := range s.allowedPrefixes {
+		if strings.HasPrefix(canonicalCmd, allowed) {
+			return nil
 		}
 	}
 
-	return nil
+	return ErrCommandBlocked
 }
 
 // canonicalizeCommand removes all whitespace and converts to uppercase for reliable prefix comparison.

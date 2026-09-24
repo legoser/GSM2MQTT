@@ -374,4 +374,3 @@ func TestCallService_CallDrop_AutoHangup_On_CheckCallState(t *testing.T) {
 		t.Errorf("expected at least 2 log entries in call status, got %d", len(st.Logs))
 	}
 }
-

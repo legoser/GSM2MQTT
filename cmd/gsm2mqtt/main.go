@@ -13,11 +13,11 @@ import (
 
 	"github.com/legoser/gsm2mqtt/internal/api"
 	"github.com/legoser/gsm2mqtt/internal/config"
+	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/pool"
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/services"
-	"github.com/legoser/gsm2mqtt/internal/transport"
 )
 
 // version and buildTime are set at compile time via ldflags.
@@ -103,12 +103,12 @@ func startModems(
 	modemPool *pool.Pool,
 	logger *slog.Logger,
 ) *sync.WaitGroup {
-	opener := transport.NewSerialOpener()
+	connector := modem.NewConnector()
 	var wg sync.WaitGroup
 
 	for i, mCfg := range cfg.Modems {
 		wg.Add(1)
-		runner := services.NewModemRunner(mCfg, cfg, opener, mqttClient)
+		runner := services.NewModemRunner(mCfg, cfg, connector, mqttClient)
 		runner.SetSlotIndex(i + 1)
 		runner.SetRecipientsManager(recipientsMgr)
 		manager.Register(runner)
@@ -129,8 +129,9 @@ func startModems(
 
 func startAPIServer(ctx context.Context, cfg *config.Config, manager *services.GatewayManager, logger *slog.Logger) {
 	apiServer := api.NewServer(api.ServerConfig{
-		Host: cfg.API.Host,
-		Port: cfg.API.Port,
+		Host:  cfg.API.Host,
+		Port:  cfg.API.Port,
+		Token: cfg.API.Token,
 	}, manager)
 	go func() {
 		logger.Info("starting embedded HTTP API", slog.String("host", cfg.API.Host), slog.Int("port", cfg.API.Port))

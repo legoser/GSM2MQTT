@@ -2,6 +2,7 @@ package pdu
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -160,12 +161,8 @@ func buildPDU(recipient string, firstOctet, dcs, udl byte, udHex string, hasUDH 
 	}, nil
 }
 
-func hexString(bytes []byte) string {
-	var b strings.Builder
-	for _, v := range bytes {
-		b.WriteString(fmt.Sprintf("%02X", v))
-	}
-	return b.String()
+func hexString(b []byte) string {
+	return strings.ToUpper(hex.EncodeToString(b))
 }
 
 func init() {

@@ -75,7 +75,12 @@ func (s *CallService) handleNoCarrierURC() {
 	slog.Info("modem call ended event", slog.String("modem", s.modemID), slog.String("event", "NO CARRIER"))
 	s.mu.Lock()
 	s.stopDropTimer()
-	if s.status.State == CallStateAnswered {
+	wasAnswered := s.status.State == CallStateAnswered
+	var duration time.Duration
+	if wasAnswered && !s.status.AnsweredAt.IsZero() {
+		duration = time.Since(s.status.AnsweredAt)
+	}
+	if wasAnswered {
 		s.status.State = CallStateCompleted
 		s.status.Message = "Call finished"
 		s.addLogLocked("Call finished (NO CARRIER)")
@@ -89,8 +94,9 @@ func (s *CallService) handleNoCarrierURC() {
 
 	if s.onEvent != nil {
 		s.onEvent(CallEvent{
-			Type:    "ended",
-			ModemID: s.modemID,
+			Type:     "ended",
+			ModemID:  s.modemID,
+			Duration: duration,
 		})
 	}
 }
@@ -159,6 +165,7 @@ func (s *CallService) handleCallAnsweredDrop() {
 	s.mu.Lock()
 	s.stopDropTimer()
 	s.status.State = CallStateAnswered
+	s.status.AnsweredAt = time.Now()
 	s.status.Message = "Answered! Auto-hanging up (call-drop)..."
 	s.addLogLocked("Call answered by recipient! Initiating auto-hangup (call-drop)...")
 	s.mu.Unlock()
@@ -170,6 +177,7 @@ func (s *CallService) handleCallAnsweredDrop() {
 	_ = s.caller.Hangup()
 
 	s.mu.Lock()
+	duration := time.Since(s.status.AnsweredAt)
 	s.status.State = CallStateCompleted
 	s.status.Message = "Call answered and dropped successfully"
 	s.status.EndedAt = time.Now()
@@ -177,6 +185,6 @@ func (s *CallService) handleCallAnsweredDrop() {
 	s.mu.Unlock()
 
 	if s.onEvent != nil {
-		s.onEvent(CallEvent{Type: "ended", ModemID: s.modemID})
+		s.onEvent(CallEvent{Type: "ended", ModemID: s.modemID, Duration: duration})
 	}
 }

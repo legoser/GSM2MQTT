@@ -77,7 +77,7 @@ type SecurityConfig struct {
 	Blacklist         []string        `yaml:"blacklist"`
 	RateLimit         RateLimitConfig `yaml:"rate_limit"`
 	AllowRawAT        bool            `yaml:"allow_raw_at"`
-	BlockedATCommands []string        `yaml:"blocked_at_commands"`
+	AllowedATCommands []string        `yaml:"allowed_at_commands"`
 	RecipientsFile    string          `yaml:"recipients_file"`
 	FallbackCall      bool            `yaml:"fallback_call"`
 }
@@ -135,6 +135,7 @@ type APIConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	Host    string `yaml:"host"`
 	Port    int    `yaml:"port"`
+	Token   string `yaml:"token"`
 }
 
 // PoolConfig holds settings for multi-modem load balancing and failover.

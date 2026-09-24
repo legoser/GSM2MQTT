@@ -30,6 +30,9 @@ func applyServiceOverrides(cfg *Config, dotEnv map[string]string) {
 	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_API_PORT", "API_PORT"); v != "" {
 		cfg.API.Port = atoi(v, cfg.API.Port)
 	}
+	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_API_TOKEN", "API_TOKEN"); v != "" {
+		cfg.API.Token = v
+	}
 	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_POOL_ENABLED", "POOL_ENABLED"); v != "" {
 		cfg.Pool.Enabled = parseBool(v, cfg.Pool.Enabled)
 	}

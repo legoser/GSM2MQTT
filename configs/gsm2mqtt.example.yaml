@@ -139,6 +139,7 @@ api:
   enabled: true
   host: "0.0.0.0"                     # 0.0.0.0 for Docker access
   port: 8080
+  token: ""                           # Secret token for HTTP API. If empty, API has no auth! (Set via GSM2MQTT_API_TOKEN)
 
 # -------------------------------------------------------
 # Multi-Modem Pool (Load Balancing & Failover)

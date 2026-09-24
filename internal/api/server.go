@@ -15,8 +15,9 @@ import (
 
 // ServerConfig configures the embedded HTTP Web and REST server.
 type ServerConfig struct {
-	Host string
-	Port int
+	Host  string
+	Port  int
+	Token string
 }
 
 // ModemSummary is an alias to services.ModemSummary for API presentation.
@@ -75,8 +76,11 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) Start(ctx context.Context) error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: s.mux,
+		Addr:           addr,
+		Handler:        s.mux,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 
 	errCh := make(chan error, 1)
@@ -98,21 +102,34 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
+func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.cfg.Token != "" {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "Bearer "+s.cfg.Token {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+		}
+		next(w, r)
+	}
+}
+
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.Handle("GET /metrics", metrics.DefaultRegistry.Handler())
-	s.mux.HandleFunc("GET /api/modems", s.handleGetModems)
-	s.mux.HandleFunc("POST /api/sms/send", s.handleSendSMS)
-	s.mux.HandleFunc("POST /api/ussd/send", s.handleSendUSSD)
-	s.mux.HandleFunc("POST /api/call/dial", s.handleCallDial)
-	s.mux.HandleFunc("POST /api/call/hangup", s.handleCallHangup)
-	s.mux.HandleFunc("GET /api/call/status", s.handleCallStatus)
-	s.mux.HandleFunc("GET /api/mqtt/status", s.handleMQTTStatus)
-	s.mux.HandleFunc("POST /api/at/send", s.handleSendAT)
-	s.mux.HandleFunc("GET /api/sms/inbox", s.handleGetInbox)
-	s.mux.HandleFunc("GET /api/tariff/status", s.handleTariffStatus)
-	s.mux.HandleFunc("POST /api/tariff/config", s.handleTariffConfig)
-	s.mux.HandleFunc("POST /api/tariff/reset", s.handleTariffReset)
+	s.mux.HandleFunc("GET /api/modems", s.auth(s.handleGetModems))
+	s.mux.HandleFunc("POST /api/sms/send", s.auth(s.handleSendSMS))
+	s.mux.HandleFunc("POST /api/ussd/send", s.auth(s.handleSendUSSD))
+	s.mux.HandleFunc("POST /api/call/dial", s.auth(s.handleCallDial))
+	s.mux.HandleFunc("POST /api/call/hangup", s.auth(s.handleCallHangup))
+	s.mux.HandleFunc("GET /api/call/status", s.auth(s.handleCallStatus))
+	s.mux.HandleFunc("GET /api/mqtt/status", s.auth(s.handleMQTTStatus))
+	s.mux.HandleFunc("POST /api/at/send", s.auth(s.handleSendAT))
+	s.mux.HandleFunc("GET /api/sms/inbox", s.auth(s.handleGetInbox))
+	s.mux.HandleFunc("GET /api/tariff/status", s.auth(s.handleTariffStatus))
+	s.mux.HandleFunc("POST /api/tariff/config", s.auth(s.handleTariffConfig))
+	s.mux.HandleFunc("POST /api/tariff/reset", s.auth(s.handleTariffReset))
 	s.mux.HandleFunc("GET /favicon.ico", s.handleFavicon)
 	s.mux.HandleFunc("GET /", s.handleRootUI)
 }
@@ -140,15 +157,15 @@ func (s *Server) handleSendSMS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("api send sms requested", slog.String("modem", req.ModemID), slog.String("to", req.To), slog.Int("len", len(req.Text)))
+	slog.Info("api send sms requested", slog.String("modem", req.ModemID), slog.String("to", "[REDACTED]"), slog.Int("len", len(req.Text)))
 	refs, err := s.manager.SendSMS(r.Context(), req.ModemID, req.To, req.Text)
 	if err != nil {
-		slog.Error("api send sms failed", slog.String("modem", req.ModemID), slog.String("to", req.To), slog.Any("error", err))
+		slog.Error("api send sms failed", slog.String("modem", req.ModemID), slog.String("to", "[REDACTED]"), slog.Any("error", err))
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	slog.Info("api send sms succeeded", slog.String("modem", req.ModemID), slog.String("to", req.To), slog.Any("refs", refs))
+	slog.Info("api send sms succeeded", slog.String("modem", req.ModemID), slog.String("to", "[REDACTED]"), slog.Any("refs", refs))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -194,14 +211,14 @@ func (s *Server) handleCallDial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("api call dial requested", slog.String("modem", req.ModemID), slog.String("number", req.Number))
+	slog.Info("api call dial requested", slog.String("modem", req.ModemID), slog.String("number", "[REDACTED]"))
 	if err := s.manager.DialCall(r.Context(), req.ModemID, req.Number); err != nil {
-		slog.Error("api call dial failed", slog.String("modem", req.ModemID), slog.String("number", req.Number), slog.Any("error", err))
+		slog.Error("api call dial failed", slog.String("modem", req.ModemID), slog.String("number", "[REDACTED]"), slog.Any("error", err))
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	slog.Info("api call dial succeeded", slog.String("modem", req.ModemID), slog.String("number", req.Number))
+	slog.Info("api call dial succeeded", slog.String("modem", req.ModemID), slog.String("number", "[REDACTED]"))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }

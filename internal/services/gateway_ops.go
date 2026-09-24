@@ -71,6 +71,10 @@ func (r *ModemRunner) Hangup(ctx context.Context) error {
 
 // SendRawAT sends an arbitrary AT command directly through the modem driver.
 func (r *ModemRunner) SendRawAT(ctx context.Context, cmd string) (string, error) {
+	if err := r.sanitizer.Validate(cmd); err != nil {
+		return "", err
+	}
+
 	r.mu.RLock()
 	drv := r.driver
 	r.mu.RUnlock()

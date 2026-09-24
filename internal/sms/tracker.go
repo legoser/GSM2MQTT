@@ -1,6 +1,7 @@
 package sms
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -29,7 +30,6 @@ type DeliveryEvent struct {
 type trackedSMS struct {
 	ref     byte
 	to      string
-	text    string
 	modemID string
 	timer   *time.Timer
 }
@@ -39,7 +39,7 @@ type Tracker struct {
 	mu       sync.Mutex
 	timeout  time.Duration
 	onUpdate func(event DeliveryEvent)
-	pending  map[byte]*trackedSMS
+	pending  map[string]*trackedSMS
 }
 
 // NewTracker creates a new delivery report Tracker.
@@ -47,55 +47,68 @@ func NewTracker(timeout time.Duration, onUpdate func(event DeliveryEvent)) *Trac
 	return &Tracker{
 		timeout:  timeout,
 		onUpdate: onUpdate,
-		pending:  make(map[byte]*trackedSMS),
+		pending:  make(map[string]*trackedSMS),
 	}
 }
 
+func makeKey(to string, ref byte) string {
+	return fmt.Sprintf("%s:%d", to, ref)
+}
+
 // Track registers a sent SMS for delivery tracking.
-func (t *Tracker) Track(ref byte, to, text, modemID string) {
+func (t *Tracker) Track(ref byte, to string, modemID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	key := makeKey(to, ref)
+
+	// If overwriting, stop the old timer
+	if old, ok := t.pending[key]; ok && old.timer != nil {
+		old.timer.Stop()
+	}
 
 	item := &trackedSMS{
 		ref:     ref,
 		to:      to,
-		text:    text,
 		modemID: modemID,
 	}
 
 	if t.timeout > 0 {
 		item.timer = time.AfterFunc(t.timeout, func() {
-			t.handleTimeout(ref)
+			t.handleTimeout(key)
 		})
 	}
 
-	t.pending[ref] = item
+	t.pending[key] = item
 	slog.Debug("tracking SMS delivery", slog.String("modem", modemID), slog.String("to", to), slog.Int("ref", int(ref)))
 
 	if t.onUpdate != nil {
-		t.onUpdate(DeliveryEvent{
+		event := DeliveryEvent{
 			MessageRef: ref,
 			To:         to,
 			Status:     DeliveryStatusPending,
 			ModemID:    modemID,
-		})
+		}
+		// Do not call onUpdate under lock to avoid deadlocks
+		go t.onUpdate(event)
 	}
 }
 
 // HandleReport processes an incoming delivery report.
 func (t *Tracker) HandleReport(report *pdu.StatusReport) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	item, ok := t.pending[report.MessageRef]
+	key := makeKey(report.Recipient, report.MessageRef)
+	item, ok := t.pending[key]
 	if !ok {
+		t.mu.Unlock()
 		return
 	}
 
 	if item.timer != nil {
 		item.timer.Stop()
 	}
-	delete(t.pending, report.MessageRef)
+	delete(t.pending, key)
+	t.mu.Unlock()
 
 	status := DeliveryStatusDelivered
 	if !report.Delivered {
@@ -118,21 +131,21 @@ func (t *Tracker) HandleReport(report *pdu.StatusReport) {
 	}
 }
 
-func (t *Tracker) handleTimeout(ref byte) {
+func (t *Tracker) handleTimeout(key string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	item, ok := t.pending[ref]
+	item, ok := t.pending[key]
 	if !ok {
+		t.mu.Unlock()
 		return
 	}
 
-	delete(t.pending, ref)
-	slog.Warn("SMS delivery report expired (timeout)", slog.String("modem", item.modemID), slog.String("to", item.to), slog.Int("ref", int(ref)))
+	delete(t.pending, key)
+	t.mu.Unlock()
+	slog.Warn("SMS delivery report expired (timeout)", slog.String("modem", item.modemID), slog.String("to", item.to), slog.Int("ref", int(item.ref)))
 
 	if t.onUpdate != nil {
 		t.onUpdate(DeliveryEvent{
-			MessageRef: ref,
+			MessageRef: item.ref,
 			To:         item.to,
 			Status:     DeliveryStatusExpired,
 			ModemID:    item.modemID,

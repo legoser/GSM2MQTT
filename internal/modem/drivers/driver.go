@@ -43,10 +43,10 @@ func (d *BaseDriver) Init(ctx context.Context) error {
 		slog.Debug("driver sending init command", slog.String("cmd", cmd))
 		resp, err := d.runner.Send(cmd, 3*time.Second)
 		if err != nil {
-			return fmt.Errorf("init command %q failed: %w", cmd, err)
+			return fmt.Errorf("AT command failed: init command %q failed: %w", cmd, err)
 		}
 		if resp.Error {
-			return fmt.Errorf("init command %q returned error: %v", cmd, resp.Lines)
+			return fmt.Errorf("AT command failed: init command %q returned error: %v", cmd, resp.Lines)
 		}
 	}
 
@@ -112,7 +112,7 @@ func (d *BaseDriver) SignalQuality() (int, error) {
 		return 0, err
 	}
 	if resp.Error || len(resp.Lines) == 0 {
-		return 0, fmt.Errorf("AT+CSQ failed: %v", resp.Lines)
+		return 0, fmt.Errorf("AT command failed: AT+CSQ failed: %v", resp.Lines)
 	}
 
 	for _, line := range resp.Lines {
@@ -126,7 +126,7 @@ func (d *BaseDriver) SignalQuality() (int, error) {
 			}
 		}
 	}
-	return 0, fmt.Errorf("unable to parse CSQ from %v", resp.Lines)
+	return 0, fmt.Errorf("AT command failed: unable to parse CSQ from %v", resp.Lines)
 }
 
 // NetworkRegistration checks the network registration state.
@@ -151,7 +151,7 @@ func (d *BaseDriver) NetworkRegistration() (*modem.NetworkStatus, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("unable to determine network registration")
+	return nil, fmt.Errorf("AT command failed: unable to determine network registration")
 }
 
 // OperatorName retrieves the current network operator name.
@@ -173,7 +173,7 @@ func (d *BaseDriver) OperatorName() (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("unable to parse COPS operator from %v", resp.Lines)
+	return "", fmt.Errorf("AT command failed: unable to parse COPS operator from %v", resp.Lines)
 }
 
 // SIMStatus checks the status of the SIM card.
@@ -200,7 +200,7 @@ func (d *BaseDriver) SIMStatus() (modem.SIMState, error) {
 			return simState, nil
 		}
 	}
-	return modem.SIMError, fmt.Errorf("unknown CPIN response: %v", resp.Lines)
+	return modem.SIMError, fmt.Errorf("AT command failed: unknown CPIN response: %v", resp.Lines)
 }
 
 // SendUSSD submits a USSD code request.
@@ -212,7 +212,7 @@ func (d *BaseDriver) SendUSSD(code string) (string, error) {
 		return "", err
 	}
 	if resp.Error {
-		return "", fmt.Errorf("USSD request failed: %v", resp.Lines)
+		return "", fmt.Errorf("AT command failed: USSD request failed: %v", resp.Lines)
 	}
 	return strings.Join(resp.Lines, "\n"), nil
 }
@@ -229,7 +229,7 @@ func (d *BaseDriver) SendRawAT(cmd string) (string, error) {
 
 // SendSMS implements modem.SMSSender.
 func (d *BaseDriver) SendSMS(number, text string) (byte, error) {
-	return 0, fmt.Errorf("SendSMS must be handled via PDU encoder service")
+	return 0, fmt.Errorf("AT command failed: SendSMS must be handled via PDU encoder service")
 }
 
 // ListSMS implements modem.SMSReader.
@@ -256,7 +256,7 @@ func (d *BaseDriver) execSimple(cmd string, timeout time.Duration) error {
 		return err
 	}
 	if resp.Error {
-		return fmt.Errorf("command %s failed: %v", cmd, resp.Lines)
+		return fmt.Errorf("AT command failed: command %s failed: %v", cmd, resp.Lines)
 	}
 	return nil
 }

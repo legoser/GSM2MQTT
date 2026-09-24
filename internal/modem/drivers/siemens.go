@@ -147,4 +147,3 @@ func (d *SiemensDriver) Identify() (*modem.Info, error) {
 }
 
 var _ modem.Driver = (*SiemensDriver)(nil)
-

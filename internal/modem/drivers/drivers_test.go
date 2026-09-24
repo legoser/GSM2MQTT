@@ -246,10 +246,10 @@ func TestSIMComDriver_Init(t *testing.T) {
 
 func TestSIMComDriver_BatteryStatus(t *testing.T) {
 	tests := []struct {
-		name          string
-		response      *at.Response
-		errExpected   bool
-		expectedBatt  *modem.BatteryInfo
+		name         string
+		response     *at.Response
+		errExpected  bool
+		expectedBatt *modem.BatteryInfo
 	}{
 		{
 			name: "valid not charging",
@@ -724,5 +724,3 @@ func TestSiemensDriver_Identify(t *testing.T) {
 		t.Errorf("expected IMEI '353857015410240', got %q", info.IMEI)
 	}
 }
-
-

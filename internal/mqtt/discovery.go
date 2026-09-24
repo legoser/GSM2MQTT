@@ -223,4 +223,3 @@ func BuildUSSDResponseDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, erro
 
 	return marshalDiscovery(topic, payload)
 }
-

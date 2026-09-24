@@ -107,8 +107,10 @@ func (c *Client) initSession(req Request, method string) error {
 	_, _ = c.runner.Send("AT+HTTPPARA=\"CID\",1", 3*time.Second)
 
 	urlCmd := fmt.Sprintf("AT+HTTPPARA=\"URL\",%q", req.URL)
-	if resp, err := c.runner.Send(urlCmd, 3*time.Second); err != nil || resp.Error {
+	if resp, err := c.runner.Send(urlCmd, 3*time.Second); err != nil {
 		return fmt.Errorf("failed to set URL: %w", err)
+	} else if resp.Error {
+		return fmt.Errorf("failed to set URL: modem returned ERROR (%v)", resp.Lines)
 	}
 
 	if method == "POST" {

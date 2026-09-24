@@ -464,5 +464,3 @@ func TestServer_TariffReset(t *testing.T) {
 		t.Errorf("expected tariffReset to be true")
 	}
 }
-
-

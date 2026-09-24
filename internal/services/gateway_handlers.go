@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/metrics"
@@ -20,7 +21,7 @@ import (
 func (r *ModemRunner) wireServices(
 	engine *at.Engine,
 	driver modem.Driver,
-	
+
 ) (*SMSService, *CallService, *USSDService, *StatusService, *tariff.Manager, *DiagnosticService) {
 	filter := security.NewFilter(r.cfg.Security.IncomingFilter, r.cfg.Security.Whitelist, r.cfg.Security.Blacklist)
 	limiter := security.NewRateLimiterWithConfig(security.RateLimiterConfig{
@@ -90,8 +91,8 @@ func (r *ModemRunner) wireServices(
 	}, sender, filter, limiter, smsTracker, assembler, func(msg *sms.AssembledSMS) {
 		slog.Info("incoming SMS received and processed",
 			slog.String("modem", r.mCfg.ID),
-			slog.String("from", msg.From),
-			slog.String("text", msg.Text),
+			slog.String("from", "[REDACTED]"),
+			slog.String("text", "[REDACTED]"),
 			slog.String("mqtt_topic", r.topics.SMSReceived()),
 		)
 		r.recordIncomingSMS(msg)
@@ -105,6 +106,13 @@ func (r *ModemRunner) wireServices(
 
 	callSvc := NewCallService(r.mCfg.ID, driver, func(e CallEvent) {
 		metrics.DefaultRegistry.IncCounter("gsm2mqtt_calls_total", map[string]string{"modem": r.mCfg.ID, "type": e.Type})
+
+		if e.Type == "ended" && e.Duration > 3*time.Second {
+			minutes := math.Ceil(e.Duration.Seconds() / 60.0)
+			tariffMgr.RecordCallMinutes(minutes)
+			r.publishAccountingStatus(tariffMgr)
+		}
+
 		payload, _ := json.Marshal(e)
 		if e.Type == "incoming" || e.Type == "ended" {
 			_ = r.mqttClient.Publish(r.topics.CallIncoming(), 1, false, payload)
@@ -135,7 +143,6 @@ func (r *ModemRunner) wireServices(
 
 	return smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc
 }
-
 
 func (r *ModemRunner) startBalanceLoop(ctx context.Context) {
 	if !r.cfg.Tariff.Enabled || r.cfg.Tariff.CheckInterval <= 0 {
@@ -196,4 +203,3 @@ func (r *ModemRunner) checkBalance(ctx context.Context) {
 
 	r.applyParsedBalance(resp.Message)
 }
-

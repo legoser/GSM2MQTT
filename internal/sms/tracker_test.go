@@ -18,7 +18,7 @@ func TestTracker_Delivered(t *testing.T) {
 		events = append(events, ev)
 	})
 
-	tracker.Track(15, "+79991112233", "Alarm message", "siemens_tc35")
+	tracker.Track(15, "+79991112233", "siemens_tc35")
 
 	// Simulate delivery report arriving
 	tracker.HandleReport(&pdu.StatusReport{
@@ -53,7 +53,7 @@ func TestTracker_TimeoutExpired(t *testing.T) {
 		events = append(events, ev)
 	})
 
-	tracker.Track(99, "+79991112233", "Alarm timeout test", "siemens_tc35")
+	tracker.Track(99, "+79991112233", "siemens_tc35")
 
 	// Wait for timeout to fire
 	time.Sleep(120 * time.Millisecond)

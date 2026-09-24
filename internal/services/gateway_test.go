@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/config"
+	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 )
@@ -104,7 +105,9 @@ func TestModemRunner_Lifecycle(t *testing.T) {
 		},
 	}
 
-	runner := NewModemRunner(cfg.Modems[0], cfg, opener, mqttClient)
+	connector := modem.NewConnector()
+	connector.WithOpener(opener)
+	runner := NewModemRunner(cfg.Modems[0], cfg, connector, mqttClient)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -164,7 +167,9 @@ func TestModemRunner_ApplyParsedBalance(t *testing.T) {
 		},
 	}
 
-	runner := NewModemRunner(cfg.Modems[0], cfg, opener, mqttClient)
+	connector := modem.NewConnector()
+	connector.WithOpener(opener)
+	runner := NewModemRunner(cfg.Modems[0], cfg, connector, mqttClient)
 
 	// 1. Initial balance is 0
 	if bal := runner.Summary().Balance; bal != 0 {
@@ -256,4 +261,3 @@ func TestExtractLeadingRecipient(t *testing.T) {
 		})
 	}
 }
-

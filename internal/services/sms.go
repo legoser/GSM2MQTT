@@ -52,11 +52,11 @@ type RateLimiter interface {
 
 // SMSService orchestrates SMS filtering, rate limiting, encoding, and delivery tracking.
 type SMSService struct {
-	cfg        SMSServiceConfig
-	sender     PDUSender
-	filter     NumberFilter
-	limiter    RateLimiter
-	tracker    *sms.Tracker
+	cfg          SMSServiceConfig
+	sender       PDUSender
+	filter       NumberFilter
+	limiter      RateLimiter
+	tracker      *sms.Tracker
 	assembler    *sms.Assembler
 	onReceived   func(msg *sms.AssembledSMS)
 	storageMgr   modem.StorageManager
@@ -149,7 +149,7 @@ func (s *SMSService) dispatchPDUs(pdus []pdu.PDU, normNumber, text string, reque
 		)
 
 		if requestReport && s.tracker != nil {
-			s.tracker.Track(ref, normNumber, text, s.cfg.ModemID)
+			s.tracker.Track(ref, normNumber, s.cfg.ModemID)
 		}
 	}
 	slog.Info("SMS sent successfully",

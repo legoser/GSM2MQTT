@@ -21,11 +21,10 @@ func (r *ModemRunner) subscribeMQTT(
 	diagSvc *DiagnosticService,
 	driver modem.Driver,
 ) {
-	sanitizer := security.NewSanitizer(r.cfg.Security.AllowRawAT, r.cfg.Security.BlockedATCommands)
 	r.subscribeSMS(smsSvc, callSvc, tariffMgr, diagSvc)
 	r.subscribeCall(callSvc)
 	r.subscribeUSSD(ussdSvc)
-	r.subscribeRawAT(driver, sanitizer)
+	r.subscribeRawAT(driver, r.sanitizer)
 	r.subscribeTariff(tariffMgr)
 }
 

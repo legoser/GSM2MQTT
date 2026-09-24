@@ -21,7 +21,7 @@ func Load(path string) (*Config, error) {
 
 	if resolvedPath != "" {
 		if err := loadFromFile(cfg, resolvedPath); err != nil {
-			return nil, fmt.Errorf("loading config file: %w", err)
+			return nil, fmt.Errorf("invalid config: loading config file: %w", err)
 		}
 	}
 
@@ -29,7 +29,7 @@ func Load(path string) (*Config, error) {
 	applyHierarchicalOverrides(cfg, dotEnv)
 
 	if err := validate(cfg); err != nil {
-		return nil, fmt.Errorf("validating config: %w", err)
+		return nil, fmt.Errorf("invalid config: validating config: %w", err)
 	}
 
 	return cfg, nil
@@ -58,11 +58,11 @@ func Defaults() *Config {
 				CooldownMinutes:        10,
 			},
 			AllowRawAT: false,
-			BlockedATCommands: []string{
-				"AT+CFUN=0",
-				"AT+CPIN",
-				"ATD",
-				"AT&F",
+			AllowedATCommands: []string{
+				"ATI",
+				"AT+C",
+				"AT+M",
+				"AT+G",
 			},
 			RecipientsFile: "data/recipients.json",
 			FallbackCall:   true,
@@ -119,11 +119,11 @@ func loadFromFile(cfg *Config, path string) error {
 			// No config file — use defaults
 			return nil
 		}
-		return fmt.Errorf("reading file %s: %w", path, err)
+		return fmt.Errorf("invalid config: reading file %s: %w", path, err)
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return fmt.Errorf("parsing YAML: %w", err)
+		return fmt.Errorf("invalid config: parsing YAML: %w", err)
 	}
 
 	return nil
@@ -147,36 +147,36 @@ func findDefaultConfig() string {
 // validate checks the configuration for required fields and valid values.
 func validate(cfg *Config) error {
 	if cfg.MQTT.Broker == "" {
-		return fmt.Errorf("mqtt.broker is required")
+		return fmt.Errorf("invalid config: mqtt.broker is required")
 	}
 	if cfg.MQTT.Port <= 0 || cfg.MQTT.Port > 65535 {
-		return fmt.Errorf("mqtt.port must be between 1 and 65535, got %d", cfg.MQTT.Port)
+		return fmt.Errorf("invalid config: mqtt.port must be between 1 and 65535, got %d", cfg.MQTT.Port)
 	}
 	if cfg.MQTT.TopicPrefix == "" {
-		return fmt.Errorf("mqtt.topic_prefix is required")
+		return fmt.Errorf("invalid config: mqtt.topic_prefix is required")
 	}
 
 	validEncodings := map[string]bool{"auto": true, "translit": true, "ucs2": true, "gsm7": true}
 	if !validEncodings[cfg.SMS.Encoding] {
-		return fmt.Errorf("sms.encoding must be one of: auto, translit, ucs2, gsm7; got %q", cfg.SMS.Encoding)
+		return fmt.Errorf("invalid config: sms.encoding must be one of: auto, translit, ucs2, gsm7; got %q", cfg.SMS.Encoding)
 	}
 
 	validLongMsg := map[string]bool{"split": true, "truncate": true, "reject": true}
 	if !validLongMsg[cfg.SMS.LongMessage] {
-		return fmt.Errorf("sms.long_message must be one of: split, truncate, reject; got %q", cfg.SMS.LongMessage)
+		return fmt.Errorf("invalid config: sms.long_message must be one of: split, truncate, reject; got %q", cfg.SMS.LongMessage)
 	}
 
 	validFilters := map[string]bool{"all": true, "whitelist": true, "blacklist": true}
 	if !validFilters[cfg.Security.IncomingFilter] {
-		return fmt.Errorf("security.incoming_filter must be one of: all, whitelist, blacklist; got %q", cfg.Security.IncomingFilter)
+		return fmt.Errorf("invalid config: security.incoming_filter must be one of: all, whitelist, blacklist; got %q", cfg.Security.IncomingFilter)
 	}
 
 	for i, m := range cfg.Modems {
 		if m.ID == "" {
-			return fmt.Errorf("modems[%d].id is required", i)
+			return fmt.Errorf("invalid config: modems[%d].id is required", i)
 		}
 		if m.Port == "" {
-			return fmt.Errorf("modems[%d].port is required", i)
+			return fmt.Errorf("invalid config: modems[%d].port is required", i)
 		}
 	}
 
@@ -188,7 +188,7 @@ func validate(cfg *Config) error {
 			"operator-match": true,
 		}
 		if !validStrategies[cfg.Pool.Strategy] {
-			return fmt.Errorf("pool.strategy must be one of: round-robin, failover, best-signal, operator-match; got %q", cfg.Pool.Strategy)
+			return fmt.Errorf("invalid config: pool.strategy must be one of: round-robin, failover, best-signal, operator-match; got %q", cfg.Pool.Strategy)
 		}
 	}
 

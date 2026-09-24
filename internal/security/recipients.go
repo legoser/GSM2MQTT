@@ -291,5 +291,5 @@ func (m *RecipientsManager) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.filePath, data, 0644)
+	return os.WriteFile(m.filePath, data, 0600)
 }

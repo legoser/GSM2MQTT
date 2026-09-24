@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"go.bug.st/serial"
 )
@@ -108,6 +109,11 @@ func (o *SerialOpener) Open(cfg PortConfig) (Port, error) {
 	p, err := serial.Open(cfg.Device, mode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open serial port %s: %w", cfg.Device, err)
+	}
+
+	if err := p.SetReadTimeout(1 * time.Second); err != nil {
+		_ = p.Close()
+		return nil, fmt.Errorf("failed to set read timeout on %s: %w", cfg.Device, err)
 	}
 
 	return p, nil

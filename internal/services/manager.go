@@ -61,11 +61,11 @@ func (m *GatewayManager) SendSMS(ctx context.Context, modemID, to, text string) 
 
 // ReceivedSMS represents an incoming SMS message cached for inspection.
 type ReceivedSMS struct {
-	ID        string    `json:"id"`
-	ModemID   string    `json:"modem_id"`
-	Sender    string    `json:"sender"`
-	Timestamp string    `json:"timestamp"`
-	Text      string    `json:"text"`
+	ID        string `json:"id"`
+	ModemID   string `json:"modem_id"`
+	Sender    string `json:"sender"`
+	Timestamp string `json:"timestamp"`
+	Text      string `json:"text"`
 }
 
 // DialCall initiates an outgoing voice call on the specified (or first) modem.
@@ -228,5 +228,3 @@ func (m *GatewayManager) GetMQTTStatus() MQTTStatus {
 		DiscoveryPrefix: m.mqttCfg.DiscoveryPrefix,
 	}
 }
-
-

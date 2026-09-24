@@ -139,6 +139,8 @@ func (e *Engine) SendPDU(cmdLength int, pduHex string, timeout time.Duration) (*
 	case resp := <-respChan:
 		return resp, nil
 	case <-time.After(3 * time.Second):
+		_, _ = e.port.Write([]byte("\x1B")) // send ESC to cancel
+		return nil, fmt.Errorf("timeout waiting for '>' prompt")
 	}
 
 	slog.Debug("AT PDU payload transmitted", slog.Int("pdu_hex_len", len(pduHex)))
@@ -211,6 +213,10 @@ func (e *Engine) Start(ctx context.Context) error {
 				}
 			} else if b != '\r' {
 				lineBuf = append(lineBuf, b)
+				if len(lineBuf) > 4096 {
+					slog.Warn("lineBuf exceeded 4096 bytes without newline, dropping buffer")
+					lineBuf = lineBuf[:0]
+				}
 			}
 		}
 	}
