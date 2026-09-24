@@ -71,15 +71,24 @@ jobs:
           (cd dist && sha256sum ./*.tar.gz > checksums.txt)
           ls -la dist && cat dist/checksums.txt
 
-      - name: Generate release notes
+      - name: Generate release notes (CHANGELOG.md section, fallback to git log)
         run: |
-          prev="$(git tag --list 'v*.*.*' --sort=-v:refname | grep -x -v "$TAG" | head -n 1 || true)"
-          if [ -n "$prev" ]; then range="$prev..$TAG"; else range="$TAG"; fi
+          ver="${TAG#v}"
           {
-            echo "## What's changed ($range)"
-            echo
-            git log "$range" --pretty=format:'- %s (%h)' --no-merges 2>/dev/null \
-              || git log -20 HEAD --pretty=format:'- %s (%h)' --no-merges
+            if grep -q "^## \\[${ver}\\]" CHANGELOG.md 2>/dev/null; then
+              awk -v ver="$ver" '
+                index($0, "## [" ver "]") == 1 {flag=1; next}
+                flag && /^## / {exit}
+                flag
+              ' CHANGELOG.md | sed '/./,$!d'
+            else
+              prev="$(git tag --list 'v*.*.*' --sort=-v:refname | grep -x -v "$TAG" | head -n 1 || true)"
+              if [ -n "$prev" ]; then range="$prev..$TAG"; else range="$TAG"; fi
+              echo "## What's changed ($range)"
+              echo
+              git log "$range" --pretty=format:'- %s (%h)' --no-merges 2>/dev/null \
+                || git log -20 HEAD --pretty=format:'- %s (%h)' --no-merges
+            fi
             echo
             echo
             echo "## Install"
