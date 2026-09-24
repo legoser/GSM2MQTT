@@ -204,3 +204,42 @@ func TestManager_UpdateConfigAndResetQuotas(t *testing.T) {
 		t.Errorf("expected restored config to match persisted dynamic values, got %+v", cfg2)
 	}
 }
+
+func TestManager_SetUsageAndRestore(t *testing.T) {
+	tempDir := t.TempDir()
+	store := NewFileStore(tempDir)
+
+	m := NewManager("modem_usage_test", Config{SMSLimit: 100, CallMinutesLimit: 60}, nil)
+	m.SetStore(store)
+
+	smsMonth := 14
+	smsDay := 2
+	callsUsed := 3.5
+	dataUsed := int64(1048576)
+
+	m.SetUsage(UsageUpdate{
+		SMSMonthCount:   &smsMonth,
+		SMSDayCount:     &smsDay,
+		CallMinutesUsed: &callsUsed,
+		DataBytesUsed:   &dataUsed,
+	})
+
+	st := m.Status()
+	if st.SMSMonthCount != 14 || st.SMSDayCount != 2 || st.CallMinutesUsed != 3.5 || st.DataBytesUsed != 1048576 {
+		t.Errorf("unexpected status after SetUsage: %+v", st)
+	}
+	if st.SMSRemaining != 86 {
+		t.Errorf("expected SMSRemaining = 86, got %d", st.SMSRemaining)
+	}
+	if st.CallMinutesRemaining != 56.5 {
+		t.Errorf("expected CallMinutesRemaining = 56.5, got %f", st.CallMinutesRemaining)
+	}
+
+	// Verify persistence and restoration without empty reset date wiping counters
+	m2 := NewManager("modem_usage_test", Config{SMSLimit: 100, CallMinutesLimit: 60}, nil)
+	m2.SetStore(store)
+	st2 := m2.Status()
+	if st2.SMSMonthCount != 14 || st2.SMSDayCount != 2 || st2.CallMinutesUsed != 3.5 || st2.DataBytesUsed != 1048576 {
+		t.Errorf("unexpected restored status: %+v", st2)
+	}
+}

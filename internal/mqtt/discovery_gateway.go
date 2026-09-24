@@ -96,15 +96,24 @@ func BuildRecipientsTextDiscovery(discoveryPrefix, topicPrefix string) (*Discove
 	return marshalDiscovery(topic, payload)
 }
 
+func gatewayDeviceInfo(version string) *DeviceInfo {
+	if version == "" {
+		version = "1.0.0"
+	}
+	return &DeviceInfo{
+		Identifiers:  []string{GatewayIdentifier},
+		Name:         "GSM2MQTT Gateway",
+		Manufacturer: "GSM2MQTT",
+		Model:        "Go GSM Gateway",
+		SwVersion:    version,
+	}
+}
+
 // BuildGatewayDiscovery creates discovery message for the parent GSM2MQTT Gateway device.
 func BuildGatewayDiscovery(discoveryPrefix, topicPrefix, version string) (*DiscoveryMessage, error) {
 	uniqueID := "gsm2mqtt_gateway_status"
 	topic := fmt.Sprintf("%s/sensor/%s/config", discoveryPrefix, uniqueID)
 	availTopic, avail, notAvail := buildAvailability(topicPrefix)
-
-	if version == "" {
-		version = "1.0.0"
-	}
 
 	payload := SensorDiscoveryPayload{
 		Name:                "Gateway Status",
@@ -115,13 +124,55 @@ func BuildGatewayDiscovery(discoveryPrefix, topicPrefix, version string) (*Disco
 		PayloadAvailable:    avail,
 		PayloadNotAvailable: notAvail,
 		Icon:                "mdi:router-wireless",
-		Device: &DeviceInfo{
-			Identifiers:  []string{GatewayIdentifier},
-			Name:         "GSM2MQTT Gateway",
-			Manufacturer: "GSM2MQTT",
-			Model:        "Go GSM Gateway",
-			SwVersion:    version,
-		},
+		Device:              gatewayDeviceInfo(version),
+	}
+	return marshalDiscovery(topic, payload)
+}
+
+// BuildGatewayModemCountDiscovery creates discovery for connected modems count sensor.
+func BuildGatewayModemCountDiscovery(discoveryPrefix, topicPrefix, version string) (*DiscoveryMessage, error) {
+	uniqueID := "gsm2mqtt_gateway_modem_count"
+	topic := fmt.Sprintf("%s/sensor/%s/config", discoveryPrefix, uniqueID)
+	availTopic, avail, notAvail := buildAvailability(topicPrefix)
+	stateTopic := fmt.Sprintf("%s/gateway/modems", topicPrefix)
+
+	payload := SensorDiscoveryPayload{
+		Name:                "Connected Modems",
+		UniqueID:            uniqueID,
+		ObjectID:            "gsm2mqtt_gateway_modem_count",
+		StateTopic:          stateTopic,
+		JSONAttributesTopic: stateTopic,
+		ValueTemplate:       "{{ value_json.count }}",
+		UnitOfMeasurement:   "modems",
+		StateClass:          "measurement",
+		Icon:                "mdi:devices",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              gatewayDeviceInfo(version),
+	}
+	return marshalDiscovery(topic, payload)
+}
+
+// BuildGatewayActiveModemDiscovery creates discovery for active modem name sensor.
+func BuildGatewayActiveModemDiscovery(discoveryPrefix, topicPrefix, version string) (*DiscoveryMessage, error) {
+	uniqueID := "gsm2mqtt_gateway_active_modem"
+	topic := fmt.Sprintf("%s/sensor/%s/config", discoveryPrefix, uniqueID)
+	availTopic, avail, notAvail := buildAvailability(topicPrefix)
+	stateTopic := fmt.Sprintf("%s/gateway/modems", topicPrefix)
+
+	payload := SensorDiscoveryPayload{
+		Name:                "Active Modem",
+		UniqueID:            uniqueID,
+		ObjectID:            "gsm2mqtt_gateway_active_modem",
+		StateTopic:          stateTopic,
+		JSONAttributesTopic: stateTopic,
+		ValueTemplate:       "{{ value_json.active_modem }}",
+		Icon:                "mdi:modem",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              gatewayDeviceInfo(version),
 	}
 	return marshalDiscovery(topic, payload)
 }

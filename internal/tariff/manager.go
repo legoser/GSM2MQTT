@@ -71,6 +71,9 @@ func (m *Manager) UpdateConfig(newCfg Config) {
 	if newCfg.CallMinutesLimit >= 0 {
 		m.cfg.CallMinutesLimit = newCfg.CallMinutesLimit
 	}
+	if newCfg.DataTrafficLimitMB >= 0 {
+		m.cfg.DataTrafficLimitMB = newCfg.DataTrafficLimitMB
+	}
 	if newCfg.ResetDayOfMonth >= 1 && newCfg.ResetDayOfMonth <= 31 {
 		m.cfg.ResetDayOfMonth = newCfg.ResetDayOfMonth
 	}
@@ -87,8 +90,46 @@ func (m *Manager) UpdateConfig(newCfg Config) {
 		slog.String("modem", m.modemID),
 		slog.Int("sms_limit", m.cfg.SMSLimit),
 		slog.Float64("call_minutes_limit", m.cfg.CallMinutesLimit),
+		slog.Int64("data_limit_mb", m.cfg.DataTrafficLimitMB),
 		slog.Int("reset_day", m.cfg.ResetDayOfMonth),
 	)
+	m.persistLocked()
+}
+
+// UsageUpdate contains manual overrides for usage counters.
+type UsageUpdate struct {
+	SMSDayCount     *int
+	SMSMonthCount   *int
+	CallMinutesUsed *float64
+	DataBytesUsed   *int64
+}
+
+// SetUsage manually overrides usage counters and persists the state.
+func (m *Manager) SetUsage(update UsageUpdate) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if update.SMSDayCount != nil && *update.SMSDayCount >= 0 {
+		m.smsDayCount = *update.SMSDayCount
+	}
+	if update.SMSMonthCount != nil && *update.SMSMonthCount >= 0 {
+		m.smsMonthCount = *update.SMSMonthCount
+	}
+	if update.CallMinutesUsed != nil && *update.CallMinutesUsed >= 0 {
+		m.callMinutesUsed = *update.CallMinutesUsed
+	}
+	if update.DataBytesUsed != nil && *update.DataBytesUsed >= 0 {
+		m.dataBytesUsed = *update.DataBytesUsed
+	}
+	slog.Info("tariff usage counters manually updated",
+		slog.String("modem", m.modemID),
+		slog.Int("sms_month", m.smsMonthCount),
+		slog.Float64("call_minutes", m.callMinutesUsed),
+		slog.Int64("data_bytes", m.dataBytesUsed),
+	)
+	m.evaluateSMSLimits()
+	m.evaluateCallLimits()
+	m.evaluateDataLimits()
 	m.persistLocked()
 }
 
@@ -236,6 +277,7 @@ func (m *Manager) Status() UsageStatus {
 		CallMinutesLimit:     m.cfg.CallMinutesLimit,
 		CallMinutesUsed:      m.callMinutesUsed,
 		CallMinutesRemaining: remMins,
+		DataTrafficLimitMB:   m.cfg.DataTrafficLimitMB,
 		DataBytesLimit:       limitBytes,
 		DataBytesUsed:        m.dataBytesUsed,
 		DataBytesRemaining:   remBytes,

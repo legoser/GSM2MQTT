@@ -38,6 +38,24 @@ func TestBuildGatewayDiscovery(t *testing.T) {
 	}
 }
 
+func TestBuildGatewayModemSensorsDiscovery(t *testing.T) {
+	mcMsg, err := BuildGatewayModemCountDiscovery("homeassistant", "gsm2mqtt", "1.2.0")
+	if err != nil {
+		t.Fatalf("unexpected error for modem count: %v", err)
+	}
+	if mcMsg.Topic != "homeassistant/sensor/gsm2mqtt_gateway_modem_count/config" {
+		t.Errorf("unexpected topic %s", mcMsg.Topic)
+	}
+
+	amMsg, err := BuildGatewayActiveModemDiscovery("homeassistant", "gsm2mqtt", "1.2.0")
+	if err != nil {
+		t.Fatalf("unexpected error for active modem: %v", err)
+	}
+	if amMsg.Topic != "homeassistant/sensor/gsm2mqtt_gateway_active_modem/config" {
+		t.Errorf("unexpected topic %s", amMsg.Topic)
+	}
+}
+
 func TestBuildRecipientsTextDiscovery(t *testing.T) {
 	msg, err := BuildRecipientsTextDiscovery("homeassistant", "gsm2mqtt")
 	if err != nil {
@@ -161,8 +179,8 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildModemDiscoveries failed: %v", err)
 	}
-	if len(msgs) != 14 {
-		t.Fatalf("expected 14 discovery messages, got %d", len(msgs))
+	if len(msgs) != 15 {
+		t.Fatalf("expected 15 discovery messages, got %d", len(msgs))
 	}
 
 	expectedIDs := map[string]bool{
@@ -180,6 +198,7 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 		"gsm2mqtt_modem_1_sms_remaining":          false,
 		"gsm2mqtt_modem_1_call_minutes_remaining": false,
 		"gsm2mqtt_modem_1_btn_tariff_reset":       false,
+		"gsm2mqtt_modem_1_data_traffic_remaining": false,
 	}
 
 	for _, msg := range msgs {

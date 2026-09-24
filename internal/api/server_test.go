@@ -86,6 +86,10 @@ func (m *mockModemManager) UpdateTariffConfig(modemID string, cfg tariff.Config)
 	return nil
 }
 
+func (m *mockModemManager) SetTariffUsage(modemID string, update tariff.UsageUpdate) error {
+	return nil
+}
+
 func (m *mockModemManager) ResetTariffQuotas(modemID string) error {
 	m.tariffReset = true
 	return nil

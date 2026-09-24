@@ -43,6 +43,7 @@ type ModemManager interface {
 	GetReceivedSMS() []ReceivedSMS
 	GetMQTTStatus() MQTTStatus
 	UpdateTariffConfig(modemID string, cfg tariff.Config) error
+	SetTariffUsage(modemID string, update tariff.UsageUpdate) error
 	ResetTariffQuotas(modemID string) error
 	GetTariffStatus(modemID string) (*tariff.UsageStatus, error)
 }

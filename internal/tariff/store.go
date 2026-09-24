@@ -25,6 +25,7 @@ type State struct {
 	LastMonthlyResetMonth string    `json:"last_monthly_reset_month,omitempty"`
 	SMSLimit              int       `json:"sms_limit,omitempty"`
 	CallMinutesLimit      float64   `json:"call_minutes_limit,omitempty"`
+	DataTrafficLimitMB    int64     `json:"data_traffic_limit_mb,omitempty"`
 	ResetDayOfMonth       int       `json:"reset_day_of_month,omitempty"`
 	MinBalanceAlert       float64   `json:"min_balance_alert,omitempty"`
 	BalanceUSSD           string    `json:"balance_ussd,omitempty"`

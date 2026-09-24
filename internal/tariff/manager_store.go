@@ -24,17 +24,17 @@ func (m *Manager) restoreFromStore() {
 	m.dataBytesUsed = state.DataBytesUsed
 	m.callMinutesUsed = state.CallMinutesUsed
 
-	if state.LastDailyResetDate == today {
+	if state.LastDailyResetDate == "" || state.LastDailyResetDate == today {
 		m.smsDayCount = state.SMSDayCount
-		m.lastDailyResetDate = state.LastDailyResetDate
+		m.lastDailyResetDate = today
 	} else {
 		m.smsDayCount = 0
 		m.lastDailyResetDate = today
 	}
 
-	if state.LastMonthlyResetMonth == thisMonth {
+	if state.LastMonthlyResetMonth == "" || state.LastMonthlyResetMonth == thisMonth {
 		m.smsMonthCount = state.SMSMonthCount
-		m.lastMonthlyResetMonth = state.LastMonthlyResetMonth
+		m.lastMonthlyResetMonth = thisMonth
 	} else {
 		m.smsMonthCount = 0
 		m.lastMonthlyResetMonth = thisMonth
@@ -45,6 +45,9 @@ func (m *Manager) restoreFromStore() {
 	}
 	if state.CallMinutesLimit > 0 {
 		m.cfg.CallMinutesLimit = state.CallMinutesLimit
+	}
+	if state.DataTrafficLimitMB > 0 {
+		m.cfg.DataTrafficLimitMB = state.DataTrafficLimitMB
 	}
 	if state.ResetDayOfMonth > 0 && state.ResetDayOfMonth <= 31 {
 		m.cfg.ResetDayOfMonth = state.ResetDayOfMonth
@@ -85,6 +88,7 @@ func (m *Manager) persistLocked() {
 		LastMonthlyResetMonth: m.lastMonthlyResetMonth,
 		SMSLimit:              m.cfg.SMSLimit,
 		CallMinutesLimit:      m.cfg.CallMinutesLimit,
+		DataTrafficLimitMB:    m.cfg.DataTrafficLimitMB,
 		ResetDayOfMonth:       m.cfg.ResetDayOfMonth,
 		MinBalanceAlert:       m.cfg.MinBalanceAlert,
 		BalanceUSSD:           m.cfg.BalanceUSSD,

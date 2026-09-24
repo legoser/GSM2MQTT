@@ -78,3 +78,29 @@ func BuildTariffResetButtonDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage,
 
 	return marshalDiscovery(topic, payload)
 }
+
+// BuildTariffDataTrafficDiscovery generates discovery for mobile data traffic remaining sensor.
+func BuildTariffDataTrafficDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("data_traffic_remaining")
+	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/accounting/status", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	payload := SensorDiscoveryPayload{
+		Name:                "Data Traffic Remaining",
+		UniqueID:            uniqueID,
+		ObjectID:            p.EntityObjectID("data_traffic_remaining"),
+		StateTopic:          stateTopic,
+		JSONAttributesTopic: stateTopic,
+		ValueTemplate:       "{{ (value_json.data_bytes_remaining / 1048576) | round(1) }}",
+		UnitOfMeasurement:   "MB",
+		StateClass:          "measurement",
+		Icon:                "mdi:web",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}

@@ -89,6 +89,7 @@ func BuildSignalDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
 		DeviceClass:         "signal_strength",
 		StateClass:          "measurement",
 		ValueTemplate:       "{{ value_json.dbm }}",
+		Icon:                "mdi:signal-cellular-3",
 		AvailabilityTopic:   availTopic,
 		PayloadAvailable:    avail,
 		PayloadNotAvailable: notAvail,

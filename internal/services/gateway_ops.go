@@ -188,6 +188,27 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 	if gwMsg, err := mqtt.BuildGatewayDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
 		_ = r.mqttClient.Publish(gwMsg.Topic, 1, true, gwMsg.Payload)
 	}
+	if mcMsg, err := mqtt.BuildGatewayModemCountDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(mcMsg.Topic, 1, true, mcMsg.Payload)
+	}
+	if amMsg, err := mqtt.BuildGatewayActiveModemDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(amMsg.Topic, 1, true, amMsg.Payload)
+	}
+
+	gwModemsPayload, _ := json.Marshal(map[string]any{
+		"count":        1,
+		"active_modem": model,
+		"modems": []map[string]any{
+			{
+				"id":           r.mCfg.ID,
+				"model":        model,
+				"manufacturer": mfg,
+				"port":         r.mCfg.Port,
+				"status":       "ready",
+			},
+		},
+	})
+	_ = r.mqttClient.Publish(fmt.Sprintf("%s/gateway/modems", r.cfg.MQTT.TopicPrefix), 1, true, gwModemsPayload)
 
 	if recMsg, err := mqtt.BuildRecipientsTextDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix); err == nil && r.mqttClient.IsConnected() {
 		_ = r.mqttClient.Publish(recMsg.Topic, 1, true, recMsg.Payload)
@@ -214,8 +235,11 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 		}
 	}
 
-	if r.tariffMgr != nil && r.mqttClient.IsConnected() {
-		st := r.tariffMgr.Status()
+	r.mu.RLock()
+	tm := r.tariffMgr
+	r.mu.RUnlock()
+	if tm != nil && r.mqttClient.IsConnected() {
+		st := tm.Status()
 		stPayload, _ := json.Marshal(st)
 		_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, true, stPayload)
 	}
@@ -242,42 +266,4 @@ func (r *ModemRunner) startStorageCheckLoop(ctx context.Context, smsSvc *SMSServ
 			}
 		}
 	}
-}
-
-// UpdateTariffConfig updates the active tariff parameters and publishes new state.
-func (r *ModemRunner) UpdateTariffConfig(cfg tariff.Config) error {
-	r.mu.RLock()
-	tm := r.tariffMgr
-	r.mu.RUnlock()
-	if tm == nil {
-		return fmt.Errorf("tariff manager not initialized")
-	}
-	tm.UpdateConfig(cfg)
-	r.publishAccountingStatus(tm)
-	return nil
-}
-
-// ResetTariffQuotas resets monthly quota counters and publishes new state.
-func (r *ModemRunner) ResetTariffQuotas() error {
-	r.mu.RLock()
-	tm := r.tariffMgr
-	r.mu.RUnlock()
-	if tm == nil {
-		return fmt.Errorf("tariff manager not initialized")
-	}
-	tm.ResetQuotas()
-	r.publishAccountingStatus(tm)
-	return nil
-}
-
-// GetTariffStatus returns current tariff usage statistics.
-func (r *ModemRunner) GetTariffStatus() (*tariff.UsageStatus, error) {
-	r.mu.RLock()
-	tm := r.tariffMgr
-	r.mu.RUnlock()
-	if tm == nil {
-		return nil, fmt.Errorf("tariff manager not initialized")
-	}
-	st := tm.Status()
-	return &st, nil
 }

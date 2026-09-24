@@ -29,6 +29,7 @@ type UsageStatus struct {
 	CallMinutesLimit     float64   `json:"call_minutes_limit"`
 	CallMinutesUsed      float64   `json:"call_minutes_used"`
 	CallMinutesRemaining float64   `json:"call_minutes_remaining"`
+	DataTrafficLimitMB   int64     `json:"data_traffic_limit_mb"`
 	DataBytesLimit       int64     `json:"data_bytes_limit"`
 	DataBytesUsed        int64     `json:"data_bytes_used"`
 	DataBytesRemaining   int64     `json:"data_bytes_remaining"`

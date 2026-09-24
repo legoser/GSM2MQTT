@@ -136,6 +136,15 @@ func (m *GatewayManager) UpdateTariffConfig(modemID string, cfg tariff.Config) e
 	return runner.UpdateTariffConfig(cfg)
 }
 
+// SetTariffUsage manually updates tariff usage counters on the requested (or first available) modem.
+func (m *GatewayManager) SetTariffUsage(modemID string, update tariff.UsageUpdate) error {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return err
+	}
+	return runner.SetTariffUsage(update)
+}
+
 // ResetTariffQuotas resets monthly quota counters on the requested (or first available) modem.
 func (m *GatewayManager) ResetTariffQuotas(modemID string) error {
 	runner, err := m.findRunner(modemID)

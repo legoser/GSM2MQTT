@@ -134,8 +134,6 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 		slog.Info("modem driver initialized", slog.String("modem", r.mCfg.ID), slog.String("type", r.mCfg.Type))
 	}
 
-	r.publishDiscovery(driver)
-
 	smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc := r.wireServices(engine, driver)
 	statusSvc.SetOnDisconnect(cancel)
 
@@ -146,6 +144,8 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 	r.callSvc = callSvc
 	r.tariffMgr = tariffMgr
 	r.mu.Unlock()
+
+	r.publishDiscovery(driver)
 
 	go r.urcLoop(childCtx, engine, smsSvc, callSvc, ussdSvc)
 	r.subscribeMQTT(smsSvc, callSvc, ussdSvc, tariffMgr, diagSvc, driver)
