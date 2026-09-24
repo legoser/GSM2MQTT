@@ -122,7 +122,7 @@ curl -X POST http://localhost:8088/api/sms/send \
   -H "Content-Type: application/json" \
   -d '{
     "modem_id": "huawei_e1550",
-    "to": "+79964126670",
+    "to": "+79991234567",
     "text": "Hello from GSM2MQTT!"
   }'
 ```
@@ -147,7 +147,7 @@ Dial a phone number (with automated firmware voice capability pre-check):
 # Dial
 curl -X POST http://localhost:8088/api/call/dial \
   -H "Content-Type: application/json" \
-  -d '{"modem_id": "huawei_e1550", "number": "+79964126670"}'
+  -d '{"modem_id": "huawei_e1550", "number": "+79991234567"}'
 
 # Hang up
 curl -X POST http://localhost:8088/api/call/hangup \
