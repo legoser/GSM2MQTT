@@ -1,0 +1,116 @@
+# Release pipeline (Forgejo = source of truth).
+# Trigger: git tag vX.Y.Z && git push origin vX.Y.Z
+# Result: Release <tag> with gsm2mqtt-<tag>-linux-{amd64,arm64,riscv64}.tar.gz + checksums.txt
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race -count=1 ./...
+
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate tag format (vMAJOR.MINOR.PATCH)
+        run: |
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tag OK: $TAG"
+          else
+            echo "tag must match vMAJOR.MINOR.PATCH, got: $TAG" >&2
+            exit 1
+          fi
+
+      - name: Build all platforms (CGO_ENABLED=0, version via ldflags)
+        run: make build-all
+
+      - name: Smoke check version string
+        run: ./bin/gsm2mqtt-linux-amd64 --version
+
+      - name: Package versioned archives + checksums
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64 riscv64; do
+            staged="$(mktemp -d)"
+            cp "bin/gsm2mqtt-linux-${arch}" "${staged}/gsm2mqtt"
+            cp README.md LICENSE configs/gsm2mqtt.example.yaml "${staged}/"
+            tar -czf "dist/gsm2mqtt-${TAG}-linux-${arch}.tar.gz" \
+              -C "${staged}" gsm2mqtt README.md LICENSE gsm2mqtt.example.yaml
+            rm -rf "${staged}"
+          done
+          (cd dist && sha256sum ./*.tar.gz > checksums.txt)
+          ls -la dist && cat dist/checksums.txt
+
+      - name: Generate release notes
+        run: |
+          prev="$(git tag --list 'v*.*.*' --sort=-v:refname | grep -x -v "$TAG" | head -n 1 || true)"
+          if [ -n "$prev" ]; then range="$prev..$TAG"; else range="$TAG"; fi
+          {
+            echo "## What's changed ($range)"
+            echo
+            git log "$range" --pretty=format:'- %s (%h)' --no-merges 2>/dev/null \
+              || git log -20 HEAD --pretty=format:'- %s (%h)' --no-merges
+            echo
+            echo
+            echo "## Install"
+            echo
+            echo '```bash'
+            echo "sha256sum -c checksums.txt"
+            echo "tar -xzf gsm2mqtt-${TAG}-linux-amd64.tar.gz"
+            echo "./gsm2mqtt --version"
+            echo '```'
+          } > release_notes.md
+          cat release_notes.md
+
+      - name: Publish Forgejo Release with assets
+        env:
+          FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
+        run: |
+          auth="Authorization: token ${FORGEJO_TOKEN}"
+          # Reuse existing release on re-run, create otherwise.
+          id="$(curl -sS -H "$auth" "${API}/releases/tags/${TAG}" | jq -r '.id // empty')"
+          if [ -z "$id" ]; then
+            id="$(curl -sS -X POST -H "$auth" -H 'Content-Type: application/json' \
+              -d "$(jq -n --arg tag "$TAG" --arg name "$TAG" \
+                --rawfile body release_notes.md \
+                '{tag_name:$tag,name:$name,body:$body,draft:false,prerelease:false}')" \
+              "${API}/releases" | jq -r '.id // empty')"
+          fi
+          if [ -z "$id" ]; then echo "failed to create or find release $TAG" >&2; exit 1; fi
+          echo "release id: $id"
+          for f in dist/*; do
+            echo "uploading $(basename "$f")..."
+            curl -sS -X POST -H "$auth" --data-binary "@${f}" \
+              "${API}/releases/${id}/assets?name=$(basename "$f")" > /dev/null
+          done
+          echo "published: ${API}/releases/${id}"

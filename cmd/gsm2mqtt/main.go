@@ -33,6 +33,11 @@ func main() {
 
 // run executes the application and returns an exit code.
 func run() int {
+	if isVersionFlag(os.Args[1:]) {
+		fmt.Println(Version())
+		return 0
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -229,4 +234,15 @@ func parseLogLevel(level string) slog.Level {
 // Version returns the application version string.
 func Version() string {
 	return fmt.Sprintf("gsm2mqtt %s (built %s)", version, buildTime)
+}
+
+// isVersionFlag reports whether args request version output.
+// It matches exact --version or -v tokens only.
+func isVersionFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--version" || arg == "-v" {
+			return true
+		}
+	}
+	return false
 }

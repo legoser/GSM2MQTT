@@ -44,6 +44,28 @@ cp configs/gsm2mqtt.example.yaml /etc/gsm2mqtt/gsm2mqtt.yaml
 ./bin/gsm2mqtt --config /etc/gsm2mqtt/gsm2mqtt.yaml
 ```
 
+## Install from Release
+
+Download the archive for your platform from the **Releases** page
+(available both in Forgejo and on GitHub):
+
+```
+gsm2mqtt-v1.2.3-linux-amd64.tar.gz    # x86_64 server
+gsm2mqtt-v1.2.3-linux-arm64.tar.gz    # Raspberry Pi 4/5, ARM server
+gsm2mqtt-v1.2.3-linux-riscv64.tar.gz  # RISC-V
+checksums.txt                         # SHA-256 of all archives
+```
+
+```bash
+# Verify integrity, unpack, check version
+sha256sum -c checksums.txt
+tar -xzf gsm2mqtt-v1.2.3-linux-amd64.tar.gz
+./gsm2mqtt --version
+# gsm2mqtt v1.2.3 (built 2026-...)
+
+# New version = new tag: git tag v1.2.4 && git push origin v1.2.4
+```
+
 ## Docker
 
 ```bash
