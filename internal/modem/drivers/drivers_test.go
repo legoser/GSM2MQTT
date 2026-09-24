@@ -105,6 +105,42 @@ func TestGenericDriver_Caller(t *testing.T) {
 	}
 }
 
+func TestGenericDriver_SendDTMF_Validation(t *testing.T) {
+	valid := []string{"0", "9", "5", "*", "#", "A", "D", "a", ","}
+	for _, d := range valid {
+		runner := newMockATRunner()
+		driver := NewGenericDriver(runner)
+		if err := driver.SendDTMF(d); err != nil {
+			t.Errorf("SendDTMF(%q) error = %v, want nil", d, err)
+		}
+	}
+
+	// Injection / malformed digits must be rejected before reaching the modem.
+	invalid := []string{
+		"",
+		"  ",
+		"12",             // multi-digit
+		"7;",             // command chaining
+		"1\r\nAT+CFUN=0", // CRLF injection
+		"1\x1A",          // Ctrl-Z injection
+		"1\x00",          // null byte
+		"ATD+7999;",      // full command
+		"X",              // outside DTMF alphabet
+		"E",              // outside A-D range
+		"-",              // symbol
+	}
+	for _, d := range invalid {
+		runner := newMockATRunner()
+		driver := NewGenericDriver(runner)
+		if err := driver.SendDTMF(d); err == nil {
+			t.Errorf("SendDTMF(%q) = nil, want validation error", d)
+		}
+		if len(runner.commands) != 0 {
+			t.Errorf("SendDTMF(%q) sent %v to modem, want nothing sent", d, runner.commands)
+		}
+	}
+}
+
 func TestGenericDriver_StatusProvider(t *testing.T) {
 	runner := newMockATRunner()
 	runner.responses["AT+CSQ"] = &at.Response{

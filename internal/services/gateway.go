@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
+	"github.com/legoser/gsm2mqtt/internal/transport"
 )
 
 // ModemSummary represents the consolidated live state of a managed modem.
@@ -73,28 +75,51 @@ func NewModemRunner(
 }
 
 // Run manages serial connection, automatically reconnects on error, and runs until context cancellation.
+// Reconnects use exponential backoff with jitter (3s → 60s max) so a
+// missing/unplugged modem does not hammer the port and the log.
 func (r *ModemRunner) Run(ctx context.Context) error {
+	const (
+		minBackoff = 3 * time.Second
+		maxBackoff = 60 * time.Second
+	)
+	backoff := minBackoff
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		started := time.Now()
 		err := r.runOnce(ctx)
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		// A long-lived session means the failure is fresh: retry fast.
+		// Only consecutive quick failures back off.
+		if time.Since(started) > 5*time.Minute {
+			backoff = minBackoff
 		}
 		r.updateHealth(ModemHealth{
 			Status: "error",
 			SIM:    "DISCONNECTED",
 		})
-		slog.Warn("modem port disconnected or unavailable, retrying in 3s...",
+		slog.Warn("modem port disconnected or unavailable, retrying...",
 			slog.String("modem", r.mCfg.ID),
 			slog.String("port", r.mCfg.Port),
 			slog.Any("error", err),
+			slog.Duration("retry_in", backoff),
 		)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(3 * time.Second):
+		case <-time.After(backoff):
+		}
+		// Exponential backoff with jitter: double up to max, ±20%.
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+		backoff = backoff - time.Duration(rand.Int63n(int64(backoff)/5))
+		if backoff < minBackoff {
+			backoff = minBackoff
 		}
 	}
 }
@@ -103,7 +128,14 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	engine, closer, err := r.connector.Open(r.mCfg)
+	engine, closer, err := r.connector.Open(transport.PortConfig{
+		Device:      r.mCfg.Port,
+		BaudRate:    r.mCfg.BaudRate,
+		DataBits:    r.mCfg.DataBits,
+		StopBits:    r.mCfg.StopBits,
+		Parity:      r.mCfg.Parity,
+		FlowControl: r.mCfg.FlowControl,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to open modem port %s: %w", r.mCfg.Port, err)
 	}

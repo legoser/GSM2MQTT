@@ -60,9 +60,34 @@ func Defaults() *Config {
 			AllowRawAT: false,
 			AllowedATCommands: []string{
 				"ATI",
-				"AT+C",
-				"AT+M",
-				"AT+G",
+				"AT+CSQ",
+				"AT+CREG",
+				"AT+CGREG",
+				"AT+CEREG",
+				"AT+COPS",
+				"AT+CPIN?",
+				"AT+CSCA",
+				"AT+CMGF",
+				"AT+CNMI",
+				"AT+CMEE",
+				"AT+CBC",
+				"AT+CGMI",
+				"AT+CGMM",
+				"AT+CGMR",
+				"AT+CGSN",
+				"AT+CIMI",
+				"AT+CCLK",
+				"AT+CSMS",
+				"AT+CPMS",
+				"AT+CMGL",
+				"AT+CMGR",
+				"AT+CLCC",
+				"AT+CLIP",
+				"AT+COLP",
+				"AT+CFUN?",
+				"AT+CVOICE",
+				"AT^CVOICE",
+				"AT+CSCLK",
 			},
 			RecipientsFile: "data/recipients.json",
 			FallbackCall:   true,
@@ -169,6 +194,10 @@ func validate(cfg *Config) error {
 	validFilters := map[string]bool{"all": true, "whitelist": true, "blacklist": true}
 	if !validFilters[cfg.Security.IncomingFilter] {
 		return fmt.Errorf("invalid config: security.incoming_filter must be one of: all, whitelist, blacklist; got %q", cfg.Security.IncomingFilter)
+	}
+
+	if len(cfg.Security.BlockedATCommands) > 0 {
+		return fmt.Errorf("invalid config: security.blocked_at_commands is deprecated, use security.allowed_at_commands instead")
 	}
 
 	for i, m := range cfg.Modems {

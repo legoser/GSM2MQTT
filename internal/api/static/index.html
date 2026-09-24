@@ -62,6 +62,8 @@ button { flex: 1; padding: 0.65rem 1rem; border: none; border-radius: 6px; font-
   <h1><span>📟</span> GSM2MQTT Control Center</h1>
   <div>
     <span class="gateway-badge">● Gateway Online</span>
+    <span id="authBadge" class="badge badge-warning" title="API auth status">🔓 NO TOKEN</span>
+    <button onclick="loginToken()" style="margin-left:8px; padding:0.35rem 0.75rem;" class="btn-secondary" title="Set API token (stored in this browser only)">🔑 Token</button>
     <button onclick="refreshAll()" style="margin-left:8px; padding:0.35rem 0.75rem;" class="btn-secondary">↻ Refresh</button>
   </div>
 </div>
@@ -206,6 +208,46 @@ button { flex: 1; padding: 0.65rem 1rem; border: none; border-radius: 6px; font-
 </div>
 
 <script>
+// --- API token auth (stored in this browser's localStorage only) ---
+function getToken() { try { return localStorage.getItem('gsm2mqtt_token') || ''; } catch (e) { return ''; } }
+function authHeaders() {
+  let h = {'Content-Type': 'application/json'};
+  let t = getToken();
+  if (t) h['Authorization'] = 'Bearer ' + t;
+  return h;
+}
+// apiFetch wraps fetch with the stored Bearer token and surfaces 401.
+function apiFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign(authHeaders(), opts.headers || {});
+  return fetch(url, opts).then(r => {
+    if (r.status === 401) {
+      updateAuthBadge(false);
+      throw new Error('Unauthorized (401) — click 🔑 Token and enter a valid API token');
+    }
+    return r;
+  });
+}
+function updateAuthBadge(ok) {
+  let b = document.getElementById('authBadge');
+  if (!b) return;
+  if (ok === true) { b.className = 'badge badge-ready'; b.innerText = '🔒 AUTH OK'; }
+  else if (ok === false) { b.className = 'badge badge-error'; b.innerText = '🔓 AUTH FAILED'; }
+  else if (getToken()) { b.className = 'badge badge-ready'; b.innerText = '🔒 TOKEN SET'; }
+  else { b.className = 'badge badge-warning'; b.innerText = '🔓 NO TOKEN'; }
+}
+function loginToken() {
+  let cur = getToken();
+  let t = prompt('Enter API token (from GSM2MQTT_API_TOKEN). Leave empty to clear:', cur);
+  if (t === null) return; // cancelled
+  t = (t || '').trim();
+  try {
+    if (t) localStorage.setItem('gsm2mqtt_token', t);
+    else localStorage.removeItem('gsm2mqtt_token');
+  } catch (e) { alert('Cannot access localStorage: ' + e); return; }
+  updateAuthBadge();
+  refreshAll();
+}
 function setUSSD(c) { document.getElementById('ussdCode').value = c; }
 function setAT(c) { document.getElementById('atCommand').value = c; }
 
@@ -219,23 +261,24 @@ function getSignalHTML(rssi, dbm) {
 function getBadge(status) {
   let s = (status || 'unknown').toLowerCase();
   let cls = s === 'ready' ? 'badge-ready' : s.includes('error') ? 'badge-error' : 'badge-warning';
-  return '<span class="badge ' + cls + '">' + (status || 'OFFLINE') + '</span>';
+  return '<span class="badge ' + cls + '">' + escapeHtml(status || 'OFFLINE') + '</span>';
 }
 
 function updateModemSelects(modems) {
   ['ussdModem', 'callModem', 'smsModem', 'atModem'].forEach(id => {
     let sel = document.getElementById(id);
     let cur = sel.value;
-    sel.innerHTML = modems.map(m => '<option value="' + m.id + '">' + m.id + ' (' + m.type + ')</option>').join('');
+    sel.innerHTML = modems.map(m => '<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.id) + ' (' + escapeHtml(m.type) + ')</option>').join('');
     if (cur) sel.value = cur;
   });
   if (!callTimer) updateCallStatusDisplay();
 }
 
 function fetchModems() {
-  fetch('/api/modems')
+  apiFetch('/api/modems')
     .then(r => r.json())
     .then(modems => {
+      updateAuthBadge();
       updateModemSelects(modems);
       let body = document.getElementById('modemsBody');
       if (!modems || modems.length === 0) {
@@ -245,13 +288,13 @@ function fetchModems() {
       body.innerHTML = modems.map(m => {
         let h = m.health || {};
         return '<tr>' +
-          '<td><strong>' + m.id + '</strong></td>' +
-          '<td>' + m.type + '</td>' +
+          '<td><strong>' + escapeHtml(m.id) + '</strong></td>' +
+          '<td>' + escapeHtml(m.type) + '</td>' +
           '<td>' + getBadge(h.status) + '</td>' +
           '<td>' + getSignalHTML(h.signal || 0, h.signal_dbm || 0) + '</td>' +
-          '<td>' + (h.operator || 'Unknown') + '</td>' +
-          '<td>' + (h.sim || 'N/A') + '</td>' +
-          '<td><strong>' + (m.balance !== undefined ? m.balance.toFixed(2) : '0.00') + ' ' + (m.currency || 'RUB') + '</strong></td>' +
+          '<td>' + escapeHtml(h.operator || 'Unknown') + '</td>' +
+          '<td>' + escapeHtml(h.sim || 'N/A') + '</td>' +
+          '<td><strong>' + (m.balance !== undefined ? m.balance.toFixed(2) : '0.00') + ' ' + escapeHtml(m.currency || 'RUB') + '</strong></td>' +
         '</tr>';
       }).join('');
     })
@@ -259,7 +302,7 @@ function fetchModems() {
 }
 
 function fetchInbox() {
-  fetch('/api/sms/inbox')
+  apiFetch('/api/sms/inbox')
     .then(r => r.json())
     .then(list => {
       let body = document.getElementById('inboxBody');
@@ -268,10 +311,10 @@ function fetchInbox() {
         return;
       }
       body.innerHTML = list.map(m => '<tr>' +
-        '<td>' + m.timestamp + '</td>' +
-        '<td><strong>' + m.sender + '</strong></td>' +
-        '<td>' + m.modem_id + '</td>' +
-        '<td>' + m.text + '</td>' +
+        '<td>' + escapeHtml(m.timestamp) + '</td>' +
+        '<td><strong>' + escapeHtml(m.sender) + '</strong></td>' +
+        '<td>' + escapeHtml(m.modem_id) + '</td>' +
+        '<td>' + escapeHtml(m.text) + '</td>' +
       '</tr>').join('');
     })
     .catch(e => console.error('failed fetching inbox', e));
@@ -283,9 +326,9 @@ function sendUSSD() {
   let out = document.getElementById('ussdResult');
   out.className = 'res-box status-active';
   out.innerText = 'Executing ' + code + '...';
-  fetch('/api/ussd/send', {
+  apiFetch('/api/ussd/send', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: authHeaders(),
     body: JSON.stringify({modem_id: m, code: code})
   })
   .then(r => r.json())
@@ -307,9 +350,9 @@ function sendAT() {
   if (!cmd) return;
   out.className = 'res-box status-active';
   out.innerText = 'Sending ' + cmd + '...';
-  fetch('/api/at/send', {
+  apiFetch('/api/at/send', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: authHeaders(),
     body: JSON.stringify({modem_id: m, command: cmd})
   })
   .then(r => r.json())
@@ -375,7 +418,7 @@ function pollCall(m) {
   if (callTimer) clearInterval(callTimer);
   trailingPolls = 0;
   callTimer = setInterval(() => {
-    fetch('/api/call/status?modem_id=' + encodeURIComponent(m))
+    apiFetch('/api/call/status?modem_id=' + encodeURIComponent(m))
       .then(r => r.json())
       .then(st => {
         if (!st) return;
@@ -397,7 +440,7 @@ function pollCall(m) {
 function updateCallStatusDisplay() {
   let m = document.getElementById('callModem').value;
   if (!m) return;
-  fetch('/api/call/status?modem_id=' + encodeURIComponent(m))
+  apiFetch('/api/call/status?modem_id=' + encodeURIComponent(m))
     .then(r => r.json())
     .then(st => { setCallDisplay(st); })
     .catch(() => {});
@@ -415,9 +458,9 @@ function dialCall() {
   out.className = 'res-box status-active';
   out.innerText = 'Dialing ' + num + '...';
   pollCall(m);
-  fetch('/api/call/dial', {
+  apiFetch('/api/call/dial', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: authHeaders(),
     body: JSON.stringify({modem_id: m, number: num})
   })
   .then(r => r.json())
@@ -441,9 +484,9 @@ function hangupCall() {
   if (callTimer) { clearInterval(callTimer); callTimer = null; }
   let m = document.getElementById('callModem').value;
   let out = document.getElementById('callResult');
-  fetch('/api/call/hangup', {
+  apiFetch('/api/call/hangup', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: authHeaders(),
     body: JSON.stringify({modem_id: m})
   })
   .then(r => r.json())
@@ -466,9 +509,9 @@ function sendSMS() {
   let out = document.getElementById('smsResult');
   out.className = 'res-box status-active';
   out.innerText = 'Sending SMS...';
-  fetch('/api/sms/send', {
+  apiFetch('/api/sms/send', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: authHeaders(),
     body: JSON.stringify({modem_id: m, to: to, text: txt})
   })
   .then(r => r.json())
@@ -488,7 +531,7 @@ function sendSMS() {
 }
 
 function fetchMQTTStatus() {
-  fetch('/api/mqtt/status')
+  apiFetch('/api/mqtt/status')
     .then(r => r.json())
     .then(st => {
       let badge = document.getElementById('mqttStatusBadge');
@@ -522,6 +565,7 @@ function refreshAll() {
 }
 
 setInterval(refreshAll, 3000);
+updateAuthBadge();
 refreshAll();
 </script>
 </body>

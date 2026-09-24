@@ -489,6 +489,36 @@ func TestEngine_SendPDU_Timeout(t *testing.T) {
 	}
 }
 
+func TestEngine_SendPDU_PromptTimeout(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	// Never feed the '>' prompt: engine must abort with ESC and must NOT
+	// blind-send the PDU payload (regression: old code fell through).
+	const pduHex = "0011000B91AA"
+	_, err := engine.SendPDU(15, pduHex, 500*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "prompt") {
+		t.Fatalf("expected prompt timeout error, got: %v", err)
+	}
+
+	port.mu.Lock()
+	inStr := port.inBuf.String()
+	port.mu.Unlock()
+	if !strings.Contains(inStr, "\x1B") {
+		t.Fatalf("expected \\x1B (ESC) written to port on prompt timeout, got: %q", inStr)
+	}
+	if strings.Contains(inStr, pduHex) {
+		t.Fatalf("PDU payload must not be sent without '>' prompt, port got: %q", inStr)
+	}
+}
+
 func TestEngine_SIMComURC_DuringInFlight(t *testing.T) {
 	port := newMockPort()
 	engine := NewEngine(port)

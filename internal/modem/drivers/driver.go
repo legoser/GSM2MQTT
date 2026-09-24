@@ -99,9 +99,15 @@ func (d *BaseDriver) Hangup() error {
 }
 
 // SendDTMF sends a single DTMF tone during an active call.
+// Only single DTMF symbols (0-9, A-D, *, #, comma pause) are accepted;
+// anything else is rejected to prevent AT command injection via the digit.
 func (d *BaseDriver) SendDTMF(digit string) error {
-	slog.Debug("modem sending DTMF tone", slog.String("digit", digit))
-	cmd := fmt.Sprintf("AT+VTS=%s", strings.TrimSpace(digit))
+	trimmed := strings.TrimSpace(digit)
+	if len(trimmed) != 1 || !strings.ContainsRune("0123456789ABCDabcd*#,,", rune(trimmed[0])) {
+		return fmt.Errorf("invalid DTMF digit %q: must be a single tone 0-9, A-D, *, # or comma", digit)
+	}
+	slog.Debug("modem sending DTMF tone", slog.String("digit", trimmed))
+	cmd := fmt.Sprintf("AT+VTS=%s", strings.ToUpper(trimmed))
 	return d.execSimple(cmd, 3*time.Second)
 }
 

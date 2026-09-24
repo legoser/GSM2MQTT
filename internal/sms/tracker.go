@@ -3,6 +3,7 @@ package sms
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,13 +53,41 @@ func NewTracker(timeout time.Duration, onUpdate func(event DeliveryEvent)) *Trac
 }
 
 func makeKey(to string, ref byte) string {
-	return fmt.Sprintf("%s:%d", to, ref)
+	return fmt.Sprintf("%s:%d", canonicalRecipient(to), ref)
+}
+
+// canonicalRecipient best-effort normalizes a recipient for key matching:
+// strips formatting, converts national 8-prefix to +7. Status reports may
+// arrive with national TOA (no "+") while Track stores E.164 — without this
+// the report would miss and the entry would leak until timeout.
+func canonicalRecipient(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return raw
+	}
+	hasPlus := strings.HasPrefix(trimmed, "+")
+	var digits strings.Builder
+	for _, r := range trimmed {
+		if r >= '0' && r <= '9' {
+			digits.WriteRune(r)
+		}
+	}
+	d := digits.String()
+	if d == "" {
+		return trimmed
+	}
+	if hasPlus {
+		return "+" + d
+	}
+	if len(d) == 11 && d[0] == '8' {
+		return "+7" + d[1:]
+	}
+	return d
 }
 
 // Track registers a sent SMS for delivery tracking.
 func (t *Tracker) Track(ref byte, to string, modemID string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 
 	key := makeKey(to, ref)
 
@@ -80,17 +109,17 @@ func (t *Tracker) Track(ref byte, to string, modemID string) {
 	}
 
 	t.pending[key] = item
+	t.mu.Unlock()
 	slog.Debug("tracking SMS delivery", slog.String("modem", modemID), slog.String("to", to), slog.Int("ref", int(ref)))
 
+	// Callbacks run outside the lock (no goroutine: bounded, ordered).
 	if t.onUpdate != nil {
-		event := DeliveryEvent{
+		t.onUpdate(DeliveryEvent{
 			MessageRef: ref,
 			To:         to,
 			Status:     DeliveryStatusPending,
 			ModemID:    modemID,
-		}
-		// Do not call onUpdate under lock to avoid deadlocks
-		go t.onUpdate(event)
+		})
 	}
 }
 

@@ -50,10 +50,37 @@ func TestSanitizer_AllowedCommands(t *testing.T) {
 	}
 }
 
+func TestSanitizer_PrefixTrap(t *testing.T) {
+	// Regression test for N1: a broad entry like "AT+C" must NOT authorize
+	// "AT+CFUN", "AT+CPIN" or "AT+CMGS". Matching is on token boundaries.
+	s := NewSanitizer(true, []string{"ATI", "AT+C"})
+
+	blocked := []string{
+		"AT+CFUN=0",
+		"at+cfun=0",
+		"AT+CFUN=1,1",
+		"AT+CPIN?",
+		"AT+CPIN=\"1234\"",
+		"AT+CMGS=25",
+		"AT+CMSS=1",
+		"AT+CUSD=1,\"*100#\",15",
+		"AT+CGDCONT=1,\"IP\",\"internet\"",
+	}
+	for _, cmd := range blocked {
+		if s.IsAllowed(cmd) {
+			t.Errorf("prefix trap: %q must be blocked with allow=[ATI AT+C]", cmd)
+		}
+		if err := s.Validate(cmd); !errors.Is(err, ErrCommandBlocked) {
+			t.Errorf("Validate(%q) = %v, want ErrCommandBlocked", cmd, err)
+		}
+	}
+}
+
 func TestSanitizer_Validate_Table(t *testing.T) {
 	defaultAllowed := []string{
 		"ATI",
-		"AT+C", // Will allow AT+CSQ, AT+COPS, etc.
+		"AT+CSQ",
+		"AT+COPS",
 	}
 
 	tests := []struct {
@@ -106,6 +133,20 @@ func TestSanitizer_Validate_Table(t *testing.T) {
 			wantErr:  nil,
 		},
 		{
+			name:     "safe indexed command ATI0",
+			allowRaw: true,
+			allowed:  defaultAllowed,
+			cmd:      "ATI0",
+			wantErr:  nil,
+		},
+		{
+			name:     "safe query with args",
+			allowRaw: true,
+			allowed:  defaultAllowed,
+			cmd:      "AT+CSQ?",
+			wantErr:  nil,
+		},
+		{
 			name:     "blocked AT+CFUN=0 exact",
 			allowRaw: true,
 			allowed:  []string{"ATI", "AT+CSQ"},
@@ -117,6 +158,27 @@ func TestSanitizer_Validate_Table(t *testing.T) {
 			allowRaw: true,
 			allowed:  []string{"ATI", "AT+CSQ"},
 			cmd:      "at+cfun=0",
+			wantErr:  ErrCommandBlocked,
+		},
+		{
+			name:     "blocked AT+CFUN = 0 with inner spaces",
+			allowRaw: true,
+			allowed:  []string{"ATI", "AT+CSQ"},
+			cmd:      "AT+CFUN = 0",
+			wantErr:  ErrCommandBlocked,
+		},
+		{
+			name:     "blocked AT+CPIN prefix with args",
+			allowRaw: true,
+			allowed:  defaultAllowed,
+			cmd:      "AT+CPIN=\"1234\"",
+			wantErr:  ErrCommandBlocked,
+		},
+		{
+			name:     "blocked AT+CPIN query",
+			allowRaw: true,
+			allowed:  defaultAllowed,
+			cmd:      "AT+CPIN?",
 			wantErr:  ErrCommandBlocked,
 		},
 		{
@@ -134,6 +196,20 @@ func TestSanitizer_Validate_Table(t *testing.T) {
 			wantErr:  ErrCommandBlocked,
 		},
 		{
+			name:     "blocked AT+CGDCONT apn rewrite",
+			allowRaw: true,
+			allowed:  defaultAllowed,
+			cmd:      "AT+CGDCONT=1,\"IP\",\"internet\"",
+			wantErr:  ErrCommandBlocked,
+		},
+		{
+			name:     "blocked suffix trick CSQX",
+			allowRaw: true,
+			allowed:  []string{"ATI", "AT+CSQ"},
+			cmd:      "AT+CSQX",
+			wantErr:  ErrCommandBlocked,
+		},
+		{
 			name:     "null byte injection in command",
 			allowRaw: true,
 			allowed:  defaultAllowed,
@@ -145,6 +221,41 @@ func TestSanitizer_Validate_Table(t *testing.T) {
 			allowRaw: true,
 			allowed:  defaultAllowed,
 			cmd:      "ATI\x1A",
+			wantErr:  ErrDangerousChars,
+		},
+		{
+			name:     "esc injection in command",
+			allowRaw: true,
+			allowed:  defaultAllowed,
+			cmd:      "ATI\x1B",
+			wantErr:  ErrDangerousChars,
+		},
+		{
+			name:     "bell injection in command",
+			allowRaw: true,
+			allowed:  defaultAllowed,
+			cmd:      "ATI\x07",
+			wantErr:  ErrDangerousChars,
+		},
+		{
+			name:     "vertical tab injection in command",
+			allowRaw: true,
+			allowed:  defaultAllowed,
+			cmd:      "ATI\x0B",
+			wantErr:  ErrDangerousChars,
+		},
+		{
+			name:     "form feed injection in command",
+			allowRaw: true,
+			allowed:  defaultAllowed,
+			cmd:      "ATI\x0C",
+			wantErr:  ErrDangerousChars,
+		},
+		{
+			name:     "del injection in command",
+			allowRaw: true,
+			allowed:  defaultAllowed,
+			cmd:      "ATI\x7F",
 			wantErr:  ErrDangerousChars,
 		},
 		{

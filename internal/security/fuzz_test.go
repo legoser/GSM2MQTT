@@ -64,6 +64,11 @@ func FuzzSanitizer(f *testing.F) {
 		"   ",
 		"ATI\x00AT+CFUN=0",
 		"ATI\x1A",
+		"ATI\x1B",
+		"ATI\x07",
+		"ATI\x0B",
+		"ATI\x0C",
+		"ATI\x7F",
 		"AT+CGDCONT=1,\"IP\",\"internet\"",
 	}
 
@@ -71,7 +76,7 @@ func FuzzSanitizer(f *testing.F) {
 		f.Add(s)
 	}
 
-	s := NewSanitizer(true, []string{"AT+CFUN=0", "AT+CPIN", "ATD", "AT&F"})
+	s := NewSanitizer(true, []string{"ATI", "AT+CSQ", "AT+COPS"})
 
 	f.Fuzz(func(t *testing.T, cmd string) {
 		// Should never panic
@@ -79,9 +84,20 @@ func FuzzSanitizer(f *testing.F) {
 		err := s.Validate(cmd)
 
 		// Invariant: dangerous characters must always be rejected
-		if strings.ContainsAny(cmd, "\x00\x1A\r\n") {
+		if strings.ContainsAny(cmd, "\x00\x1A\x1B\x07\x0B\x0C\x7F\r\n") {
 			if err == nil {
 				t.Errorf("expected error for command with dangerous chars: %q", cmd)
+			}
+		}
+
+		// Invariant: prefix trap — "AT+CFUN"/"AT+CPIN"/"AT+CMGS" must never
+		// be authorized by the narrow allowlist above.
+		if err == nil {
+			upper := canonicalizeCommand(cmd)
+			for _, evil := range []string{"AT+CFUN", "AT+CPIN", "AT+CMGS", "ATD", "AT&F"} {
+				if len(upper) >= len(evil) && upper[:len(evil)] == evil {
+					t.Errorf("allowlist bypass for %q", cmd)
+				}
 			}
 		}
 	})

@@ -7,17 +7,17 @@ LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION) -X main.buildTime=$(BUILD_
 
 ## build: Build for current platform
 build:
-	CGO_ENABLED=0 go build $(LDFLAGS) -o bin/$(APP_NAME) ./cmd/gsm2mqtt/
+	CGO_ENABLED=0 go build -trimpath $(LDFLAGS) -o bin/$(APP_NAME) ./cmd/gsm2mqtt/
 
 ## build-all: Cross-compile for all target platforms (amd64, arm64, riscv64)
 build-all:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(APP_NAME)-linux-amd64 ./cmd/gsm2mqtt/
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o bin/$(APP_NAME)-linux-arm64 ./cmd/gsm2mqtt/
-	CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build $(LDFLAGS) -o bin/$(APP_NAME)-linux-riscv64 ./cmd/gsm2mqtt/
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath $(LDFLAGS) -o bin/$(APP_NAME)-linux-amd64 ./cmd/gsm2mqtt/
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath $(LDFLAGS) -o bin/$(APP_NAME)-linux-arm64 ./cmd/gsm2mqtt/
+	CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath $(LDFLAGS) -o bin/$(APP_NAME)-linux-riscv64 ./cmd/gsm2mqtt/
 
 ## build-riscv64: Cross-compile for Linux RISC-V 64-bit
 build-riscv64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build $(LDFLAGS) -o bin/$(APP_NAME)-linux-riscv64 ./cmd/gsm2mqtt/
+	CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath $(LDFLAGS) -o bin/$(APP_NAME)-linux-riscv64 ./cmd/gsm2mqtt/
 
 ## test: Run all tests
 test:

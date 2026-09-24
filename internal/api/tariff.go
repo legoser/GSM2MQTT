@@ -19,6 +19,7 @@ func (s *Server) handleTariffStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTariffConfig(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	var req struct {
 		ModemID            string   `json:"modem_id"`
 		SMSLimit           *int     `json:"sms_limit"`
@@ -80,6 +81,7 @@ func (s *Server) handleTariffConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTariffReset(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	var req struct {
 		ModemID string `json:"modem_id"`
 	}

@@ -13,6 +13,7 @@ services:
       - GSM2MQTT_API_ENABLED=true
       - GSM2MQTT_API_HOST=0.0.0.0
       - GSM2MQTT_API_PORT=8080
+      - MODEM_DEVICE=${MODEM_DEVICE:-/dev/ttyUSB0}
       # Make sure you provide GSM2MQTT_API_TOKEN in .env for API security!
     volumes:
       - ./configs/gsm2mqtt.yaml:/etc/gsm2mqtt/gsm2mqtt.yaml:ro

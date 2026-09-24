@@ -18,6 +18,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/pool"
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/services"
+	"github.com/legoser/gsm2mqtt/internal/transport"
 )
 
 // version and buildTime are set at compile time via ldflags.
@@ -103,7 +104,7 @@ func startModems(
 	modemPool *pool.Pool,
 	logger *slog.Logger,
 ) *sync.WaitGroup {
-	connector := modem.NewConnector()
+	connector := modem.NewConnector(transport.NewSerialOpener())
 	var wg sync.WaitGroup
 
 	for i, mCfg := range cfg.Modems {

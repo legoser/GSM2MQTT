@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/modem"
+	"github.com/legoser/gsm2mqtt/internal/sms/pdu"
 )
 
 // HuaweiDriver implements driver quirks for Huawei USB modems.
@@ -60,9 +61,10 @@ func (d *HuaweiDriver) SendUSSD(code string) (string, error) {
 	// 0. Terminate any dangling previous USSD session
 	_, _ = d.runner.Send("AT+CUSD=2", 2*time.Second)
 
-	// 1. Encode into 7-bit GSM packed hex (native requirement for Huawei E1550/E173)
-	// USSD codes are typically ASCII-compatible with GSM-7 basic character set.
-	packed := packUSSD(code)
+	// 1. Encode into 7-bit GSM packed hex (native requirement for Huawei E1550/E173).
+	// Shared pdu.EncodeGSM7 handles the full GSM-7 alphabet incl. extensions.
+	septets := pdu.EncodeGSM7(code)
+	packed := pdu.PackSeptets(septets, 0)
 	pduHex := strings.ToUpper(hex.EncodeToString(packed))
 
 	cmdPDU := fmt.Sprintf("AT+CUSD=1,%q,15", pduHex)
@@ -110,25 +112,3 @@ func (d *HuaweiDriver) Dial(number string) error {
 }
 
 var _ modem.Driver = (*HuaweiDriver)(nil)
-
-// packUSSD converts an ASCII string to 7-bit septets and packs them into 8-bit octets.
-func packUSSD(s string) []byte {
-	septets := []byte(s) // For USSD (*100#), ASCII maps directly to GSM-7 basic
-	if len(septets) == 0 {
-		return nil
-	}
-	numOctets := (len(septets)*7 + 7) / 8
-	octets := make([]byte, numOctets)
-	bitPos := 0
-	for _, s := range septets {
-		val := uint16(s & 0x7F)
-		byteIdx := bitPos / 8
-		bitOffset := bitPos % 8
-		octets[byteIdx] |= byte(val << bitOffset)
-		if byteIdx+1 < numOctets {
-			octets[byteIdx+1] |= byte(val >> (8 - bitOffset))
-		}
-		bitPos += 7
-	}
-	return octets
-}

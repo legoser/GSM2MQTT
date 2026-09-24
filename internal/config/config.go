@@ -78,8 +78,12 @@ type SecurityConfig struct {
 	RateLimit         RateLimitConfig `yaml:"rate_limit"`
 	AllowRawAT        bool            `yaml:"allow_raw_at"`
 	AllowedATCommands []string        `yaml:"allowed_at_commands"`
-	RecipientsFile    string          `yaml:"recipients_file"`
-	FallbackCall      bool            `yaml:"fallback_call"`
+	// BlockedATCommands is deprecated: previously a blocklist, now ignored.
+	// Kept so old configs fail loudly in validation instead of silently
+	// losing protection. Use allowed_at_commands instead.
+	BlockedATCommands []string `yaml:"blocked_at_commands"`
+	RecipientsFile    string   `yaml:"recipients_file"`
+	FallbackCall      bool     `yaml:"fallback_call"`
 }
 
 // RateLimitConfig holds rate limiting settings for outgoing SMS.

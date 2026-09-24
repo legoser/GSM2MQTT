@@ -41,7 +41,7 @@ modems:
     data_bits: 8                        # 7, 8
     stop_bits: 1                        # 1, 2
     parity: "none"                      # none, odd, even
-    flow_control: "none"                # none, hardware (RTS/CTS)
+    flow_control: "none"                # none | hardware (asserts DTR/RTS on open; the serial lib has no RTS/CTS flag) | software (XON/XOFF, modem-side)
 
   # Example: USB Huawei modem
   # - id: "huawei_e3372"
@@ -105,13 +105,25 @@ security:
     max_sms_per_number_per_hour: 3
     cooldown_minutes: 10
 
-  # Raw AT commands via MQTT (DANGEROUS — disabled by default)
+  # Raw AT commands via MQTT/HTTP (DANGEROUS — disabled by default).
+  # When enabled, ONLY the commands below are permitted (allowlist matched
+  # on token boundaries, e.g. "AT+CSQ" allows "AT+CSQ" and "AT+CSQ?" but
+  # never "AT+CSQX"). Dial, PIN, reset and SMS-submit commands are NOT here.
   allow_raw_at: false
-  blocked_at_commands:
-    - "AT+CFUN=0"
-    - "AT+CPIN"
-    - "ATD"
-    - "AT&F"
+  allowed_at_commands:
+    - "ATI"
+    - "AT+CSQ"
+    - "AT+CREG"
+    - "AT+CGREG"
+    - "AT+CEREG"
+    - "AT+COPS"
+    - "AT+CPIN?"
+    - "AT+CSCA"
+    - "AT+CGMI"
+    - "AT+CGMM"
+    - "AT+CGMR"
+    - "AT+CGSN"
+    - "AT+CBC"
 
 # -------------------------------------------------------
 # Status Monitoring

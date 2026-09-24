@@ -105,8 +105,7 @@ func TestModemRunner_Lifecycle(t *testing.T) {
 		},
 	}
 
-	connector := modem.NewConnector()
-	connector.WithOpener(opener)
+	connector := modem.NewConnector(opener)
 	runner := NewModemRunner(cfg.Modems[0], cfg, connector, mqttClient)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -167,8 +166,7 @@ func TestModemRunner_ApplyParsedBalance(t *testing.T) {
 		},
 	}
 
-	connector := modem.NewConnector()
-	connector.WithOpener(opener)
+	connector := modem.NewConnector(opener)
 	runner := NewModemRunner(cfg.Modems[0], cfg, connector, mqttClient)
 
 	// 1. Initial balance is 0

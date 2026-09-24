@@ -133,3 +133,28 @@ func TestSerialOpener_NonExistentPort(t *testing.T) {
 		t.Errorf("expected error opening non-existent device, got nil")
 	}
 }
+
+func TestPortConfig_ToSerialMode_FlowControl(t *testing.T) {
+	hw := PortConfig{Device: "/dev/ttyS0", BaudRate: 115200, DataBits: 8, StopBits: 1, FlowControl: "hardware"}
+	mode, err := hw.ToSerialMode()
+	if err != nil {
+		t.Fatalf("ToSerialMode(hardware) error = %v", err)
+	}
+	if mode.InitialStatusBits == nil || !mode.InitialStatusBits.DTR || !mode.InitialStatusBits.RTS {
+		t.Errorf("hardware flow control must assert DTR/RTS via InitialStatusBits, got %+v", mode.InitialStatusBits)
+	}
+
+	for _, fc := range []string{"", "none", "software"} {
+		cfg := PortConfig{Device: "/dev/ttyS0", BaudRate: 115200, DataBits: 8, StopBits: 1, FlowControl: fc}
+		mode, err := cfg.ToSerialMode()
+		if err != nil {
+			t.Fatalf("ToSerialMode(%q) error = %v", fc, err)
+		}
+		if mode.InitialStatusBits != nil {
+			t.Errorf("flow control %q must not set InitialStatusBits, got %+v", fc, mode.InitialStatusBits)
+		}
+		if mode.BaudRate != 115200 || mode.DataBits != 8 {
+			t.Errorf("flow control %q altered base mode: %+v", fc, mode)
+		}
+	}
+}
