@@ -61,7 +61,8 @@ func (d *HuaweiDriver) SendUSSD(code string) (string, error) {
 	// 0. Terminate any dangling previous USSD session
 	_, _ = d.runner.Send("AT+CUSD=2", 2*time.Second)
 
-	// 1. Encode into 7-bit GSM packed hex (native requirement for Huawei E1550/E173)
+	// 1. Encode into 7-bit GSM packed hex (native requirement for Huawei E1550/E173).
+	// Shared pdu.EncodeGSM7 handles the full GSM-7 alphabet incl. extensions.
 	septets := pdu.EncodeGSM7(code)
 	packed := pdu.PackSeptets(septets, 0)
 	pduHex := strings.ToUpper(hex.EncodeToString(packed))

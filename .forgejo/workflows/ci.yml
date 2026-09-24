@@ -1,0 +1,25 @@
+# Continuous integration: vet + tests + cross-compile check on every push/PR.
+# Catches breakage before a release tag is created.
+name: ci
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['v*.*.*']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race -count=1 ./...
+      - name: Cross-compile check
+        run: make build-all

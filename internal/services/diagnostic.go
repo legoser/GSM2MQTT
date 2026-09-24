@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/modem"
@@ -56,6 +57,7 @@ func NewDiagnosticService(
 
 // RunDiagnostic executes the sequential diagnostic pipeline and produces a report.
 func (d *DiagnosticService) RunDiagnostic(ctx context.Context, trigger string) (*DiagnosticReport, error) {
+	slog.Warn("initiating diagnostic fault evaluation", slog.String("modem", d.modemID), slog.String("trigger", trigger))
 	report := &DiagnosticReport{
 		Timestamp: time.Now(),
 		ModemID:   d.modemID,
@@ -69,6 +71,16 @@ func (d *DiagnosticService) RunDiagnostic(ctx context.Context, trigger string) (
 	d.checkSignal(report)
 	d.checkBalance(report)
 	d.synthesizeDiagnosis(report)
+
+	slog.Warn("diagnostic evaluation completed",
+		slog.String("modem", d.modemID),
+		slog.String("issue", report.Issue),
+		slog.String("advice", report.Advice),
+		slog.Bool("sim_ready", report.SIMReady),
+		slog.Bool("network_ok", report.NetworkOK),
+		slog.Int("rssi", report.RSSI),
+		slog.Bool("balance_ok", report.BalanceOK),
+	)
 
 	if report.Issue != "" && d.onAlert != nil {
 		d.onAlert(fmt.Sprintf("%s: %s (%s)", d.modemID, report.Issue, report.Advice))

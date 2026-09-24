@@ -111,3 +111,30 @@ func TestStatusService_Poll_SIMNotReady(t *testing.T) {
 		t.Errorf("expected status 'not_ready' for SIM PIN, got %q", health.Status)
 	}
 }
+
+func TestStatusService_Poll_TransientFailurePreservesReady(t *testing.T) {
+	mock := &mockStatusProvider{
+		rssi:      20,
+		regStatus: &modem.NetworkStatus{Registered: true, Technology: "GSM"},
+		simState:  modem.SIMReady,
+		operator:  "MegaFon",
+	}
+
+	svc := NewStatusService(StatusServiceConfig{ModemID: "neoway_m590"}, mock, nil, nil)
+	health, err := svc.Poll(context.Background())
+	if err != nil || health.Status != "ready" {
+		t.Fatalf("expected initial ready status, got %v (err: %v)", health, err)
+	}
+
+	// Transient error during a phone call (port busy / temporary query failure)
+	mock.regStatus = nil
+	mock.err = context.DeadlineExceeded
+
+	health2, err2 := svc.Poll(context.Background())
+	if err2 != nil {
+		t.Fatalf("unexpected Poll error: %v", err2)
+	}
+	if health2.Status != "ready" {
+		t.Errorf("expected transient error to preserve 'ready' status, got %q", health2.Status)
+	}
+}

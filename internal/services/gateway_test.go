@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/config"
+	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 )
@@ -104,7 +105,8 @@ func TestModemRunner_Lifecycle(t *testing.T) {
 		},
 	}
 
-	runner := NewModemRunner(cfg.Modems[0], cfg, opener, mqttClient)
+	connector := modem.NewConnector(opener)
+	runner := NewModemRunner(cfg.Modems[0], cfg, connector, mqttClient)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -164,7 +166,8 @@ func TestModemRunner_ApplyParsedBalance(t *testing.T) {
 		},
 	}
 
-	runner := NewModemRunner(cfg.Modems[0], cfg, opener, mqttClient)
+	connector := modem.NewConnector(opener)
+	runner := NewModemRunner(cfg.Modems[0], cfg, connector, mqttClient)
 
 	// 1. Initial balance is 0
 	if bal := runner.Summary().Balance; bal != 0 {
@@ -190,3 +193,69 @@ func TestModemRunner_ApplyParsedBalance(t *testing.T) {
 	}
 }
 
+func TestExtractLeadingRecipient(t *testing.T) {
+	tests := []struct {
+		input       string
+		wantTarget  string
+		wantText    string
+		wantMatched bool
+	}{
+		{
+			input:       "+79991112233: Hello world",
+			wantTarget:  "+79991112233",
+			wantText:    "Hello world",
+			wantMatched: true,
+		},
+		{
+			input:       "+79991112233 Hello world",
+			wantTarget:  "+79991112233",
+			wantText:    "Hello world",
+			wantMatched: true,
+		},
+		{
+			input:       "89991112233: Alarm triggered",
+			wantTarget:  "+79991112233",
+			wantText:    "Alarm triggered",
+			wantMatched: true,
+		},
+		{
+			input:       "Test notification",
+			wantTarget:  "",
+			wantText:    "Test notification",
+			wantMatched: false,
+		},
+		{
+			input:       "8 hours remaining",
+			wantTarget:  "",
+			wantText:    "8 hours remaining",
+			wantMatched: false,
+		},
+		{
+			input:       "+79991112233:",
+			wantTarget:  "",
+			wantText:    "+79991112233:",
+			wantMatched: false,
+		},
+		{
+			input:       "",
+			wantTarget:  "",
+			wantText:    "",
+			wantMatched: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			target, text, matched := extractLeadingRecipient(tt.input)
+			if matched != tt.wantMatched {
+				t.Errorf("extractLeadingRecipient(%q) matched=%v, want %v", tt.input, matched, tt.wantMatched)
+			}
+			if target != tt.wantTarget {
+				t.Errorf("extractLeadingRecipient(%q) target=%q, want %q", tt.input, target, tt.wantTarget)
+			}
+			if text != tt.wantText {
+				t.Errorf("extractLeadingRecipient(%q) text=%q, want %q", tt.input, text, tt.wantText)
+			}
+		})
+	}
+}

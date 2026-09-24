@@ -1,6 +1,7 @@
 package tariff
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -59,67 +60,89 @@ func (m *Manager) SetStore(store Store) {
 	m.restoreFromStore()
 }
 
-func (m *Manager) restoreFromStore() {
-	if m.store == nil {
-		return
-	}
-	state, err := m.store.Load(m.modemID)
-	if err != nil || state == nil {
-		return
-	}
+// UpdateConfig dynamically modifies tariff limits and parameters, persisting them.
+func (m *Manager) UpdateConfig(newCfg Config) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	today := time.Now().UTC().Format("2006-01-02")
-	thisMonth := time.Now().UTC().Format("2006-01")
-
-	m.balance = state.Balance
-	if state.Currency != "" {
-		m.currency = state.Currency
+	if newCfg.SMSLimit >= 0 {
+		m.cfg.SMSLimit = newCfg.SMSLimit
 	}
-	m.lastBalanceCheck = state.LastBalanceCheck
-	m.dataBytesUsed = state.DataBytesUsed
-	m.callMinutesUsed = state.CallMinutesUsed
-
-	if state.LastDailyResetDate == today {
-		m.smsDayCount = state.SMSDayCount
-		m.lastDailyResetDate = state.LastDailyResetDate
-	} else {
-		m.smsDayCount = 0
-		m.lastDailyResetDate = today
+	if newCfg.CallMinutesLimit >= 0 {
+		m.cfg.CallMinutesLimit = newCfg.CallMinutesLimit
 	}
-
-	if state.LastMonthlyResetMonth == thisMonth {
-		m.smsMonthCount = state.SMSMonthCount
-		m.lastMonthlyResetMonth = state.LastMonthlyResetMonth
-	} else {
-		m.smsMonthCount = 0
-		m.lastMonthlyResetMonth = thisMonth
+	if newCfg.DataTrafficLimitMB >= 0 {
+		m.cfg.DataTrafficLimitMB = newCfg.DataTrafficLimitMB
 	}
+	if newCfg.ResetDayOfMonth >= 1 && newCfg.ResetDayOfMonth <= 31 {
+		m.cfg.ResetDayOfMonth = newCfg.ResetDayOfMonth
+	}
+	if newCfg.MinBalanceAlert >= 0 {
+		m.cfg.MinBalanceAlert = newCfg.MinBalanceAlert
+	}
+	if newCfg.BalanceUSSD != "" {
+		m.cfg.BalanceUSSD = newCfg.BalanceUSSD
+	}
+	if newCfg.OperatorPreset != "" {
+		m.cfg.OperatorPreset = newCfg.OperatorPreset
+	}
+	slog.Info("tariff configuration updated",
+		slog.String("modem", m.modemID),
+		slog.Int("sms_limit", m.cfg.SMSLimit),
+		slog.Float64("call_minutes_limit", m.cfg.CallMinutesLimit),
+		slog.Int64("data_limit_mb", m.cfg.DataTrafficLimitMB),
+		slog.Int("reset_day", m.cfg.ResetDayOfMonth),
+	)
+	m.persistLocked()
 }
 
-func (m *Manager) persistLocked() {
-	if m.store == nil {
-		return
-	}
-	today := time.Now().UTC().Format("2006-01-02")
-	thisMonth := time.Now().UTC().Format("2006-01")
-	if m.lastDailyResetDate == "" {
-		m.lastDailyResetDate = today
-	}
-	if m.lastMonthlyResetMonth == "" {
-		m.lastMonthlyResetMonth = thisMonth
-	}
+// UsageUpdate contains manual overrides for usage counters.
+type UsageUpdate struct {
+	SMSDayCount     *int
+	SMSMonthCount   *int
+	CallMinutesUsed *float64
+	DataBytesUsed   *int64
+}
 
-	_ = m.store.Save(m.modemID, State{
-		Balance:               m.balance,
-		Currency:              m.currency,
-		SMSDayCount:           m.smsDayCount,
-		SMSMonthCount:         m.smsMonthCount,
-		CallMinutesUsed:       m.callMinutesUsed,
-		DataBytesUsed:         m.dataBytesUsed,
-		LastBalanceCheck:      m.lastBalanceCheck,
-		LastDailyResetDate:    m.lastDailyResetDate,
-		LastMonthlyResetMonth: m.lastMonthlyResetMonth,
-	})
+// SetUsage manually overrides usage counters and persists the state.
+func (m *Manager) SetUsage(update UsageUpdate) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if update.SMSDayCount != nil && *update.SMSDayCount >= 0 {
+		m.smsDayCount = *update.SMSDayCount
+	}
+	if update.SMSMonthCount != nil && *update.SMSMonthCount >= 0 {
+		m.smsMonthCount = *update.SMSMonthCount
+	}
+	if update.CallMinutesUsed != nil && *update.CallMinutesUsed >= 0 {
+		m.callMinutesUsed = *update.CallMinutesUsed
+	}
+	if update.DataBytesUsed != nil && *update.DataBytesUsed >= 0 {
+		m.dataBytesUsed = *update.DataBytesUsed
+	}
+	slog.Info("tariff usage counters manually updated",
+		slog.String("modem", m.modemID),
+		slog.Int("sms_month", m.smsMonthCount),
+		slog.Float64("call_minutes", m.callMinutesUsed),
+		slog.Int64("data_bytes", m.dataBytesUsed),
+	)
+	m.evaluateSMSLimits()
+	m.evaluateCallLimits()
+	m.evaluateDataLimits()
+	m.persistLocked()
+}
+
+// GetConfig returns the current active tariff configuration.
+func (m *Manager) GetConfig() Config {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cfg
+}
+
+// ResetQuotas zeroes monthly quota counters and resets warning flags.
+func (m *Manager) ResetQuotas() {
+	m.ResetMonthly()
 }
 
 // RecordSMS increments daily and monthly message counters and evaluates quotas.
@@ -132,6 +155,7 @@ func (m *Manager) RecordSMS(count int) {
 
 	m.smsDayCount += count
 	m.smsMonthCount += count
+	slog.Debug("tariff SMS usage recorded", slog.String("modem", m.modemID), slog.Int("count", count), slog.Int("day_total", m.smsDayCount), slog.Int("month_total", m.smsMonthCount))
 	m.evaluateSMSLimits()
 	m.persistLocked()
 }
@@ -153,6 +177,7 @@ func (m *Manager) RecordCallMinutes(minutes float64) {
 	defer m.mu.Unlock()
 
 	m.callMinutesUsed += minutes
+	slog.Debug("tariff call usage recorded", slog.String("modem", m.modemID), slog.Float64("minutes", minutes), slog.Float64("month_total", m.callMinutesUsed))
 	m.evaluateCallLimits()
 	m.persistLocked()
 }
@@ -166,6 +191,7 @@ func (m *Manager) RecordData(bytes int64) {
 	defer m.mu.Unlock()
 
 	m.dataBytesUsed += bytes
+	slog.Debug("tariff data usage recorded", slog.String("modem", m.modemID), slog.Int64("bytes", bytes), slog.Int64("month_total", m.dataBytesUsed))
 	m.evaluateDataLimits()
 	m.persistLocked()
 }
@@ -180,6 +206,7 @@ func (m *Manager) UpdateBalance(balance float64, currency string) {
 		m.currency = currency
 	}
 	m.lastBalanceCheck = time.Now()
+	slog.Info("tariff balance updated", slog.String("modem", m.modemID), slog.Float64("balance", balance), slog.String("currency", m.currency))
 	m.evaluateBalanceLimits(balance)
 	m.persistLocked()
 }
@@ -250,6 +277,7 @@ func (m *Manager) Status() UsageStatus {
 		CallMinutesLimit:     m.cfg.CallMinutesLimit,
 		CallMinutesUsed:      m.callMinutesUsed,
 		CallMinutesRemaining: remMins,
+		DataTrafficLimitMB:   m.cfg.DataTrafficLimitMB,
 		DataBytesLimit:       limitBytes,
 		DataBytesUsed:        m.dataBytesUsed,
 		DataBytesRemaining:   remBytes,

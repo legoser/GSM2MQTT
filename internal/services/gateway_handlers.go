@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
-	"strings"
+	"math"
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/metrics"
@@ -22,7 +21,7 @@ import (
 func (r *ModemRunner) wireServices(
 	engine *at.Engine,
 	driver modem.Driver,
-	
+
 ) (*SMSService, *CallService, *USSDService, *StatusService, *tariff.Manager, *DiagnosticService) {
 	filter := security.NewFilter(r.cfg.Security.IncomingFilter, r.cfg.Security.Whitelist, r.cfg.Security.Blacklist)
 	limiter := security.NewRateLimiterWithConfig(security.RateLimiterConfig{
@@ -90,10 +89,16 @@ func (r *ModemRunner) wireServices(
 		Transliterate:  r.cfg.SMS.Encoding == "translit",
 		DeliveryReport: r.cfg.SMS.DeliveryReport.Enabled,
 	}, sender, filter, limiter, smsTracker, assembler, func(msg *sms.AssembledSMS) {
+		slog.Info("incoming SMS received and processed",
+			slog.String("modem", r.mCfg.ID),
+			slog.String("from", "[REDACTED]"),
+			slog.String("text", "[REDACTED]"),
+			slog.String("mqtt_topic", r.topics.SMSReceived()),
+		)
 		r.recordIncomingSMS(msg)
 		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_received_total", map[string]string{"modem": r.mCfg.ID})
 		payload, _ := json.Marshal(msg)
-		_ = r.mqttClient.Publish(r.topics.SMSReceived(), 1, false, payload)
+		_ = r.mqttClient.Publish(r.topics.SMSReceived(), 1, true, payload)
 
 		r.applyParsedBalance(msg.Text)
 	})
@@ -101,6 +106,13 @@ func (r *ModemRunner) wireServices(
 
 	callSvc := NewCallService(r.mCfg.ID, driver, func(e CallEvent) {
 		metrics.DefaultRegistry.IncCounter("gsm2mqtt_calls_total", map[string]string{"modem": r.mCfg.ID, "type": e.Type})
+
+		if e.Type == "ended" && e.Duration > 3*time.Second {
+			minutes := math.Ceil(e.Duration.Seconds() / 60.0)
+			tariffMgr.RecordCallMinutes(minutes)
+			r.publishAccountingStatus(tariffMgr)
+		}
+
 		payload, _ := json.Marshal(e)
 		if e.Type == "incoming" || e.Type == "ended" {
 			_ = r.mqttClient.Publish(r.topics.CallIncoming(), 1, false, payload)
@@ -118,6 +130,7 @@ func (r *ModemRunner) wireServices(
 		payload := fmt.Sprintf(`{"rssi":%d,"dbm":%d}`, rssi, dbm)
 		_ = r.mqttClient.Publish(r.topics.SignalStrength(), 1, false, []byte(payload))
 	}, func(h ModemHealth) {
+		h.ModemID = r.mCfg.ID
 		r.updateHealth(h)
 		stVal := 0.0
 		if h.Status == "ready" {
@@ -131,94 +144,23 @@ func (r *ModemRunner) wireServices(
 	return smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc
 }
 
-func (r *ModemRunner) subscribeMQTT(
-	
-	smsSvc *SMSService,
-	callSvc *CallService,
-	ussdSvc *USSDService,
-	tariffMgr *tariff.Manager,
-	diagSvc *DiagnosticService,
-	driver modem.Driver,
-) {
-	sanitizer := security.NewSanitizer(r.cfg.Security.AllowRawAT, r.cfg.Security.BlockedATCommands)
-
-	_ = r.mqttClient.Subscribe(r.topics.SMSSend(), 1, func(_ string, payload []byte) {
-		var req SendSMSRequest
-		if err := json.Unmarshal(payload, &req); err == nil {
-			refs, err := smsSvc.Send(context.Background(), req)
-			if err != nil {
-				metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "failed"})
-				slog.Error("sms send failure", slog.String("modem", r.mCfg.ID), slog.Any("error", err))
-				if r.cfg.Tariff.AutoCheckOnError {
-					rep, _ := diagSvc.RunDiagnostic(context.Background(), "sms_send_failure")
-					if rep != nil {
-						dPayload, _ := json.Marshal(rep)
-						_ = r.mqttClient.Publish(r.topics.Diagnostic(), 1, false, dPayload)
-					}
-				}
-			} else {
-				metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "sent"})
-				tariffMgr.RecordSMS(len(refs))
-				st := tariffMgr.Status()
-				stPayload, _ := json.Marshal(st)
-				_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, false, stPayload)
-			}
-		}
-	})
-
-	_ = r.mqttClient.Subscribe(r.topics.CallDial(), 1, func(_ string, payload []byte) {
-		var req struct {
-			Number string `json:"number"`
-		}
-		if err := json.Unmarshal(payload, &req); err == nil && req.Number != "" {
-			_ = callSvc.Dial(context.Background(), req.Number)
-		}
-	})
-
-	_ = r.mqttClient.Subscribe(r.topics.CallHangup(), 1, func(_ string, _ []byte) {
-		_ = callSvc.Hangup(context.Background())
-	})
-
-	_ = r.mqttClient.Subscribe(r.topics.USSDSend(), 1, func(_ string, payload []byte) {
-		var req struct {
-			Code string `json:"code"`
-		}
-		if err := json.Unmarshal(payload, &req); err == nil && req.Code != "" {
-			metrics.DefaultRegistry.IncCounter("gsm2mqtt_ussd_requests_total", map[string]string{"modem": r.mCfg.ID})
-			_, _ = ussdSvc.Send(context.Background(), req.Code)
-		}
-	})
-
-	_ = r.mqttClient.Subscribe(r.topics.CommandRaw(), 1, func(_ string, payload []byte) {
-		cmd := strings.TrimSpace(string(payload))
-		if err := sanitizer.Validate(cmd); err != nil {
-			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(fmt.Sprintf("REJECTED: %v", err)))
-			return
-		}
-		out, err := driver.SendRawAT(cmd)
-		if err != nil {
-			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(fmt.Sprintf("ERROR: %v", err)))
-		} else {
-			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(out))
-		}
-	})
-}
-
 func (r *ModemRunner) startBalanceLoop(ctx context.Context) {
-	if !r.cfg.Tariff.Enabled {
+	if !r.cfg.Tariff.Enabled || r.cfg.Tariff.CheckInterval <= 0 {
+		slog.Info("periodic balance checking is disabled", slog.String("modem", r.mCfg.ID))
 		return
 	}
 
 	interval := r.cfg.Tariff.CheckInterval
-	if interval <= 0 {
-		interval = 24 * time.Hour
-	}
-
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Initial balance check
-	r.checkBalance(ctx)
+	// Initial balance check only if balance was never queried
+	r.mu.RLock()
+	hasBalance := r.lastBalance != 0
+	r.mu.RUnlock()
+	if !hasBalance {
+		r.checkBalance(ctx)
+	}
 
 	for {
 		select {
@@ -231,6 +173,19 @@ func (r *ModemRunner) startBalanceLoop(ctx context.Context) {
 }
 
 func (r *ModemRunner) checkBalance(ctx context.Context) {
+	r.mu.Lock()
+	minInterval := 1 * time.Hour
+	if r.cfg.Tariff.CheckInterval > minInterval {
+		minInterval = r.cfg.Tariff.CheckInterval
+	}
+	if !r.lastBalanceCheck.IsZero() && time.Since(r.lastBalanceCheck) < minInterval {
+		r.mu.Unlock()
+		slog.Debug("automatic balance check throttled", slog.String("modem", r.mCfg.ID))
+		return
+	}
+	r.lastBalanceCheck = time.Now()
+	r.mu.Unlock()
+
 	ussdCode := r.cfg.Tariff.BalanceUSSD
 	if ussdCode == "" {
 		preset, err := operator.GetPreset(r.cfg.Tariff.OperatorPreset)
@@ -247,30 +202,4 @@ func (r *ModemRunner) checkBalance(ctx context.Context) {
 	}
 
 	r.applyParsedBalance(resp.Message)
-}
-
-type atPDUSender struct {
-	engine *at.Engine
-}
-
-func (s *atPDUSender) SendPDU(cmdLength int, pduHex string) (byte, error) {
-	resp, err := s.engine.SendPDU(cmdLength, pduHex, 30*time.Second)
-	if err != nil {
-		return 0, err
-	}
-	if resp.Error {
-		return 0, fmt.Errorf("PDU send returned error: %v", resp.Lines)
-	}
-	for _, line := range resp.Lines {
-		if strings.HasPrefix(line, "+CMGS:") {
-			parts := strings.Fields(line)
-			if len(parts) > 1 {
-				ref, err := strconv.Atoi(parts[1])
-				if err == nil {
-					return byte(ref), nil
-				}
-			}
-		}
-	}
-	return 0, nil
 }

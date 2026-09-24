@@ -275,4 +275,3 @@ modems:
 		t.Errorf("expected port /dev/ttyACM0, got %v", cfg.Modems[0].Port)
 	}
 }
-

@@ -1,6 +1,9 @@
 package sms
 
 import (
+	"fmt"
+	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,7 +31,6 @@ type DeliveryEvent struct {
 type trackedSMS struct {
 	ref     byte
 	to      string
-	text    string
 	modemID string
 	timer   *time.Timer
 }
@@ -38,7 +40,7 @@ type Tracker struct {
 	mu       sync.Mutex
 	timeout  time.Duration
 	onUpdate func(event DeliveryEvent)
-	pending  map[byte]*trackedSMS
+	pending  map[string]*trackedSMS
 }
 
 // NewTracker creates a new delivery report Tracker.
@@ -46,30 +48,71 @@ func NewTracker(timeout time.Duration, onUpdate func(event DeliveryEvent)) *Trac
 	return &Tracker{
 		timeout:  timeout,
 		onUpdate: onUpdate,
-		pending:  make(map[byte]*trackedSMS),
+		pending:  make(map[string]*trackedSMS),
 	}
 }
 
+func makeKey(to string, ref byte) string {
+	return fmt.Sprintf("%s:%d", canonicalRecipient(to), ref)
+}
+
+// canonicalRecipient best-effort normalizes a recipient for key matching:
+// strips formatting, converts national 8-prefix to +7. Status reports may
+// arrive with national TOA (no "+") while Track stores E.164 — without this
+// the report would miss and the entry would leak until timeout.
+func canonicalRecipient(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return raw
+	}
+	hasPlus := strings.HasPrefix(trimmed, "+")
+	var digits strings.Builder
+	for _, r := range trimmed {
+		if r >= '0' && r <= '9' {
+			digits.WriteRune(r)
+		}
+	}
+	d := digits.String()
+	if d == "" {
+		return trimmed
+	}
+	if hasPlus {
+		return "+" + d
+	}
+	if len(d) == 11 && d[0] == '8' {
+		return "+7" + d[1:]
+	}
+	return d
+}
+
 // Track registers a sent SMS for delivery tracking.
-func (t *Tracker) Track(ref byte, to, text, modemID string) {
+func (t *Tracker) Track(ref byte, to string, modemID string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+
+	key := makeKey(to, ref)
+
+	// If overwriting, stop the old timer
+	if old, ok := t.pending[key]; ok && old.timer != nil {
+		old.timer.Stop()
+	}
 
 	item := &trackedSMS{
 		ref:     ref,
 		to:      to,
-		text:    text,
 		modemID: modemID,
 	}
 
 	if t.timeout > 0 {
 		item.timer = time.AfterFunc(t.timeout, func() {
-			t.handleTimeout(ref)
+			t.handleTimeout(key)
 		})
 	}
 
-	t.pending[ref] = item
+	t.pending[key] = item
+	t.mu.Unlock()
+	slog.Debug("tracking SMS delivery", slog.String("modem", modemID), slog.String("to", to), slog.Int("ref", int(ref)))
 
+	// Callbacks run outside the lock (no goroutine: bounded, ordered).
 	if t.onUpdate != nil {
 		t.onUpdate(DeliveryEvent{
 			MessageRef: ref,
@@ -83,17 +126,18 @@ func (t *Tracker) Track(ref byte, to, text, modemID string) {
 // HandleReport processes an incoming delivery report.
 func (t *Tracker) HandleReport(report *pdu.StatusReport) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	item, ok := t.pending[report.MessageRef]
+	key := makeKey(report.Recipient, report.MessageRef)
+	item, ok := t.pending[key]
 	if !ok {
+		t.mu.Unlock()
 		return
 	}
 
 	if item.timer != nil {
 		item.timer.Stop()
 	}
-	delete(t.pending, report.MessageRef)
+	delete(t.pending, key)
+	t.mu.Unlock()
 
 	status := DeliveryStatusDelivered
 	if !report.Delivered {
@@ -103,6 +147,8 @@ func (t *Tracker) HandleReport(report *pdu.StatusReport) {
 			status = DeliveryStatusPending
 		}
 	}
+
+	slog.Info("SMS delivery report processed", slog.String("modem", item.modemID), slog.String("to", item.to), slog.Int("ref", int(report.MessageRef)), slog.String("status", string(status)))
 
 	if t.onUpdate != nil {
 		t.onUpdate(DeliveryEvent{
@@ -114,20 +160,21 @@ func (t *Tracker) HandleReport(report *pdu.StatusReport) {
 	}
 }
 
-func (t *Tracker) handleTimeout(ref byte) {
+func (t *Tracker) handleTimeout(key string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	item, ok := t.pending[ref]
+	item, ok := t.pending[key]
 	if !ok {
+		t.mu.Unlock()
 		return
 	}
 
-	delete(t.pending, ref)
+	delete(t.pending, key)
+	t.mu.Unlock()
+	slog.Warn("SMS delivery report expired (timeout)", slog.String("modem", item.modemID), slog.String("to", item.to), slog.Int("ref", int(item.ref)))
 
 	if t.onUpdate != nil {
 		t.onUpdate(DeliveryEvent{
-			MessageRef: ref,
+			MessageRef: item.ref,
 			To:         item.to,
 			Status:     DeliveryStatusExpired,
 			ModemID:    item.modemID,

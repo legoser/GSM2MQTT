@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var defaultBalancePatterns = []*regexp.Regexp{
@@ -12,6 +13,29 @@ var defaultBalancePatterns = []*regexp.Regexp{
 }
 
 var debtPattern = regexp.MustCompile(`(?i)(?:задолженност|долг|debt)`)
+
+// customRegexCache memoizes compiled custom balance patterns so a pattern
+// from config is compiled once, not on every SMS/USSD response. It also
+// bounds ReDoS exposure: a pathologically slow pattern fails once at
+// compile or is reused without repeated compile cost.
+var customRegexCache sync.Map // map[string]*regexp.Regexp
+
+// compileCustomRegex returns a cached compiled pattern or compiles and
+// caches it. Patterns longer than 512 bytes are rejected outright.
+func compileCustomRegex(pattern string) (*regexp.Regexp, error) {
+	if v, ok := customRegexCache.Load(pattern); ok {
+		return v.(*regexp.Regexp), nil
+	}
+	if len(pattern) > 512 {
+		return nil, ErrInvalidBalanceRegex
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := customRegexCache.LoadOrStore(pattern, re)
+	return actual.(*regexp.Regexp), nil
+}
 
 // ParseBalance extracts the numeric balance amount from operator response text.
 func ParseBalance(text string, customRegex string) (float64, error) {
@@ -23,7 +47,7 @@ func ParseBalance(text string, customRegex string) (float64, error) {
 	isDebt := debtPattern.MatchString(trimmed)
 
 	if customRegex != "" {
-		re, err := regexp.Compile(customRegex)
+		re, err := compileCustomRegex(customRegex)
 		if err != nil {
 			return 0, err
 		}

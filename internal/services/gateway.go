@@ -2,8 +2,10 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/modem/at"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
+	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 )
@@ -26,21 +29,25 @@ type ModemSummary struct {
 
 // ModemRunner manages the complete lifecycle, AT engine, and MQTT bridging for a single modem.
 type ModemRunner struct {
-	mCfg         config.ModemConfig
-	cfg          *config.Config
-	opener       transport.Opener
-	mqttClient   mqtt.MQTTClient
-	topics       *mqtt.Topics
-	mu           sync.RWMutex
-	lastHealth   ModemHealth
-	lastBalance  float64
-	lastCurrency string
-	driver       modem.Driver
-	smsSvc       *SMSService
-	ussdSvc      *USSDService
-	callSvc      *CallService
-	tariffMgr    *tariff.Manager
-	receivedSMS  []ReceivedSMS
+	mCfg             config.ModemConfig
+	cfg              *config.Config
+	connector        *modem.Connector
+	mqttClient       mqtt.MQTTClient
+	topics           *mqtt.Topics
+	mu               sync.RWMutex
+	lastHealth       ModemHealth
+	lastBalance      float64
+	lastCurrency     string
+	lastBalanceCheck time.Time
+	driver           modem.Driver
+	smsSvc           *SMSService
+	ussdSvc          *USSDService
+	callSvc          *CallService
+	tariffMgr        *tariff.Manager
+	receivedSMS      []ReceivedSMS
+	slotIndex        int
+	recipientsMgr    *security.RecipientsManager
+	sanitizer        *security.Sanitizer
 }
 
 // DefaultCurrency defines standard currency when none is specified.
@@ -50,50 +57,78 @@ const DefaultCurrency = tariff.DefaultCurrency
 func NewModemRunner(
 	mCfg config.ModemConfig,
 	cfg *config.Config,
-	opener transport.Opener,
+	connector *modem.Connector,
 	mqttClient mqtt.MQTTClient,
 ) *ModemRunner {
 	r := &ModemRunner{
 		mCfg:         mCfg,
 		cfg:          cfg,
-		opener:       opener,
+		connector:    connector,
 		mqttClient:   mqttClient,
 		topics:       mqtt.NewTopics(cfg.MQTT.TopicPrefix, mCfg.ID),
 		lastCurrency: DefaultCurrency,
+		slotIndex:    1,
+		sanitizer:    security.NewSanitizer(cfg.Security.AllowRawAT, cfg.Security.AllowedATCommands),
 	}
 	r.loadInbox()
 	return r
 }
 
 // Run manages serial connection, automatically reconnects on error, and runs until context cancellation.
+// Reconnects use exponential backoff with jitter (3s → 60s max) so a
+// missing/unplugged modem does not hammer the port and the log.
 func (r *ModemRunner) Run(ctx context.Context) error {
+	const (
+		minBackoff = 3 * time.Second
+		maxBackoff = 60 * time.Second
+	)
+	backoff := minBackoff
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		started := time.Now()
 		err := r.runOnce(ctx)
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		// A long-lived session means the failure is fresh: retry fast.
+		// Only consecutive quick failures back off.
+		if time.Since(started) > 5*time.Minute {
+			backoff = minBackoff
 		}
 		r.updateHealth(ModemHealth{
 			Status: "error",
 			SIM:    "DISCONNECTED",
 		})
-		slog.Warn("modem port disconnected or unavailable, retrying in 3s...",
+		slog.Warn("modem port disconnected or unavailable, retrying...",
 			slog.String("modem", r.mCfg.ID),
 			slog.String("port", r.mCfg.Port),
 			slog.Any("error", err),
+			slog.Duration("retry_in", backoff),
 		)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(3 * time.Second):
+		case <-time.After(backoff):
+		}
+		// Exponential backoff with jitter: double up to max, ±20%.
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+		backoff = backoff - time.Duration(rand.Int63n(int64(backoff)/5))
+		if backoff < minBackoff {
+			backoff = minBackoff
 		}
 	}
 }
 
-func (r *ModemRunner) openPort() (transport.Port, error) {
-	return r.opener.Open(transport.PortConfig{
+func (r *ModemRunner) runOnce(ctx context.Context) error {
+	childCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	engine, closer, err := r.connector.Open(transport.PortConfig{
 		Device:      r.mCfg.Port,
 		BaudRate:    r.mCfg.BaudRate,
 		DataBits:    r.mCfg.DataBits,
@@ -101,21 +136,12 @@ func (r *ModemRunner) openPort() (transport.Port, error) {
 		Parity:      r.mCfg.Parity,
 		FlowControl: r.mCfg.FlowControl,
 	})
-}
-
-func (r *ModemRunner) runOnce(ctx context.Context) error {
-	childCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	port, err := r.openPort()
 	if err != nil {
 		return fmt.Errorf("failed to open modem port %s: %w", r.mCfg.Port, err)
 	}
-	defer port.Close()
+	defer closer()
 
 	slog.Info("modem port opened successfully", slog.String("modem", r.mCfg.ID), slog.String("port", r.mCfg.Port))
-
-	engine := at.NewEngine(port)
 	engineErrCh := make(chan error, 1)
 	go func() {
 		engineErrCh <- engine.Start(childCtx)
@@ -128,8 +154,6 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 		slog.Info("modem driver initialized", slog.String("modem", r.mCfg.ID), slog.String("type", r.mCfg.Type))
 	}
 
-	r.publishDiscovery(driver)
-
 	smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc := r.wireServices(engine, driver)
 	statusSvc.SetOnDisconnect(cancel)
 
@@ -141,10 +165,24 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 	r.tariffMgr = tariffMgr
 	r.mu.Unlock()
 
+	r.publishDiscovery(driver)
+
 	go r.urcLoop(childCtx, engine, smsSvc, callSvc, ussdSvc)
 	r.subscribeMQTT(smsSvc, callSvc, ussdSvc, tariffMgr, diagSvc, driver)
 	go statusSvc.Start(childCtx)
 	go r.startBalanceLoop(childCtx)
+
+	r.mu.RLock()
+	if len(r.receivedSMS) > 0 && r.mqttClient != nil && r.mqttClient.IsConnected() {
+		last := r.receivedSMS[len(r.receivedSMS)-1]
+		lastPayload, _ := json.Marshal(map[string]any{
+			"from":      last.Sender,
+			"text":      last.Text,
+			"timestamp": last.Timestamp,
+		})
+		_ = r.mqttClient.Publish(r.topics.SMSReceived(), 1, true, lastPayload)
+	}
+	r.mu.RUnlock()
 
 	go func() {
 		synced, err := smsSvc.SyncStoredMessages(childCtx, "SM", "ME")
@@ -210,6 +248,7 @@ func (r *ModemRunner) SendSMS(ctx context.Context, to, text string) ([]byte, err
 	refs, err := svc.Send(ctx, SendSMSRequest{To: to, Text: text})
 	if err == nil && tm != nil && len(refs) > 0 {
 		tm.RecordSMS(len(refs))
+		r.publishAccountingStatus(tm)
 	}
 	return refs, err
 }
@@ -228,6 +267,16 @@ func (r *ModemRunner) SendUSSD(ctx context.Context, code string) (string, error)
 	}
 	r.applyParsedBalance(resp.Message)
 	return resp.Message, nil
+}
+
+// GetCallStatus returns the current voice call status for this modem runner.
+func (r *ModemRunner) GetCallStatus() CallStatus {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.callSvc != nil {
+		return r.callSvc.Status()
+	}
+	return CallStatus{State: CallStateIdle, Message: "Idle"}
 }
 
 func (r *ModemRunner) updateHealth(h ModemHealth) {
@@ -260,4 +309,3 @@ func (r *ModemRunner) urcLoop(
 		}
 	}
 }
-

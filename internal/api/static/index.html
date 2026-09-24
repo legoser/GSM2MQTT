@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GSM2MQTT Control Center</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📟</text></svg>">
+<style>
+:root {
+  --primary: #1976d2;
+  --primary-hover: #1565c0;
+  --bg: #f4f6f9;
+  --card-bg: #ffffff;
+  --text: #212529;
+  --text-muted: #6c757d;
+  --success: #2e7d32;
+  --warning: #ed6c02;
+  --danger: #d32f2f;
+  --border: #e0e0e0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+body { background: var(--bg); color: var(--text); padding: 1.5rem; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+.header h1 { font-size: 1.75rem; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; }
+.gateway-badge { background: #e8f5e9; color: var(--success); padding: 0.35rem 0.75rem; border-radius: 999px; font-weight: 600; font-size: 0.875rem; border: 1px solid #c8e6c9; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem; }
+.card { background: var(--card-bg); border-radius: 10px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border: 1px solid var(--border); }
+.card h2 { font-size: 1.15rem; margin-bottom: 1rem; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; }
+table { width: 100%; border-collapse: collapse; text-align: left; }
+th, td { padding: 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+th { background: #fafafa; color: var(--text-muted); font-weight: 600; }
+.badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; }
+.badge-ready { background: #e8f5e9; color: var(--success); }
+.badge-error { background: #ffebee; color: var(--danger); }
+.badge-warning { background: #fff3e0; color: var(--warning); }
+.sig-bar-container { background: #e0e0e0; border-radius: 4px; height: 8px; width: 80px; display: inline-block; vertical-align: middle; margin-right: 6px; overflow: hidden; }
+.sig-bar { height: 100%; border-radius: 4px; transition: width 0.3s; }
+.form-group { margin-bottom: 0.85rem; }
+label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.3rem; color: var(--text-muted); }
+input, select, textarea { width: 100%; padding: 0.55rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); }
+.btn-group { display: flex; gap: 0.5rem; }
+button { flex: 1; padding: 0.65rem 1rem; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 0.9rem; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: #b71c1c; }
+.btn-secondary { background: #e0e0e0; color: #333; }
+.btn-secondary:hover { background: #d5d5d5; }
+.quick-chips { display: flex; gap: 0.4rem; margin-top: 0.3rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+.chip { padding: 0.2rem 0.5rem; background: #e3f2fd; color: #1565c0; border-radius: 4px; font-size: 0.8rem; cursor: pointer; user-select: none; }
+.chip:hover { background: #bbdefb; }
+.res-box { background: #f8f9fa; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; font-family: monospace; font-size: 0.85rem; margin-top: 0.75rem; min-height: 48px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+.res-box.status-active { background: #e3f2fd; border-color: #90caf9; color: #0d47a1; }
+.res-box.status-success { background: #e8f5e9; border-color: #a5d6a7; color: #1b5e20; }
+.res-box.status-error { background: #ffebee; border-color: #ef9a9a; color: #b71c1c; }
+.inbox-table { max-height: 250px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1><span>📟</span> GSM2MQTT Control Center</h1>
+  <div>
+    <span class="gateway-badge">● Gateway Online</span>
+    <span id="authBadge" class="badge badge-warning" title="API auth status">🔓 NO TOKEN</span>
+    <button onclick="loginToken()" style="margin-left:8px; padding:0.35rem 0.75rem;" class="btn-secondary" title="Set API token (stored in this browser only)">🔑 Token</button>
+    <button onclick="refreshAll()" style="margin-left:8px; padding:0.35rem 0.75rem;" class="btn-secondary">↻ Refresh</button>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 1.25rem; padding: 0.75rem 1.25rem;">
+  <details id="mqttDetails" style="font-size: 0.9rem;">
+    <summary style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none;">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <span style="font-size: 1.15rem;">🔌</span>
+        <strong>MQTT Broker:</strong>
+        <span id="mqttStatusBadge" class="badge badge-warning">CHECKING</span>
+        <span id="mqttBrokerUri" style="font-size: 0.85rem; color: #666; font-family: monospace;">-</span>
+      </div>
+      <span style="color: var(--primary); font-size: 0.8rem; font-weight: 500;">⚙️ Connection Details ▾</span>
+    </summary>
+    <div style="margin-top: 0.75rem; padding-top: 0.6rem; border-top: 1px solid var(--border); font-family: monospace; font-size: 0.82rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem; color: #444;">
+      <div><strong>Client ID:</strong> <span id="mqttClientID">-</span></div>
+      <div><strong>Topic Prefix:</strong> <span id="mqttTopicPrefix">-</span></div>
+      <div><strong>Port:</strong> <span id="mqttPort">-</span></div>
+      <div><strong>Discovery:</strong> <span id="mqttDiscovery">-</span></div>
+    </div>
+  </details>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+  <h2><span>📡</span> Modems Status & Telemetry</h2>
+  <div style="overflow-x: auto;">
+    <table id="modemsTable">
+      <thead>
+        <tr>
+          <th>Modem ID</th><th>Type</th><th>Status</th><th>Signal Strength</th><th>Operator</th><th>SIM Status</th><th>Balance</th>
+        </tr>
+      </thead>
+      <tbody id="modemsBody">
+        <tr><td colspan="7" style="text-align:center; color:#888;">Loading telemetry...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid">
+  <!-- USSD Commands -->
+  <div class="card">
+    <h2><span>⚡</span> USSD Command & Balance</h2>
+    <div class="form-group">
+      <label>Modem:</label><select id="ussdModem"></select>
+    </div>
+    <div class="form-group">
+      <label>USSD Code:</label>
+      <input type="text" id="ussdCode" value="*100#" placeholder="*100#">
+      <div class="quick-chips">
+        <span class="chip" onclick="setUSSD('*100#')">*100# (МТС/Tele2/Мегафон)</span>
+        <span class="chip" onclick="setUSSD('*105#')">*105# (Личный кабинет)</span>
+        <span class="chip" onclick="setUSSD('*102#')">*102# (Билайн)</span>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="sendUSSD()">Execute USSD Query</button>
+    <div id="ussdResult" class="res-box">USSD response will appear here...</div>
+  </div>
+
+  <!-- Voice Calls -->
+  <div class="card">
+    <h2><span>📞</span> Voice Call (Call-Drop Alert)</h2>
+    <div class="form-group">
+      <label>Modem:</label><select id="callModem" onchange="updateCallStatusDisplay()"></select>
+    </div>
+    <div class="form-group">
+      <label>Phone Number:</label>
+      <input type="text" id="callNumber" placeholder="+79001234567">
+    </div>
+    <div class="btn-group">
+      <button class="btn-primary" onclick="dialCall()">Dial Call</button>
+      <button class="btn-danger" onclick="hangupCall()">Hangup</button>
+    </div>
+    <div id="callResult" class="res-box">Call status: Idle</div>
+    <div id="callLogs" style="margin-top: 0.5rem; font-family: monospace; font-size: 0.8rem; max-height: 120px; overflow-y: auto; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 0.4rem 0.6rem; display: none;"></div>
+  </div>
+
+  <!-- Send SMS -->
+  <div class="card">
+    <h2><span>✉️</span> Send SMS</h2>
+    <div class="form-group">
+      <label>Modem:</label><select id="smsModem"></select>
+    </div>
+    <div class="form-group">
+      <label>Phone Number:</label>
+      <input type="text" id="smsTo" placeholder="+79001234567">
+    </div>
+    <div class="form-group">
+      <label>Message Text:</label>
+      <textarea id="smsText" rows="2" placeholder="Test SMS from GSM2MQTT Dashboard"></textarea>
+    </div>
+    <button class="btn-primary" onclick="sendSMS()">Send Message</button>
+    <div id="smsResult" class="res-box">SMS dispatch status...</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+  <details id="atDetails">
+    <summary style="cursor: pointer; font-size: 1.15rem; font-weight: 600; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; user-select: none;">
+      <span>🛠️</span> AT Command Console (Direct Modem Debug)
+    </summary>
+    <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
+      <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <div class="form-group" style="flex: 1; min-width: 200px;">
+          <label>Modem:</label>
+          <select id="atModem"></select>
+        </div>
+        <div class="form-group" style="flex: 3; min-width: 280px;">
+          <label>AT Command:</label>
+          <input type="text" id="atCommand" placeholder="AT+CSQ" onkeydown="if(event.key==='Enter') sendAT()">
+        </div>
+      </div>
+      <div class="quick-chips">
+        <span class="chip" onclick="setAT('AT+CSQ')">AT+CSQ (Signal)</span>
+        <span class="chip" onclick="setAT('AT+CBC')">AT+CBC (Battery/Voltage)</span>
+        <span class="chip" onclick="setAT('AT+CSCS?')">AT+CSCS? (TE Charset)</span>
+        <span class="chip" onclick="setAT('AT+COLP?')">AT+COLP? (Connected Line)</span>
+        <span class="chip" onclick="setAT('AT+CSCA?')">AT+CSCA? (SMS Service Center)</span>
+        <span class="chip" onclick="setAT('ATI')">ATI (Modem Model)</span>
+        <span class="chip" onclick="setAT('AT+GSN')">AT+GSN (IMEI)</span>
+        <span class="chip" onclick="setAT('AT+CPIN?')">AT+CPIN? (SIM PIN)</span>
+      </div>
+      <button class="btn-primary" onclick="sendAT()" style="max-width: 220px;">Send AT Command</button>
+      <div id="atResult" class="res-box" style="min-height: 56px; max-height: 180px;">AT response will appear here...</div>
+    </div>
+  </details>
+</div>
+
+<div class="card">
+  <h2><span>📥</span> Received SMS Inbox</h2>
+  <div class="inbox-table">
+    <table>
+      <thead>
+        <tr><th>Time</th><th>From</th><th>Modem</th><th>Message</th></tr>
+      </thead>
+      <tbody id="inboxBody">
+        <tr><td colspan="4" style="text-align:center; color:#888;">No messages received yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// --- API token auth (stored in this browser's localStorage only) ---
+function getToken() { try { return localStorage.getItem('gsm2mqtt_token') || ''; } catch (e) { return ''; } }
+function authHeaders() {
+  let h = {'Content-Type': 'application/json'};
+  let t = getToken();
+  if (t) h['Authorization'] = 'Bearer ' + t;
+  return h;
+}
+// apiFetch wraps fetch with the stored Bearer token and surfaces 401.
+function apiFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign(authHeaders(), opts.headers || {});
+  return fetch(url, opts).then(r => {
+    if (r.status === 401) {
+      updateAuthBadge(false);
+      throw new Error('Unauthorized (401) — click 🔑 Token and enter a valid API token');
+    }
+    return r;
+  });
+}
+function updateAuthBadge(ok) {
+  let b = document.getElementById('authBadge');
+  if (!b) return;
+  if (ok === true) { b.className = 'badge badge-ready'; b.innerText = '🔒 AUTH OK'; }
+  else if (ok === false) { b.className = 'badge badge-error'; b.innerText = '🔓 AUTH FAILED'; }
+  else if (getToken()) { b.className = 'badge badge-ready'; b.innerText = '🔒 TOKEN SET'; }
+  else { b.className = 'badge badge-warning'; b.innerText = '🔓 NO TOKEN'; }
+}
+function loginToken() {
+  let cur = getToken();
+  let t = prompt('Enter API token (from GSM2MQTT_API_TOKEN). Leave empty to clear:', cur);
+  if (t === null) return; // cancelled
+  t = (t || '').trim();
+  try {
+    if (t) localStorage.setItem('gsm2mqtt_token', t);
+    else localStorage.removeItem('gsm2mqtt_token');
+  } catch (e) { alert('Cannot access localStorage: ' + e); return; }
+  updateAuthBadge();
+  refreshAll();
+}
+function setUSSD(c) { document.getElementById('ussdCode').value = c; }
+function setAT(c) { document.getElementById('atCommand').value = c; }
+
+function getSignalHTML(rssi, dbm) {
+  let pct = Math.min(100, Math.round((rssi / 31) * 100));
+  let color = pct > 50 ? '#2e7d32' : pct > 25 ? '#ed6c02' : '#d32f2f';
+  return '<div class="sig-bar-container"><div class="sig-bar" style="width:'+pct+'%; background:'+color+'"></div></div>' +
+         '<span>' + rssi + ' / 31 (' + dbm + ' dBm)</span>';
+}
+
+function getBadge(status) {
+  let s = (status || 'unknown').toLowerCase();
+  let cls = s === 'ready' ? 'badge-ready' : s.includes('error') ? 'badge-error' : 'badge-warning';
+  return '<span class="badge ' + cls + '">' + escapeHtml(status || 'OFFLINE') + '</span>';
+}
+
+function updateModemSelects(modems) {
+  ['ussdModem', 'callModem', 'smsModem', 'atModem'].forEach(id => {
+    let sel = document.getElementById(id);
+    let cur = sel.value;
+    sel.innerHTML = modems.map(m => '<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.id) + ' (' + escapeHtml(m.type) + ')</option>').join('');
+    if (cur) sel.value = cur;
+  });
+  if (!callTimer) updateCallStatusDisplay();
+}
+
+function fetchModems() {
+  apiFetch('/api/modems')
+    .then(r => r.json())
+    .then(modems => {
+      updateAuthBadge();
+      updateModemSelects(modems);
+      let body = document.getElementById('modemsBody');
+      if (!modems || modems.length === 0) {
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center;">No modems registered</td></tr>';
+        return;
+      }
+      body.innerHTML = modems.map(m => {
+        let h = m.health || {};
+        return '<tr>' +
+          '<td><strong>' + escapeHtml(m.id) + '</strong></td>' +
+          '<td>' + escapeHtml(m.type) + '</td>' +
+          '<td>' + getBadge(h.status) + '</td>' +
+          '<td>' + getSignalHTML(h.signal || 0, h.signal_dbm || 0) + '</td>' +
+          '<td>' + escapeHtml(h.operator || 'Unknown') + '</td>' +
+          '<td>' + escapeHtml(h.sim || 'N/A') + '</td>' +
+          '<td><strong>' + (m.balance !== undefined ? m.balance.toFixed(2) : '0.00') + ' ' + escapeHtml(m.currency || 'RUB') + '</strong></td>' +
+        '</tr>';
+      }).join('');
+    })
+    .catch(e => console.error('failed fetching modems', e));
+}
+
+function fetchInbox() {
+  apiFetch('/api/sms/inbox')
+    .then(r => r.json())
+    .then(list => {
+      let body = document.getElementById('inboxBody');
+      if (!list || list.length === 0) {
+        body.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#888;">No messages received yet</td></tr>';
+        return;
+      }
+      body.innerHTML = list.map(m => '<tr>' +
+        '<td>' + escapeHtml(m.timestamp) + '</td>' +
+        '<td><strong>' + escapeHtml(m.sender) + '</strong></td>' +
+        '<td>' + escapeHtml(m.modem_id) + '</td>' +
+        '<td>' + escapeHtml(m.text) + '</td>' +
+      '</tr>').join('');
+    })
+    .catch(e => console.error('failed fetching inbox', e));
+}
+
+function sendUSSD() {
+  let m = document.getElementById('ussdModem').value;
+  let code = document.getElementById('ussdCode').value;
+  let out = document.getElementById('ussdResult');
+  out.className = 'res-box status-active';
+  out.innerText = 'Executing ' + code + '...';
+  apiFetch('/api/ussd/send', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({modem_id: m, code: code})
+  })
+  .then(r => r.json())
+  .then(d => {
+    out.className = d.success ? 'res-box status-success' : 'res-box status-error';
+    out.innerText = d.message || JSON.stringify(d);
+    fetchModems();
+  })
+  .catch(e => {
+    out.className = 'res-box status-error';
+    out.innerText = 'Error: ' + e;
+  });
+}
+
+function sendAT() {
+  let m = document.getElementById('atModem').value;
+  let cmd = document.getElementById('atCommand').value;
+  let out = document.getElementById('atResult');
+  if (!cmd) return;
+  out.className = 'res-box status-active';
+  out.innerText = 'Sending ' + cmd + '...';
+  apiFetch('/api/at/send', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({modem_id: m, command: cmd})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      out.className = 'res-box status-success';
+      out.innerText = d.reply !== undefined ? (d.reply || 'OK (Empty response)') : JSON.stringify(d);
+    } else {
+      out.className = 'res-box status-error';
+      out.innerText = 'Error: ' + d.error;
+    }
+  })
+  .catch(e => {
+    out.className = 'res-box status-error';
+    out.innerText = 'Network error: ' + e;
+  });
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+let callTimer = null;
+let trailingPolls = 0;
+
+function setCallDisplay(st) {
+  let out = document.getElementById('callResult');
+  let logsDiv = document.getElementById('callLogs');
+  if (!st) return;
+  let txt = st.message || st.state;
+  if (st.state === 'dialing' || st.state === 'ringing') {
+    out.className = 'res-box status-active';
+  } else if (st.state === 'completed' || st.state === 'answered') {
+    out.className = 'res-box status-success';
+  } else if (st.state === 'busy' || st.state === 'failed') {
+    out.className = 'res-box status-error';
+  } else {
+    out.className = 'res-box';
+  }
+  out.innerText = txt;
+
+  if (logsDiv && st.logs && st.logs.length > 0) {
+    logsDiv.style.display = 'block';
+    logsDiv.innerHTML = st.logs.map(l => {
+      let t = l.time ? new Date(l.time).toLocaleTimeString() : '';
+      let color = '#333';
+      let msg = l.message || '';
+      if (msg.includes('answered') || msg.includes('dropped') || msg.includes('completed')) {
+        color = '#2e7d32';
+      } else if (msg.includes('failed') || msg.includes('busy') || msg.includes('rejected') || msg.includes('timeout') || msg.includes('NO CARRIER')) {
+        color = '#d32f2f';
+      } else if (msg.includes('Ringing') || msg.includes('Dialing') || msg.includes('connecting') || msg.includes('alerting')) {
+        color = '#1976d2';
+      }
+      return '<div style="margin-bottom: 2px; color: ' + color + ';"><span style="color:#888;">[' + t + ']</span> ' + escapeHtml(msg) + '</div>';
+    }).join('');
+    logsDiv.scrollTop = logsDiv.scrollHeight;
+  }
+}
+
+function pollCall(m) {
+  if (callTimer) clearInterval(callTimer);
+  trailingPolls = 0;
+  callTimer = setInterval(() => {
+    apiFetch('/api/call/status?modem_id=' + encodeURIComponent(m))
+      .then(r => r.json())
+      .then(st => {
+        if (!st) return;
+        setCallDisplay(st);
+        let isTerminal = (st.state === 'completed' || st.state === 'busy' || st.state === 'failed' || st.state === 'idle');
+        if (isTerminal) {
+          trailingPolls++;
+          if (trailingPolls >= 3) {
+            clearInterval(callTimer);
+            callTimer = null;
+          }
+        } else {
+          trailingPolls = 0;
+        }
+      }).catch(() => {});
+  }, 400);
+}
+
+function updateCallStatusDisplay() {
+  let m = document.getElementById('callModem').value;
+  if (!m) return;
+  apiFetch('/api/call/status?modem_id=' + encodeURIComponent(m))
+    .then(r => r.json())
+    .then(st => { setCallDisplay(st); })
+    .catch(() => {});
+}
+
+function dialCall() {
+  let m = document.getElementById('callModem').value;
+  let num = document.getElementById('callNumber').value;
+  let out = document.getElementById('callResult');
+  let logsDiv = document.getElementById('callLogs');
+  if (logsDiv) {
+    logsDiv.style.display = 'block';
+    logsDiv.innerHTML = '<div style="color:#888;">Initiating outgoing call...</div>';
+  }
+  out.className = 'res-box status-active';
+  out.innerText = 'Dialing ' + num + '...';
+  pollCall(m);
+  apiFetch('/api/call/dial', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({modem_id: m, number: num})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      updateCallStatusDisplay();
+    } else {
+      out.className = 'res-box status-error';
+      out.innerText = 'Error: ' + d.error;
+      if (callTimer) { clearInterval(callTimer); callTimer = null; }
+    }
+  })
+  .catch(e => {
+    out.className = 'res-box status-error';
+    out.innerText = 'Dial error: ' + e;
+    if (callTimer) { clearInterval(callTimer); callTimer = null; }
+  });
+}
+
+function hangupCall() {
+  if (callTimer) { clearInterval(callTimer); callTimer = null; }
+  let m = document.getElementById('callModem').value;
+  let out = document.getElementById('callResult');
+  apiFetch('/api/call/hangup', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({modem_id: m})
+  })
+  .then(r => r.json())
+  .then(d => {
+    out.className = 'res-box';
+    out.innerText = 'Call terminated (Hangup)';
+    updateCallStatusDisplay();
+  })
+  .catch(e => {
+    out.className = 'res-box status-error';
+    out.innerText = 'Hangup error: ' + e;
+  });
+}
+
+
+function sendSMS() {
+  let m = document.getElementById('smsModem').value;
+  let to = document.getElementById('smsTo').value;
+  let txt = document.getElementById('smsText').value;
+  let out = document.getElementById('smsResult');
+  out.className = 'res-box status-active';
+  out.innerText = 'Sending SMS...';
+  apiFetch('/api/sms/send', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({modem_id: m, to: to, text: txt})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      out.className = 'res-box status-success';
+      out.innerText = 'SMS Sent! Ref IDs: ' + JSON.stringify(d.refs);
+    } else {
+      out.className = 'res-box status-error';
+      out.innerText = 'Error: ' + d.error;
+    }
+  })
+  .catch(e => {
+    out.className = 'res-box status-error';
+    out.innerText = 'Send error: ' + e;
+  });
+}
+
+function fetchMQTTStatus() {
+  apiFetch('/api/mqtt/status')
+    .then(r => r.json())
+    .then(st => {
+      let badge = document.getElementById('mqttStatusBadge');
+      let uri = document.getElementById('mqttBrokerUri');
+      if (st.connected) {
+        badge.className = 'badge badge-ready';
+        badge.innerText = 'CONNECTED';
+      } else {
+        badge.className = 'badge badge-error';
+        badge.innerText = 'DISCONNECTED';
+      }
+      uri.innerText = st.broker || (st.port ? 'port ' + st.port : '-');
+      document.getElementById('mqttClientID').innerText = st.client_id || '-';
+      document.getElementById('mqttTopicPrefix').innerText = st.topic_prefix || '-';
+      document.getElementById('mqttPort').innerText = st.port || '-';
+      document.getElementById('mqttDiscovery').innerText = st.discovery ? ('Enabled (' + (st.discovery_prefix || 'homeassistant') + ')') : 'Disabled';
+    })
+    .catch(e => {
+      let badge = document.getElementById('mqttStatusBadge');
+      if (badge) {
+        badge.className = 'badge badge-error';
+        badge.innerText = 'ERROR';
+      }
+    });
+}
+
+function refreshAll() {
+  fetchModems();
+  fetchInbox();
+  fetchMQTTStatus();
+}
+
+setInterval(refreshAll, 3000);
+updateAuthBadge();
+refreshAll();
+</script>
+</body>
+</html>

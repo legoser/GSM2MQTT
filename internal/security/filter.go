@@ -3,6 +3,7 @@
 package security
 
 import (
+	"log/slog"
 	"strings"
 	"unicode"
 )
@@ -49,10 +50,12 @@ func (f *Filter) Allowed(number string) bool {
 func (f *Filter) Check(number string) error {
 	trimmed := strings.TrimSpace(number)
 	if trimmed == "" {
+		slog.Warn("phone number rejected: empty number", slog.String("mode", f.mode))
 		return ErrEmptyPhoneNumber
 	}
 
 	if strings.ContainsAny(number, "\x00\r\n") {
+		slog.Warn("phone number rejected: dangerous characters", slog.String("number", number), slog.String("mode", f.mode))
 		return ErrDangerousChars
 	}
 
@@ -60,21 +63,27 @@ func (f *Filter) Check(number string) error {
 
 	switch f.mode {
 	case "all":
+		slog.Debug("phone number allowed (mode: all)", slog.String("number", normalized))
 		return nil
 
 	case "whitelist":
 		if _, ok := f.whitelist[normalized]; ok {
+			slog.Debug("phone number allowed (whitelisted)", slog.String("number", normalized))
 			return nil
 		}
+		slog.Warn("phone number rejected: not whitelisted", slog.String("number", normalized))
 		return ErrNumberNotWhitelisted
 
 	case "blacklist":
 		if _, ok := f.blacklist[normalized]; ok {
+			slog.Warn("phone number rejected: blacklisted", slog.String("number", normalized))
 			return ErrNumberBlocked
 		}
+		slog.Debug("phone number allowed (not blacklisted)", slog.String("number", normalized))
 		return nil
 
 	default:
+		slog.Warn("phone number rejected: invalid filter mode", slog.String("mode", f.mode))
 		return ErrInvalidFilterMode
 	}
 }

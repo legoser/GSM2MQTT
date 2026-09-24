@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -15,15 +14,22 @@ import (
 func Load(path string) (*Config, error) {
 	cfg := Defaults()
 
-	if err := loadFromFile(cfg, path); err != nil {
-		return nil, fmt.Errorf("loading config file: %w", err)
+	resolvedPath := path
+	if resolvedPath == "" {
+		resolvedPath = findDefaultConfig()
 	}
 
-	dotEnv := loadDotEnv(filepath.Dir(path))
+	if resolvedPath != "" {
+		if err := loadFromFile(cfg, resolvedPath); err != nil {
+			return nil, fmt.Errorf("invalid config: loading config file: %w", err)
+		}
+	}
+
+	dotEnv := loadDotEnv(filepath.Dir(resolvedPath))
 	applyHierarchicalOverrides(cfg, dotEnv)
 
 	if err := validate(cfg); err != nil {
-		return nil, fmt.Errorf("validating config: %w", err)
+		return nil, fmt.Errorf("invalid config: validating config: %w", err)
 	}
 
 	return cfg, nil
@@ -52,12 +58,39 @@ func Defaults() *Config {
 				CooldownMinutes:        10,
 			},
 			AllowRawAT: false,
-			BlockedATCommands: []string{
-				"AT+CFUN=0",
-				"AT+CPIN",
-				"ATD",
-				"AT&F",
+			AllowedATCommands: []string{
+				"ATI",
+				"AT+CSQ",
+				"AT+CREG",
+				"AT+CGREG",
+				"AT+CEREG",
+				"AT+COPS",
+				"AT+CPIN?",
+				"AT+CSCA",
+				"AT+CMGF",
+				"AT+CNMI",
+				"AT+CMEE",
+				"AT+CBC",
+				"AT+CGMI",
+				"AT+CGMM",
+				"AT+CGMR",
+				"AT+CGSN",
+				"AT+CIMI",
+				"AT+CCLK",
+				"AT+CSMS",
+				"AT+CPMS",
+				"AT+CMGL",
+				"AT+CMGR",
+				"AT+CLCC",
+				"AT+CLIP",
+				"AT+COLP",
+				"AT+CFUN?",
+				"AT+CVOICE",
+				"AT^CVOICE",
+				"AT+CSCLK",
 			},
+			RecipientsFile: "data/recipients.json",
+			FallbackCall:   true,
 		},
 		SMS: SMSConfig{
 			Encoding:       "auto",
@@ -103,85 +136,76 @@ func loadFromFile(cfg *Config, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			if path == "/etc/gsm2mqtt/gsm2mqtt.yaml" {
+				if alt := findDefaultConfig(); alt != "" && alt != path {
+					return loadFromFile(cfg, alt)
+				}
+			}
 			// No config file — use defaults
 			return nil
 		}
-		return fmt.Errorf("reading file %s: %w", path, err)
+		return fmt.Errorf("invalid config: reading file %s: %w", path, err)
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return fmt.Errorf("parsing YAML: %w", err)
+		return fmt.Errorf("invalid config: parsing YAML: %w", err)
 	}
 
 	return nil
 }
 
-// applyHierarchicalOverrides applies configuration overrides with priority: OS Env > .env > YAML.
-func applyHierarchicalOverrides(cfg *Config, dotEnv map[string]string) {
-	overrides := []struct {
-		keys   []string
-		setter func(string)
-	}{
-		{[]string{"GSM2MQTT_LOG_LEVEL", "LOG_LEVEL"}, func(v string) { cfg.LogLevel = v }},
-		{[]string{"GSM2MQTT_MQTT_BROKER", "MQTT_BROKER"}, func(v string) { cfg.MQTT.Broker = v }},
-		{[]string{"GSM2MQTT_MQTT_PORT", "MQTT_PORT"}, func(v string) { cfg.MQTT.Port = atoi(v, cfg.MQTT.Port) }},
-		{[]string{"GSM2MQTT_MQTT_USERNAME", "MQTT_USERNAME"}, func(v string) { cfg.MQTT.Username = v }},
-		{[]string{"GSM2MQTT_MQTT_PASSWORD", "MQTT_PASSWORD"}, func(v string) { cfg.MQTT.Password = v }},
-		{[]string{"GSM2MQTT_MQTT_CLIENT_ID", "MQTT_CLIENT_ID"}, func(v string) { cfg.MQTT.ClientID = v }},
-		{[]string{"GSM2MQTT_POOL_ENABLED", "POOL_ENABLED"}, func(v string) { cfg.Pool.Enabled = v == "true" || v == "1" }},
-		{[]string{"GSM2MQTT_POOL_STRATEGY", "POOL_STRATEGY"}, func(v string) { cfg.Pool.Strategy = v }},
-		{[]string{"GSM2MQTT_POOL_DEFAULT_MODEM", "POOL_DEFAULT_MODEM"}, func(v string) { cfg.Pool.DefaultModem = v }},
-		{[]string{"GSM2MQTT_API_ENABLED", "API_ENABLED"}, func(v string) { cfg.API.Enabled = v == "true" || v == "1" }},
-		{[]string{"GSM2MQTT_API_HOST", "API_HOST"}, func(v string) { cfg.API.Host = v }},
-		{[]string{"GSM2MQTT_API_PORT", "API_PORT"}, func(v string) { cfg.API.Port = atoi(v, cfg.API.Port) }},
-		{[]string{"GSM2MQTT_TARIFF_STORAGE_DIR", "TARIFF_STORAGE_DIR"}, func(v string) { cfg.Tariff.StorageDir = v }},
-		{[]string{"GSM2MQTT_MODEM_PORT", "MODEM_DEVICE", "MODEM_PORT"}, func(v string) {
-			if len(cfg.Modems) > 0 {
-				cfg.Modems[0].Port = v
-			}
-		}},
+// findDefaultConfig searches for a configuration file in standard locations.
+func findDefaultConfig() string {
+	candidates := []string{
+		"configs/gsm2mqtt.yaml",
+		"gsm2mqtt.yaml",
+		"/etc/gsm2mqtt/gsm2mqtt.yaml",
 	}
-
-	for _, o := range overrides {
-		if v := getHierarchicalValue(dotEnv, o.keys...); v != "" {
-			o.setter(v)
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+			return c
 		}
 	}
+	return ""
 }
 
 // validate checks the configuration for required fields and valid values.
 func validate(cfg *Config) error {
 	if cfg.MQTT.Broker == "" {
-		return fmt.Errorf("mqtt.broker is required")
+		return fmt.Errorf("invalid config: mqtt.broker is required")
 	}
 	if cfg.MQTT.Port <= 0 || cfg.MQTT.Port > 65535 {
-		return fmt.Errorf("mqtt.port must be between 1 and 65535, got %d", cfg.MQTT.Port)
+		return fmt.Errorf("invalid config: mqtt.port must be between 1 and 65535, got %d", cfg.MQTT.Port)
 	}
 	if cfg.MQTT.TopicPrefix == "" {
-		return fmt.Errorf("mqtt.topic_prefix is required")
+		return fmt.Errorf("invalid config: mqtt.topic_prefix is required")
 	}
 
 	validEncodings := map[string]bool{"auto": true, "translit": true, "ucs2": true, "gsm7": true}
 	if !validEncodings[cfg.SMS.Encoding] {
-		return fmt.Errorf("sms.encoding must be one of: auto, translit, ucs2, gsm7; got %q", cfg.SMS.Encoding)
+		return fmt.Errorf("invalid config: sms.encoding must be one of: auto, translit, ucs2, gsm7; got %q", cfg.SMS.Encoding)
 	}
 
 	validLongMsg := map[string]bool{"split": true, "truncate": true, "reject": true}
 	if !validLongMsg[cfg.SMS.LongMessage] {
-		return fmt.Errorf("sms.long_message must be one of: split, truncate, reject; got %q", cfg.SMS.LongMessage)
+		return fmt.Errorf("invalid config: sms.long_message must be one of: split, truncate, reject; got %q", cfg.SMS.LongMessage)
 	}
 
 	validFilters := map[string]bool{"all": true, "whitelist": true, "blacklist": true}
 	if !validFilters[cfg.Security.IncomingFilter] {
-		return fmt.Errorf("security.incoming_filter must be one of: all, whitelist, blacklist; got %q", cfg.Security.IncomingFilter)
+		return fmt.Errorf("invalid config: security.incoming_filter must be one of: all, whitelist, blacklist; got %q", cfg.Security.IncomingFilter)
+	}
+
+	if len(cfg.Security.BlockedATCommands) > 0 {
+		return fmt.Errorf("invalid config: security.blocked_at_commands is deprecated, use security.allowed_at_commands instead")
 	}
 
 	for i, m := range cfg.Modems {
 		if m.ID == "" {
-			return fmt.Errorf("modems[%d].id is required", i)
+			return fmt.Errorf("invalid config: modems[%d].id is required", i)
 		}
 		if m.Port == "" {
-			return fmt.Errorf("modems[%d].port is required", i)
+			return fmt.Errorf("invalid config: modems[%d].port is required", i)
 		}
 	}
 
@@ -193,18 +217,9 @@ func validate(cfg *Config) error {
 			"operator-match": true,
 		}
 		if !validStrategies[cfg.Pool.Strategy] {
-			return fmt.Errorf("pool.strategy must be one of: round-robin, failover, best-signal, operator-match; got %q", cfg.Pool.Strategy)
+			return fmt.Errorf("invalid config: pool.strategy must be one of: round-robin, failover, best-signal, operator-match; got %q", cfg.Pool.Strategy)
 		}
 	}
 
 	return nil
-}
-
-// atoi converts a string to int, returning defaultVal on parse error.
-func atoi(s string, defaultVal int) int {
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		return defaultVal
-	}
-	return v
 }

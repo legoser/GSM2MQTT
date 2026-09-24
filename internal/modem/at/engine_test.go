@@ -489,4 +489,135 @@ func TestEngine_SendPDU_Timeout(t *testing.T) {
 	}
 }
 
+func TestEngine_SendPDU_PromptTimeout(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	// Never feed the '>' prompt: engine must abort with ESC and must NOT
+	// blind-send the PDU payload (regression: old code fell through).
+	const pduHex = "0011000B91AA"
+	_, err := engine.SendPDU(15, pduHex, 500*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "prompt") {
+		t.Fatalf("expected prompt timeout error, got: %v", err)
+	}
+
+	port.mu.Lock()
+	inStr := port.inBuf.String()
+	port.mu.Unlock()
+	if !strings.Contains(inStr, "\x1B") {
+		t.Fatalf("expected \\x1B (ESC) written to port on prompt timeout, got: %q", inStr)
+	}
+	if strings.Contains(inStr, pduHex) {
+		t.Fatalf("PDU payload must not be sent without '>' prompt, port got: %q", inStr)
+	}
+}
+
+func TestEngine_SIMComURC_DuringInFlight(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	// Simulate SIM800 URC notifications arriving while AT+CSQ is executing
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		port.FeedResponse("\r\nCall Ready\r\n")
+		port.FeedResponse("\r\nSMS Ready\r\n")
+		port.FeedResponse("\r\n+CSQ: 24,0\r\nOK\r\n")
+	}()
+
+	resp, err := engine.Send("AT+CSQ", 1*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.OK {
+		t.Errorf("expected OK")
+	}
+
+	// Ensure Call Ready and SMS Ready were dispatched to URC and not included in CSQ response
+	if len(resp.Lines) != 1 || resp.Lines[0] != "+CSQ: 24,0" {
+		t.Errorf("expected lines to contain only [+CSQ: 24,0], got: %v", resp.Lines)
+	}
+
+	select {
+	case urc := <-engine.URC():
+		if urc != "Call Ready" {
+			t.Errorf("expected first URC 'Call Ready', got: %q", urc)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Errorf("timeout waiting for Call Ready URC")
+	}
+
+	select {
+	case urc := <-engine.URC():
+		if urc != "SMS Ready" {
+			t.Errorf("expected second URC 'SMS Ready', got: %q", urc)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Errorf("timeout waiting for SMS Ready URC")
+	}
+}
+
+func TestEngine_NeowayURC_DuringInFlight(t *testing.T) {
+	port := newMockPort()
+	engine := NewEngine(port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = engine.Start(ctx)
+	}()
+
+	// Simulate Neoway startup URC lines arriving while AT+CSQ is running
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		port.FeedResponse("\r\nMODEM:STARTUP\r\n")
+		port.FeedResponse("\r\n+PBREADY\r\n")
+		port.FeedResponse("\r\n+CSQ: 18,0\r\nOK\r\n")
+	}()
+
+	resp, err := engine.Send("AT+CSQ", 1*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.OK {
+		t.Errorf("expected OK")
+	}
+
+	if len(resp.Lines) != 1 || resp.Lines[0] != "+CSQ: 18,0" {
+		t.Errorf("expected lines to contain only [+CSQ: 18,0], got: %v", resp.Lines)
+	}
+
+	select {
+	case urc := <-engine.URC():
+		if urc != "MODEM:STARTUP" {
+			t.Errorf("expected first URC 'MODEM:STARTUP', got: %q", urc)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Errorf("timeout waiting for MODEM:STARTUP URC")
+	}
+
+	select {
+	case urc := <-engine.URC():
+		if urc != "+PBREADY" {
+			t.Errorf("expected second URC '+PBREADY', got: %q", urc)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Errorf("timeout waiting for +PBREADY URC")
+	}
+}
+
 var _ io.ReadWriter = (*mockPort)(nil)

@@ -63,7 +63,9 @@ func ParseResponse(urc string) (*Response, error) {
 
 	switch Status(statusCode) {
 	case StatusTerminated:
-		return nil, ErrUSSDTerminated
+		if !strings.Contains(rest, "\"") {
+			return nil, ErrUSSDTerminated
+		}
 	case StatusNotSupported:
 		return nil, ErrUSSDNotSupported
 	case StatusTimeout:

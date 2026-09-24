@@ -3,27 +3,33 @@ package drivers
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/modem"
 )
 
-// SiemensDriver implements driver quirks for Siemens/Cinterion TC35, MC55, TC65 modems.
+// SiemensDriver implements driver quirks for Siemens/Cinterion TC35, MC35, MC55, TC65 modems.
 type SiemensDriver struct {
 	*BaseDriver
 }
 
 // NewSiemensDriver creates a new SiemensDriver.
 func NewSiemensDriver(runner ATRunner) *SiemensDriver {
+	slog.Debug("siemens driver instance created")
 	return &SiemensDriver{
 		BaseDriver: NewBaseDriver(runner),
 	}
 }
 
-// Init synchronizes the auto-baud rate on RS-232 and executes initialization.
+// Init synchronizes the auto-baud rate on RS-232 and executes Siemens-specific initialization.
 func (d *SiemensDriver) Init(ctx context.Context) error {
+	slog.Debug("starting siemens driver initialization sequence")
+
 	// Ping AT to synchronize baud rate
 	for attempt := 0; attempt < 3; attempt++ {
+		slog.Debug("siemens baud synchronization attempt", slog.Int("attempt", attempt+1))
 		resp, err := d.runner.Send("AT", 1*time.Second)
 		if err == nil && resp.OK {
 			break
@@ -31,11 +37,113 @@ func (d *SiemensDriver) Init(ctx context.Context) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	if err := d.BaseDriver.Init(ctx); err != nil {
-		return fmt.Errorf("siemens init failed: %w", err)
+	initCmds := []string{
+		"ATE0",      // Echo off
+		"AT+CMEE=2", // Enable verbose error reporting
+		"AT+CMGF=0", // PDU mode for SMS
+		"AT+CLIP=1", // Enable caller ID presentation
+		"AT+CRC=1",  // Extended cellular result codes
+	}
+
+	for _, cmd := range initCmds {
+		time.Sleep(50 * time.Millisecond)
+		slog.Debug("executing siemens init command", slog.String("cmd", cmd))
+		resp, err := d.runner.Send(cmd, 3*time.Second)
+		if err != nil {
+			slog.Error("siemens init command failed", slog.String("cmd", cmd), slog.Any("error", err))
+			return fmt.Errorf("siemens init command %q failed: %w", cmd, err)
+		}
+		if resp.Error {
+			slog.Error("siemens init command returned error", slog.String("cmd", cmd), slog.Any("lines", resp.Lines))
+			return fmt.Errorf("siemens init command %q returned error: %v", cmd, resp.Lines)
+		}
+	}
+
+	// Siemens TC35/MC35 only supports certain CNMI parameter combinations:
+	// Mode 2, mt 1, bm 0, ds 2, bfr 1. If ds=2 is rejected, fall back to ds=0.
+	cnmiCandidates := []string{
+		"AT+CNMI=2,1,0,2,1",
+		"AT+CNMI=2,1,0,0,1",
+		"AT+CNMI=1,1,0,0,1",
+	}
+	var cnmiErr error
+	cnmiSuccess := false
+	for _, cnmi := range cnmiCandidates {
+		slog.Debug("testing siemens CNMI configuration", slog.String("cnmi", cnmi))
+		resp, err := d.runner.Send(cnmi, 3*time.Second)
+		if err == nil && !resp.Error {
+			cnmiSuccess = true
+			slog.Debug("siemens CNMI accepted", slog.String("cnmi", cnmi))
+			break
+		}
+		cnmiErr = err
+	}
+	if !cnmiSuccess && cnmiErr != nil {
+		slog.Error("siemens CNMI setup failed", slog.Any("error", cnmiErr))
+		return fmt.Errorf("siemens CNMI setup failed: %w", cnmiErr)
+	}
+
+	// Set default SMS storage to SIM card
+	_, _ = d.runner.Send("AT+CPMS=\"SM\",\"SM\",\"SM\"", 3*time.Second)
+
+	// Check and log SMSC
+	if csca, err := d.runner.Send("AT+CSCA?", 2*time.Second); err == nil && len(csca.Lines) > 0 {
+		slog.Info("siemens SMS center configured", slog.String("smsc", strings.Join(csca.Lines, " ")))
 	}
 
 	return nil
+}
+
+// Identify returns hardware information about the Siemens modem using ATI and standard registers.
+func (d *SiemensDriver) Identify() (*modem.Info, error) {
+	info := &modem.Info{}
+	slog.Debug("identifying siemens modem via ATI")
+
+	// Siemens ATI returns 3 lines: Manufacturer, Model, Revision
+	resp, err := d.runner.Send("ATI", 2*time.Second)
+	if err == nil && !resp.Error && len(resp.Lines) > 0 {
+		for _, line := range resp.Lines {
+			clean := strings.TrimSpace(line)
+			if clean == "" || clean == "OK" {
+				continue
+			}
+			if info.Manufacturer == "" {
+				info.Manufacturer = clean
+			} else if info.Model == "" {
+				info.Model = clean
+			} else if info.Revision == "" {
+				info.Revision = clean
+			}
+		}
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	if info.Manufacturer == "" {
+		info.Manufacturer = d.queryClean("AT+CGMI")
+		time.Sleep(50 * time.Millisecond)
+	}
+	if info.Model == "" {
+		info.Model = d.queryClean("AT+CGMM")
+		time.Sleep(50 * time.Millisecond)
+	}
+	if info.Revision == "" {
+		info.Revision = d.queryClean("AT+CGMR")
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	info.IMEI = d.queryClean("AT+CGSN")
+	time.Sleep(50 * time.Millisecond)
+	info.IMSI = d.queryClean("AT+CIMI")
+
+	slog.Info("siemens modem identified",
+		slog.String("manufacturer", info.Manufacturer),
+		slog.String("model", info.Model),
+		slog.String("revision", info.Revision),
+		slog.String("imei", info.IMEI),
+	)
+
+	return info, nil
 }
 
 var _ modem.Driver = (*SiemensDriver)(nil)

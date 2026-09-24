@@ -14,6 +14,9 @@ var (
 	// ErrInvalidBalanceFormat is returned when the matched balance substring cannot be converted to a valid number.
 	ErrInvalidBalanceFormat = errors.New("invalid balance number format")
 
+	// ErrInvalidBalanceRegex is returned when a custom balance regex is rejected (too long).
+	ErrInvalidBalanceRegex = errors.New("invalid custom balance regex")
+
 	// ErrUnknownPreset is returned when an unknown operator preset name is requested.
 	ErrUnknownPreset = errors.New("unknown operator preset")
 )

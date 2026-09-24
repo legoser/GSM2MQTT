@@ -130,3 +130,21 @@ func TestDetect_ErrorFallback(t *testing.T) {
 		t.Errorf("expected TypeGeneric on error, got %v", modemType)
 	}
 }
+
+func TestDetect_Neoway(t *testing.T) {
+	cmd := &mockCommander{
+		responses: map[string]string{
+			"ATI":     "NEOWAY\r\nM590\r\nREVISION 01.30",
+			"AT+CGMI": "NEOWAY",
+			"AT+CGMM": "M590E",
+		},
+	}
+
+	modemType, err := Detect(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if modemType != TypeNeoway {
+		t.Errorf("expected TypeNeoway, got %v", modemType)
+	}
+}

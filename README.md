@@ -44,6 +44,28 @@ cp configs/gsm2mqtt.example.yaml /etc/gsm2mqtt/gsm2mqtt.yaml
 ./bin/gsm2mqtt --config /etc/gsm2mqtt/gsm2mqtt.yaml
 ```
 
+## Install from Release
+
+Download the archive for your platform from the **Releases** page
+(available both in Forgejo and on GitHub):
+
+```
+gsm2mqtt-v1.2.3-linux-amd64.tar.gz    # x86_64 server
+gsm2mqtt-v1.2.3-linux-arm64.tar.gz    # Raspberry Pi 4/5, ARM server
+gsm2mqtt-v1.2.3-linux-riscv64.tar.gz  # RISC-V
+checksums.txt                         # SHA-256 of all archives
+```
+
+```bash
+# Verify integrity, unpack, check version
+sha256sum -c checksums.txt
+tar -xzf gsm2mqtt-v1.2.3-linux-amd64.tar.gz
+./gsm2mqtt --version
+# gsm2mqtt v1.2.3 (built 2026-...)
+
+# New version = new tag: git tag v1.2.4 && git push origin v1.2.4
+```
+
 ## Docker
 
 ```bash
@@ -100,7 +122,7 @@ curl -X POST http://localhost:8088/api/sms/send \
   -H "Content-Type: application/json" \
   -d '{
     "modem_id": "huawei_e1550",
-    "to": "+79964126670",
+    "to": "+79991234567",
     "text": "Hello from GSM2MQTT!"
   }'
 ```
@@ -125,7 +147,7 @@ Dial a phone number (with automated firmware voice capability pre-check):
 # Dial
 curl -X POST http://localhost:8088/api/call/dial \
   -H "Content-Type: application/json" \
-  -d '{"modem_id": "huawei_e1550", "number": "+79964126670"}'
+  -d '{"modem_id": "huawei_e1550", "number": "+79991234567"}'
 
 # Hang up
 curl -X POST http://localhost:8088/api/call/hangup \
@@ -148,6 +170,34 @@ curl http://localhost:8088/api/modems
 | `AT^CVOICE?` | Check voice capability | `^CVOICE:0` means voice calls are enabled; `^CVOICE:1` means voice is disabled by operator firmware (data-only). |
 | `AT+CSCA?` | Query SMS Service Center | Displays the configured SMSC address. |
 | `AT+CSQ` | Query signal strength | Returns RSSI (0..31) and BER. Values >= 15 indicate good reception. |
+
+## SIMCom SIM800 / SIM900 Setup Guide
+
+### 1. Wiring & Electrical Requirements
+
+> [!IMPORTANT]
+> **SIM800 is extremely sensitive to voltage drops!** During 2G TDMA transmission bursts, current draw surges to **2.0 A**.
+> Powering the module directly from a USB-UART 5V or 3.3V pin will cause brownouts and continuous boot loops (`UNDER-VOLTAGE WARNNING` / `RDY`).
+
+* **Power Supply (VCC)**: Use a dedicated step-down DC-DC converter (e.g. LM2596, MP1584) or a 1S Li-Ion / LiPo battery providing **3.7 V – 4.4 V** (optimal: **4.0 V**).
+* **Capacitor**: Place a **1000 µF – 2200 µF Low-ESR electrolytic capacitor** directly across `VCC` and `GND` as close to the SIM800 module pins as possible.
+* **Common Ground (GND)**: `GND` of the external power supply, SIM800, and USB-UART adapter **must be connected together**.
+* **UART Lines (RX/TX)**:
+  * SIM800 `TXD` → USB-UART `RXD`
+  * SIM800 `RXD` → USB-UART `TXD` *(If using a 5V USB-UART adapter, use a 1kΩ / 2kΩ resistive voltage divider on the module's RXD pin, as SIM800 GPIO is 2.8V–3.3V logic)*.
+* **PWRKEY** (if present on the board): Pulse to `GND` for 1–2 seconds to turn the module on (many SIM800L red boards have PWRKEY permanently tied to GND).
+
+### 2. Useful AT Commands (SIM800 / SIM900)
+
+| Command | Description | Purpose |
+|:---|:---|:---|
+| `AT+CBC` | Query battery & voltage | Returns `+CBC: <bcs>,<bcl>,<bcv>` where `<bcv>` is the supply voltage in mV (e.g. `4120` = 4.12V). |
+| `AT+CSCLK=0` | Disable sleep mode | Prevents the module UART from going into power-save sleep. |
+| `AT+CFUN=1` | Full functionality | Ensures radio transceiver and SIM card interface are fully powered. |
+| `AT+CLVL=80` | Speaker volume | Adjusts analog voice volume (range: 0..100). |
+| `AT+CMIC=0,10` | Microphone gain | Adjusts microphone pre-amplifier gain (channel 0, gain: 0..15). |
+| `AT+IPR=115200` | Fix baud rate | Sets fixed UART baud rate and saves to NVRAM (disables autobauding). |
+| `AT&W` | Save configuration | Writes current profile settings to non-volatile memory. |
 
 
 ## Building

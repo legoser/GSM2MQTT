@@ -1,0 +1,29 @@
+# GSM2MQTT systemd service — install:
+#   sudo cp gsm2mqtt.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now gsm2mqtt
+#
+# The service user must be in "dialout" (see ../udev/99-gsm2mqtt.rules).
+# RestartSec gives udev time to re-create the device node on re-plug;
+# the app itself additionally backs off 3s -> 60s between open attempts.
+[Unit]
+Description=GSM2MQTT gateway (GSM modems to MQTT)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gsm2mqtt
+Group=dialout
+ExecStart=/usr/local/bin/gsm2mqtt --config /etc/gsm2mqtt/gsm2mqtt.yaml
+Restart=always
+RestartSec=10
+# Allow only the modem devices (tighten to your ports):
+DeviceAllow=/dev/ttyUSB0 rw
+DeviceAllow=/dev/ttyACM0 rw
+DeviceAllow=/dev/ttyS0 rw
+DevicePolicy=closed
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

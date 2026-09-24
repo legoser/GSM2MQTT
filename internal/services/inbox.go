@@ -55,7 +55,7 @@ func (r *ModemRunner) saveInboxLocked() {
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(tempPath, data, 0644); err != nil {
+	if err := os.WriteFile(tempPath, data, 0600); err != nil {
 		return
 	}
 	_ = os.Rename(tempPath, targetPath)

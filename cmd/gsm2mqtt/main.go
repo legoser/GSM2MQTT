@@ -13,7 +13,10 @@ import (
 
 	"github.com/legoser/gsm2mqtt/internal/api"
 	"github.com/legoser/gsm2mqtt/internal/config"
+	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
+	"github.com/legoser/gsm2mqtt/internal/pool"
+	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/services"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 )
@@ -30,6 +33,11 @@ func main() {
 
 // run executes the application and returns an exit code.
 func run() int {
+	if isVersionFlag(os.Args[1:]) {
+		fmt.Println(Version())
+		return 0
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -67,14 +75,48 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 	}
 	defer mqttClient.Disconnect(250)
 
-	opener := transport.NewSerialOpener()
+	recipientsPath := cfg.Security.RecipientsFile
+	if recipientsPath == "" {
+		recipientsPath = "data/recipients.json"
+	}
+	recipientsMgr := security.NewRecipientsManager(recipientsPath, cfg.Security.Whitelist)
+
 	manager := services.NewGatewayManager()
+	manager.InitRecipients(recipientsMgr)
+	manager.SetMQTT(mqttClient, &cfg.MQTT)
+
 	modemPool := initPool(ctx, cfg, mqttClient, logger)
+	wg := startModems(ctx, cfg, mqttClient, manager, recipientsMgr, modemPool, logger)
+
+	if cfg.API.Enabled {
+		startAPIServer(ctx, cfg, manager, logger)
+	}
+
+	<-ctx.Done()
+	logger.Info("shutting down runners...")
+	wg.Wait()
+	_ = mqttClient.Publish(fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix), 1, true, []byte("offline"))
+	logger.Info("gsm2mqtt stopped cleanly")
+	return 0
+}
+
+func startModems(
+	ctx context.Context,
+	cfg *config.Config,
+	mqttClient mqtt.MQTTClient,
+	manager *services.GatewayManager,
+	recipientsMgr *security.RecipientsManager,
+	modemPool *pool.Pool,
+	logger *slog.Logger,
+) *sync.WaitGroup {
+	connector := modem.NewConnector(transport.NewSerialOpener())
 	var wg sync.WaitGroup
 
-	for _, mCfg := range cfg.Modems {
+	for i, mCfg := range cfg.Modems {
 		wg.Add(1)
-		runner := services.NewModemRunner(mCfg, cfg, opener, mqttClient)
+		runner := services.NewModemRunner(mCfg, cfg, connector, mqttClient)
+		runner.SetSlotIndex(i + 1)
+		runner.SetRecipientsManager(recipientsMgr)
 		manager.Register(runner)
 		if modemPool != nil {
 			modemPool.Register(runner)
@@ -88,26 +130,21 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 			}
 		}(mCfg)
 	}
+	return &wg
+}
 
-	if cfg.API.Enabled {
-		apiServer := api.NewServer(api.ServerConfig{
-			Host: cfg.API.Host,
-			Port: cfg.API.Port,
-		}, manager)
-		go func() {
-			logger.Info("starting embedded HTTP API", slog.String("host", cfg.API.Host), slog.Int("port", cfg.API.Port))
-			if err := apiServer.Start(ctx); err != nil {
-				logger.Error("API server error", slog.String("error", err.Error()))
-			}
-		}()
-	}
-
-	<-ctx.Done()
-	logger.Info("shutting down runners...")
-	wg.Wait()
-	_ = mqttClient.Publish(fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix), 1, true, []byte("offline"))
-	logger.Info("gsm2mqtt stopped cleanly")
-	return 0
+func startAPIServer(ctx context.Context, cfg *config.Config, manager *services.GatewayManager, logger *slog.Logger) {
+	apiServer := api.NewServer(api.ServerConfig{
+		Host:  cfg.API.Host,
+		Port:  cfg.API.Port,
+		Token: cfg.API.Token,
+	}, manager)
+	go func() {
+		logger.Info("starting embedded HTTP API", slog.String("host", cfg.API.Host), slog.Int("port", cfg.API.Port))
+		if err := apiServer.Start(ctx); err != nil {
+			logger.Error("API server error", slog.String("error", err.Error()))
+		}
+	}()
 }
 
 func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {
@@ -158,6 +195,25 @@ func configPath() string {
 		if arg == "--config" && i+1 < len(os.Args) {
 			return os.Args[i+1]
 		}
+		if strings.HasPrefix(arg, "--config=") {
+			return strings.TrimPrefix(arg, "--config=")
+		}
+	}
+	if env := os.Getenv("GSM2MQTT_CONFIG"); env != "" {
+		return env
+	}
+	if env := os.Getenv("CONFIG_PATH"); env != "" {
+		return env
+	}
+	candidates := []string{
+		"configs/gsm2mqtt.yaml",
+		"gsm2mqtt.yaml",
+		"/etc/gsm2mqtt/gsm2mqtt.yaml",
+	}
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+			return c
+		}
 	}
 	return "/etc/gsm2mqtt/gsm2mqtt.yaml"
 }
@@ -178,4 +234,15 @@ func parseLogLevel(level string) slog.Level {
 // Version returns the application version string.
 func Version() string {
 	return fmt.Sprintf("gsm2mqtt %s (built %s)", version, buildTime)
+}
+
+// isVersionFlag reports whether args request version output.
+// It matches exact --version or -v tokens only.
+func isVersionFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--version" || arg == "-v" {
+			return true
+		}
+	}
+	return false
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -10,12 +11,17 @@ import (
 
 	"github.com/legoser/gsm2mqtt/internal/metrics"
 	"github.com/legoser/gsm2mqtt/internal/services"
+	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
+
+// maxRequestBodyBytes caps JSON request bodies on mutating endpoints (DoS guard).
+const maxRequestBodyBytes = 64 << 10 // 64 KiB
 
 // ServerConfig configures the embedded HTTP Web and REST server.
 type ServerConfig struct {
-	Host string
-	Port int
+	Host  string
+	Port  int
+	Token string
 }
 
 // ModemSummary is an alias to services.ModemSummary for API presentation.
@@ -24,6 +30,12 @@ type ModemSummary = services.ModemSummary
 // ReceivedSMS is an alias to services.ReceivedSMS for API presentation.
 type ReceivedSMS = services.ReceivedSMS
 
+// CallStatus is an alias to services.CallStatus for API presentation.
+type CallStatus = services.CallStatus
+
+// MQTTStatus is an alias to services.MQTTStatus for API presentation.
+type MQTTStatus = services.MQTTStatus
+
 // ModemManager is the interface required by the API to query state and dispatch operations.
 type ModemManager interface {
 	GetModems() []ModemSummary
@@ -31,8 +43,14 @@ type ModemManager interface {
 	SendUSSD(ctx context.Context, modemID, code string) (string, error)
 	DialCall(ctx context.Context, modemID, number string) error
 	HangupCall(ctx context.Context, modemID string) error
+	GetCallStatus(modemID string) CallStatus
 	SendRawAT(ctx context.Context, modemID, cmd string) (string, error)
 	GetReceivedSMS() []ReceivedSMS
+	GetMQTTStatus() MQTTStatus
+	UpdateTariffConfig(modemID string, cfg tariff.Config) error
+	SetTariffUsage(modemID string, update tariff.UsageUpdate) error
+	ResetTariffQuotas(modemID string) error
+	GetTariffStatus(modemID string) (*tariff.UsageStatus, error)
 }
 
 // Server provides Web UI and REST API endpoints for GSM2MQTT.
@@ -61,9 +79,19 @@ func (s *Server) Handler() http.Handler {
 // Start launches the HTTP server listening on the configured address until context cancellation.
 func (s *Server) Start(ctx context.Context) error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
+	if s.cfg.Token == "" {
+		// Fail-open by design (home network use): empty token means no auth.
+		// Warn loudly so operators do not expose this unintentionally.
+		slog.Warn("HTTP API running WITHOUT auth token (open access)", slog.String("addr", addr))
+	}
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: s.mux,
+		Addr:              addr,
+		Handler:           s.mux,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MB
 	}
 
 	errCh := make(chan error, 1)
@@ -85,20 +113,59 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
+func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		secureHeaders(w)
+		if s.cfg.Token != "" {
+			// Constant-time compare against the expected "Bearer <token>" value.
+			got := []byte(r.Header.Get("Authorization"))
+			want := []byte("Bearer " + s.cfg.Token)
+			if len(got) != len(want) || subtle.ConstantTimeCompare(got, want) != 1 {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+		}
+		next(w, r)
+	}
+}
+
+// secureHeaders sets baseline hardening headers on API/UI responses.
+// Note: the dashboard is a single inline-script page, so script/style
+// 'unsafe-inline' is required; XSS protection relies on HTML-escaping
+// dynamic fields (see escapeHtml in index.html).
+func secureHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+}
+
+// limitBody caps the request body size to maxRequestBodyBytes.
+func limitBody(w http.ResponseWriter, r *http.Request) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+	return true
+}
+
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.Handle("GET /metrics", metrics.DefaultRegistry.Handler())
-	s.mux.HandleFunc("GET /api/modems", s.handleGetModems)
-	s.mux.HandleFunc("POST /api/sms/send", s.handleSendSMS)
-	s.mux.HandleFunc("POST /api/ussd/send", s.handleSendUSSD)
-	s.mux.HandleFunc("POST /api/call/dial", s.handleCallDial)
-	s.mux.HandleFunc("POST /api/call/hangup", s.handleCallHangup)
-	s.mux.HandleFunc("POST /api/at/send", s.handleSendAT)
-	s.mux.HandleFunc("GET /api/sms/inbox", s.handleGetInbox)
+	s.mux.HandleFunc("GET /api/modems", s.auth(s.handleGetModems))
+	s.mux.HandleFunc("POST /api/sms/send", s.auth(s.handleSendSMS))
+	s.mux.HandleFunc("POST /api/ussd/send", s.auth(s.handleSendUSSD))
+	s.mux.HandleFunc("POST /api/call/dial", s.auth(s.handleCallDial))
+	s.mux.HandleFunc("POST /api/call/hangup", s.auth(s.handleCallHangup))
+	s.mux.HandleFunc("GET /api/call/status", s.auth(s.handleCallStatus))
+	s.mux.HandleFunc("GET /api/mqtt/status", s.auth(s.handleMQTTStatus))
+	s.mux.HandleFunc("POST /api/at/send", s.auth(s.handleSendAT))
+	s.mux.HandleFunc("GET /api/sms/inbox", s.auth(s.handleGetInbox))
+	s.mux.HandleFunc("GET /api/tariff/status", s.auth(s.handleTariffStatus))
+	s.mux.HandleFunc("POST /api/tariff/config", s.auth(s.handleTariffConfig))
+	s.mux.HandleFunc("POST /api/tariff/reset", s.auth(s.handleTariffReset))
+	s.mux.HandleFunc("GET /favicon.ico", s.handleFavicon)
 	s.mux.HandleFunc("GET /", s.handleRootUI)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	secureHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
@@ -110,6 +177,7 @@ func (s *Server) handleGetModems(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSendSMS(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	var req struct {
 		ModemID string `json:"modem_id"`
 		To      string `json:"to"`
@@ -121,15 +189,15 @@ func (s *Server) handleSendSMS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("api send sms requested", slog.String("modem", req.ModemID), slog.String("to", req.To), slog.Int("len", len(req.Text)))
+	slog.Info("api send sms requested", slog.String("modem", req.ModemID), slog.String("to", "[REDACTED]"), slog.Int("len", len(req.Text)))
 	refs, err := s.manager.SendSMS(r.Context(), req.ModemID, req.To, req.Text)
 	if err != nil {
-		slog.Error("api send sms failed", slog.String("modem", req.ModemID), slog.String("to", req.To), slog.Any("error", err))
+		slog.Error("api send sms failed", slog.String("modem", req.ModemID), slog.String("to", "[REDACTED]"), slog.Any("error", err))
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	slog.Info("api send sms succeeded", slog.String("modem", req.ModemID), slog.String("to", req.To), slog.Any("refs", refs))
+	slog.Info("api send sms succeeded", slog.String("modem", req.ModemID), slog.String("to", "[REDACTED]"), slog.Any("refs", refs))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -138,6 +206,7 @@ func (s *Server) handleSendSMS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSendUSSD(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	var req struct {
 		ModemID string `json:"modem_id"`
 		Code    string `json:"code"`
@@ -148,15 +217,18 @@ func (s *Server) handleSendUSSD(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("api send ussd requested", slog.String("modem", req.ModemID), slog.String("code", req.Code))
+	// Info logs stay PII-free (lengths only); full code/reply go to Debug.
+	slog.Info("api send ussd requested", slog.String("modem", req.ModemID), slog.Int("code_len", len(req.Code)))
+	slog.Debug("api send ussd code", slog.String("modem", req.ModemID), slog.String("code", req.Code))
 	reply, err := s.manager.SendUSSD(r.Context(), req.ModemID, req.Code)
 	if err != nil {
-		slog.Error("api send ussd failed", slog.String("modem", req.ModemID), slog.String("code", req.Code), slog.Any("error", err))
+		slog.Error("api send ussd failed", slog.String("modem", req.ModemID), slog.Any("error", err))
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	slog.Info("api send ussd succeeded", slog.String("modem", req.ModemID), slog.String("code", req.Code), slog.String("reply", reply))
+	slog.Info("api send ussd succeeded", slog.String("modem", req.ModemID), slog.Int("reply_len", len(reply)))
+	slog.Debug("api send ussd reply", slog.String("modem", req.ModemID), slog.String("reply", reply))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -165,6 +237,7 @@ func (s *Server) handleSendUSSD(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCallDial(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	var req struct {
 		ModemID string `json:"modem_id"`
 		Number  string `json:"number"`
@@ -175,19 +248,20 @@ func (s *Server) handleCallDial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("api call dial requested", slog.String("modem", req.ModemID), slog.String("number", req.Number))
+	slog.Info("api call dial requested", slog.String("modem", req.ModemID), slog.String("number", "[REDACTED]"))
 	if err := s.manager.DialCall(r.Context(), req.ModemID, req.Number); err != nil {
-		slog.Error("api call dial failed", slog.String("modem", req.ModemID), slog.String("number", req.Number), slog.Any("error", err))
+		slog.Error("api call dial failed", slog.String("modem", req.ModemID), slog.String("number", "[REDACTED]"), slog.Any("error", err))
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	slog.Info("api call dial succeeded", slog.String("modem", req.ModemID), slog.String("number", req.Number))
+	slog.Info("api call dial succeeded", slog.String("modem", req.ModemID), slog.String("number", "[REDACTED]"))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
 func (s *Server) handleCallHangup(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	var req struct {
 		ModemID string `json:"modem_id"`
 	}
@@ -209,7 +283,21 @@ func (s *Server) handleCallHangup(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
+func (s *Server) handleCallStatus(w http.ResponseWriter, r *http.Request) {
+	modemID := r.URL.Query().Get("modem_id")
+	status := s.manager.GetCallStatus(modemID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(status)
+}
+
+func (s *Server) handleMQTTStatus(w http.ResponseWriter, r *http.Request) {
+	status := s.manager.GetMQTTStatus()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(status)
+}
+
 func (s *Server) handleSendAT(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
 	var req struct {
 		ModemID string `json:"modem_id"`
 		Command string `json:"command"`
@@ -218,13 +306,18 @@ func (s *Server) handleSendAT(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request json"}`, http.StatusBadRequest)
 		return
 	}
+	// Info logs stay free of raw command text/reply (may carry IMSI/IMEI/
+	// operator data); full values go to Debug for development.
+	slog.Info("api send at requested", slog.String("modem", req.ModemID), slog.String("cmd", previewAT(req.Command)))
+	slog.Debug("api send at command", slog.String("modem", req.ModemID), slog.String("command", req.Command))
 	reply, err := s.manager.SendRawAT(r.Context(), req.ModemID, req.Command)
 	if err != nil {
-		slog.Error("api send at failed", slog.String("modem", req.ModemID), slog.String("command", req.Command), slog.Any("error", err))
+		slog.Error("api send at failed", slog.String("modem", req.ModemID), slog.Any("error", err))
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	slog.Info("api send at succeeded", slog.String("modem", req.ModemID), slog.String("command", req.Command), slog.String("reply", reply))
+	slog.Info("api send at succeeded", slog.String("modem", req.ModemID), slog.Int("reply_len", len(reply)))
+	slog.Debug("api send at reply", slog.String("modem", req.ModemID), slog.String("reply", reply))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -238,13 +331,34 @@ func (s *Server) handleGetInbox(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(msgs)
 }
 
+func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	secureHeaders(w)
+	w.Header().Set("Content-Type", "image/svg+xml")
+	_, _ = w.Write(getFaviconSVG())
+}
+
 func (s *Server) handleRootUI(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
+	secureHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(dashboardHTML))
+	_, _ = w.Write(getDashboardHTML())
+}
+
+// previewAT returns a PII-free preview of an AT command for Info logs
+// (verb only, no arguments). Full text goes to Debug.
+func previewAT(cmd string) string {
+	for i, c := range cmd {
+		if c == '=' || c == '?' || c == ' ' || c == ';' {
+			return cmd[:i]
+		}
+	}
+	if len(cmd) > 16 {
+		return cmd[:16]
+	}
+	return cmd
 }
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {

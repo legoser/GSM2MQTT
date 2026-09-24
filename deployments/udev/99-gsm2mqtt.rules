@@ -1,0 +1,26 @@
+# GSM2MQTT udev rules — stable USB modem access without root/privileged mode.
+#
+# Install:
+#   sudo cp 99-gsm2mqtt.rules /etc/udev/rules.d/
+#   sudo usermod -aG dialout $USER   # then re-login
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Why:
+# - MODEMs stay in the "dialout" group with 0660 so the service user can
+#   open them WITHOUT privileged Docker or chmod 666.
+# - ID_MM_DEVICE_IGNORE tells ModemManager to leave the ports alone, so it
+#   never sends its own AT probes into an open GSM2MQTT session.
+# - Use /dev/serial/by-id/... symlinks in gsm2mqtt.yaml instead of
+#   /dev/ttyUSB0: enumeration order changes on re-plug, by-id does not.
+
+# USB serial adapters commonly used for GSM modems (CH340, CP210x, FTDI, PL2303)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="2303", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+
+# Huawei / Quectel / SIMCom composite USB modems
+SUBSYSTEM=="tty", ATTRS{idVendor}=="12d1", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2c7c", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1e0e", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"

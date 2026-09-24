@@ -101,6 +101,16 @@ func TestTopics_Generation(t *testing.T) {
 			expected: "gsm2mqtt/modem/siemens_tc35/tariff/set_preset",
 		},
 		{
+			name:     "TariffSet topic",
+			actual:   topics.TariffSet(),
+			expected: "gsm2mqtt/modem/siemens_tc35/tariff/set",
+		},
+		{
+			name:     "TariffReset topic",
+			actual:   topics.TariffReset(),
+			expected: "gsm2mqtt/modem/siemens_tc35/tariff/reset",
+		},
+		{
 			name:     "AccountingStatus topic",
 			actual:   topics.AccountingStatus(),
 			expected: "gsm2mqtt/modem/siemens_tc35/accounting/status",

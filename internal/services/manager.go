@@ -4,13 +4,21 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/legoser/gsm2mqtt/internal/config"
+	"github.com/legoser/gsm2mqtt/internal/mqtt"
+	"github.com/legoser/gsm2mqtt/internal/security"
+	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
 
 // GatewayManager coordinates multiple ModemRunner instances and provides an aggregate facade.
 type GatewayManager struct {
-	mu      sync.RWMutex
-	runners map[string]*ModemRunner
-	order   []string
+	mu            sync.RWMutex
+	runners       map[string]*ModemRunner
+	order         []string
+	mqttClient    mqtt.MQTTClient
+	mqttCfg       config.MQTTConfig
+	recipientsMgr *security.RecipientsManager
 }
 
 // NewGatewayManager creates a new GatewayManager.
@@ -53,11 +61,11 @@ func (m *GatewayManager) SendSMS(ctx context.Context, modemID, to, text string) 
 
 // ReceivedSMS represents an incoming SMS message cached for inspection.
 type ReceivedSMS struct {
-	ID        string    `json:"id"`
-	ModemID   string    `json:"modem_id"`
-	Sender    string    `json:"sender"`
-	Timestamp string    `json:"timestamp"`
-	Text      string    `json:"text"`
+	ID        string `json:"id"`
+	ModemID   string `json:"modem_id"`
+	Sender    string `json:"sender"`
+	Timestamp string `json:"timestamp"`
+	Text      string `json:"text"`
 }
 
 // DialCall initiates an outgoing voice call on the specified (or first) modem.
@@ -76,6 +84,15 @@ func (m *GatewayManager) HangupCall(ctx context.Context, modemID string) error {
 		return err
 	}
 	return runner.Hangup(ctx)
+}
+
+// GetCallStatus returns the real-time call status for the requested modem.
+func (m *GatewayManager) GetCallStatus(modemID string) CallStatus {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return CallStatus{State: CallStateIdle, Message: "Modem not found"}
+	}
+	return runner.GetCallStatus()
 }
 
 // GetReceivedSMS collects all recent received SMS across all modems.
@@ -110,6 +127,42 @@ func (m *GatewayManager) SendRawAT(ctx context.Context, modemID, cmd string) (st
 	return runner.SendRawAT(ctx, cmd)
 }
 
+// UpdateTariffConfig updates tariff settings on the requested (or first available) modem.
+func (m *GatewayManager) UpdateTariffConfig(modemID string, cfg tariff.Config) error {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return err
+	}
+	return runner.UpdateTariffConfig(cfg)
+}
+
+// SetTariffUsage manually updates tariff usage counters on the requested (or first available) modem.
+func (m *GatewayManager) SetTariffUsage(modemID string, update tariff.UsageUpdate) error {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return err
+	}
+	return runner.SetTariffUsage(update)
+}
+
+// ResetTariffQuotas resets monthly quota counters on the requested (or first available) modem.
+func (m *GatewayManager) ResetTariffQuotas(modemID string) error {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return err
+	}
+	return runner.ResetTariffQuotas()
+}
+
+// GetTariffStatus returns current tariff usage statistics on the requested (or first available) modem.
+func (m *GatewayManager) GetTariffStatus(modemID string) (*tariff.UsageStatus, error) {
+	runner, err := m.findRunner(modemID)
+	if err != nil {
+		return nil, err
+	}
+	return runner.GetTariffStatus()
+}
+
 func (m *GatewayManager) findRunner(modemID string) (*ModemRunner, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -125,4 +178,53 @@ func (m *GatewayManager) findRunner(modemID string) (*ModemRunner, error) {
 		return m.runners[m.order[0]], nil
 	}
 	return nil, fmt.Errorf("no modems available")
+}
+
+// MQTTStatus contains connection state and non-sensitive configuration for the MQTT broker.
+type MQTTStatus struct {
+	Connected       bool   `json:"connected"`
+	Broker          string `json:"broker"`
+	Port            int    `json:"port"`
+	ClientID        string `json:"client_id"`
+	TopicPrefix     string `json:"topic_prefix"`
+	Username        string `json:"username,omitempty"`
+	Discovery       bool   `json:"discovery"`
+	DiscoveryPrefix string `json:"discovery_prefix,omitempty"`
+}
+
+// SetMQTT stores the MQTT client and configuration for reporting and binds recipients.
+func (m *GatewayManager) SetMQTT(client mqtt.MQTTClient, cfg *config.MQTTConfig) {
+	m.mu.Lock()
+	m.mqttClient = client
+	if cfg != nil {
+		m.mqttCfg = *cfg
+	}
+	topicPrefix := m.mqttCfg.TopicPrefix
+	m.mu.Unlock()
+
+	if client != nil && client.IsConnected() && topicPrefix != "" {
+		m.subscribeRecipientsMQTT(client, topicPrefix)
+		m.publishRecipientsState(m.GetRecipients())
+	}
+}
+
+// GetMQTTStatus returns the current connection state and broker configuration.
+func (m *GatewayManager) GetMQTTStatus() MQTTStatus {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	connected := false
+	if m.mqttClient != nil {
+		connected = m.mqttClient.IsConnected()
+	}
+	return MQTTStatus{
+		Connected:       connected,
+		Broker:          m.mqttCfg.Broker,
+		Port:            m.mqttCfg.Port,
+		ClientID:        m.mqttCfg.ClientID,
+		TopicPrefix:     m.mqttCfg.TopicPrefix,
+		Username:        m.mqttCfg.Username,
+		Discovery:       m.mqttCfg.Discovery,
+		DiscoveryPrefix: m.mqttCfg.DiscoveryPrefix,
+	}
 }

@@ -105,6 +105,42 @@ func TestGenericDriver_Caller(t *testing.T) {
 	}
 }
 
+func TestGenericDriver_SendDTMF_Validation(t *testing.T) {
+	valid := []string{"0", "9", "5", "*", "#", "A", "D", "a", ","}
+	for _, d := range valid {
+		runner := newMockATRunner()
+		driver := NewGenericDriver(runner)
+		if err := driver.SendDTMF(d); err != nil {
+			t.Errorf("SendDTMF(%q) error = %v, want nil", d, err)
+		}
+	}
+
+	// Injection / malformed digits must be rejected before reaching the modem.
+	invalid := []string{
+		"",
+		"  ",
+		"12",             // multi-digit
+		"7;",             // command chaining
+		"1\r\nAT+CFUN=0", // CRLF injection
+		"1\x1A",          // Ctrl-Z injection
+		"1\x00",          // null byte
+		"ATD+7999;",      // full command
+		"X",              // outside DTMF alphabet
+		"E",              // outside A-D range
+		"-",              // symbol
+	}
+	for _, d := range invalid {
+		runner := newMockATRunner()
+		driver := NewGenericDriver(runner)
+		if err := driver.SendDTMF(d); err == nil {
+			t.Errorf("SendDTMF(%q) = nil, want validation error", d)
+		}
+		if len(runner.commands) != 0 {
+			t.Errorf("SendDTMF(%q) sent %v to modem, want nothing sent", d, runner.commands)
+		}
+	}
+}
+
 func TestGenericDriver_StatusProvider(t *testing.T) {
 	runner := newMockATRunner()
 	runner.responses["AT+CSQ"] = &at.Response{
@@ -196,6 +232,30 @@ func TestSiemensDriver_AutoBaudInit(t *testing.T) {
 	}
 }
 
+func TestSiemensDriver_CNMIFallback(t *testing.T) {
+	runner := newMockATRunner()
+	// Fail first CNMI candidate to test fallback
+	runner.responses["AT+CNMI=2,1,0,2,1"] = &at.Response{Error: true}
+	runner.responses["AT+CNMI=2,1,0,0,1"] = &at.Response{OK: true}
+
+	driver := NewSiemensDriver(runner)
+	ctx := context.Background()
+	if err := driver.Init(ctx); err != nil {
+		t.Fatalf("Siemens Init with CNMI fallback failed: %v", err)
+	}
+
+	foundFallback := false
+	for _, cmd := range runner.commands {
+		if cmd == "AT+CNMI=2,1,0,0,1" {
+			foundFallback = true
+			break
+		}
+	}
+	if !foundFallback {
+		t.Errorf("expected fallback CNMI command to be issued, got: %v", runner.commands)
+	}
+}
+
 func TestSIMComDriver_Init(t *testing.T) {
 	runner := newMockATRunner()
 	driver := NewSIMComDriver(runner)
@@ -204,8 +264,144 @@ func TestSIMComDriver_Init(t *testing.T) {
 	if err := driver.Init(ctx); err != nil {
 		t.Fatalf("SIMCom Init error: %v", err)
 	}
-	if len(runner.commands) == 0 {
-		t.Fatal("expected commands to be sent")
+
+	expectedCmds := []string{"AT", "AT+CSCLK=0", "AT+CFUN=1", "ATE0", "AT+CMEE=2", "AT+CMGF=0", "AT+CNMI=2,1,0,1,0", "AT+CLIP=1"}
+	for _, expected := range expectedCmds {
+		found := false
+		for _, cmd := range runner.commands {
+			if cmd == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected command %q to be sent during Init, commands sent: %v", expected, runner.commands)
+		}
+	}
+}
+
+func TestSIMComDriver_BatteryStatus(t *testing.T) {
+	tests := []struct {
+		name         string
+		response     *at.Response
+		errExpected  bool
+		expectedBatt *modem.BatteryInfo
+	}{
+		{
+			name: "valid not charging",
+			response: &at.Response{
+				OK:    true,
+				Lines: []string{"+CBC: 0,85,4120"},
+			},
+			errExpected: false,
+			expectedBatt: &modem.BatteryInfo{
+				Charging:   false,
+				Percent:    85,
+				Millivolts: 4120,
+			},
+		},
+		{
+			name: "valid charging",
+			response: &at.Response{
+				OK:    true,
+				Lines: []string{"+CBC: 1,98,4215"},
+			},
+			errExpected: false,
+			expectedBatt: &modem.BatteryInfo{
+				Charging:   true,
+				Percent:    98,
+				Millivolts: 4215,
+			},
+		},
+		{
+			name: "at command error",
+			response: &at.Response{
+				Error: true,
+				Lines: []string{"+CME ERROR: 58"},
+			},
+			errExpected: true,
+		},
+		{
+			name: "malformed response missing fields",
+			response: &at.Response{
+				OK:    true,
+				Lines: []string{"+CBC: not_a_number"},
+			},
+			errExpected: true,
+		},
+		{
+			name: "empty response lines",
+			response: &at.Response{
+				OK:    true,
+				Lines: []string{},
+			},
+			errExpected: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := newMockATRunner()
+			runner.responses["AT+CBC"] = tc.response
+			driver := NewSIMComDriver(runner)
+
+			batt, err := driver.BatteryStatus()
+			if tc.errExpected {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if batt.Charging != tc.expectedBatt.Charging {
+				t.Errorf("expected Charging %v, got %v", tc.expectedBatt.Charging, batt.Charging)
+			}
+			if batt.Percent != tc.expectedBatt.Percent {
+				t.Errorf("expected Percent %d, got %d", tc.expectedBatt.Percent, batt.Percent)
+			}
+			if batt.Millivolts != tc.expectedBatt.Millivolts {
+				t.Errorf("expected Millivolts %d, got %d", tc.expectedBatt.Millivolts, batt.Millivolts)
+			}
+		})
+	}
+}
+
+func TestSIMComDriver_Audio(t *testing.T) {
+	runner := newMockATRunner()
+	driver := NewSIMComDriver(runner)
+
+	// Valid volume
+	if err := driver.SetVolume(80); err != nil {
+		t.Errorf("unexpected error setting volume: %v", err)
+	}
+	if len(runner.commands) == 0 || runner.commands[len(runner.commands)-1] != "AT+CLVL=80" {
+		t.Errorf("expected AT+CLVL=80 to be sent, got %v", runner.commands)
+	}
+
+	// Invalid volume
+	if err := driver.SetVolume(-1); err == nil {
+		t.Errorf("expected error for negative volume")
+	}
+	if err := driver.SetVolume(101); err == nil {
+		t.Errorf("expected error for volume > 100")
+	}
+
+	// Valid mic gain
+	if err := driver.SetMicGain(10); err != nil {
+		t.Errorf("unexpected error setting mic gain: %v", err)
+	}
+	if len(runner.commands) == 0 || runner.commands[len(runner.commands)-1] != "AT+CMIC=0,10" {
+		t.Errorf("expected AT+CMIC=0,10 to be sent, got %v", runner.commands)
+	}
+
+	// Invalid mic gain
+	if err := driver.SetMicGain(-1); err == nil {
+		t.Errorf("expected error for negative mic gain")
+	}
+	if err := driver.SetMicGain(16); err == nil {
+		t.Errorf("expected error for mic gain > 15")
 	}
 }
 
@@ -385,3 +581,182 @@ func TestBaseDriver_DeleteMessage(t *testing.T) {
 	}
 }
 
+func TestNeowayDriver_Init(t *testing.T) {
+	runner := newMockATRunner()
+	driver := NewNeowayDriver(runner)
+
+	ctx := context.Background()
+	if err := driver.Init(ctx); err != nil {
+		t.Fatalf("Neoway Init error: %v", err)
+	}
+
+	expectedCmds := []string{"AT", "ATE0", "AT+CMEE=2", "AT+CMGF=0", "AT+CNMI=2,1,0,1,0", "AT+CLIP=1", "AT+CSCS=\"IRA\""}
+	for _, expected := range expectedCmds {
+		found := false
+		for _, cmd := range runner.commands {
+			if cmd == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected command %q during Neoway Init, sent: %v", expected, runner.commands)
+		}
+	}
+	for _, cmd := range runner.commands {
+		if cmd == "AT+COLP=1" {
+			t.Errorf("did not expect AT+COLP=1 during Neoway Init, found in: %v", runner.commands)
+		}
+	}
+}
+
+func TestNeowayDriver_Dial_CallDrop(t *testing.T) {
+	runner := newMockATRunner()
+	driver := NewNeowayDriver(runner)
+
+	err := driver.Dial("+79964126670")
+	if err != nil {
+		t.Fatalf("unexpected dial error: %v", err)
+	}
+
+	foundDial := false
+	for _, cmd := range runner.commands {
+		if cmd == "ATD+79964126670;" {
+			foundDial = true
+			break
+		}
+	}
+	if !foundDial {
+		t.Errorf("expected ATD+79964126670; to be sent, sent: %v", runner.commands)
+	}
+
+	if err := driver.Hangup(); err != nil {
+		t.Fatalf("unexpected hangup error: %v", err)
+	}
+	if len(runner.commands) == 0 || runner.commands[len(runner.commands)-1] != "ATH" {
+		t.Errorf("expected ATH to be sent on hangup, sent: %v", runner.commands)
+	}
+}
+
+func TestNeowayDriver_BatteryStatus(t *testing.T) {
+	runner := newMockATRunner()
+	runner.responses["AT+CBC"] = &at.Response{
+		OK:    true,
+		Lines: []string{"+CBC: 0,90,4050"},
+	}
+	driver := NewNeowayDriver(runner)
+
+	batt, err := driver.BatteryStatus()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if batt.Charging || batt.Percent != 90 || batt.Millivolts != 4050 {
+		t.Errorf("unexpected battery status: %+v", batt)
+	}
+}
+
+func TestNeowayDriver_SendUSSD_UCS2Hex(t *testing.T) {
+	runner := newMockATRunner()
+	expectedCmd := `AT+CUSD=1,"002A0031003000300023",15`
+	runner.responses[expectedCmd] = &at.Response{
+		OK:    true,
+		Lines: []string{`+CUSD: 0,"041204300448002004310430043B0430043D0441003A00200032002E003200320020044004430431002E",72`},
+	}
+
+	driver := NewNeowayDriver(runner)
+	resp, err := driver.SendUSSD("*100#")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(resp, "+CUSD: 0,") {
+		t.Errorf("expected CUSD response line, got %q", resp)
+	}
+
+	// Verify that character set was restored to IRA upon exit
+	lastCmd := runner.commands[len(runner.commands)-1]
+	if lastCmd != `AT+CSCS="IRA"` {
+		t.Errorf("expected last command to restore AT+CSCS=\"IRA\", got %q", lastCmd)
+	}
+}
+
+func TestNeowayDriver_CheckCallState(t *testing.T) {
+	runner := newMockATRunner()
+	driver := NewNeowayDriver(runner)
+
+	tests := []struct {
+		name     string
+		response []string
+		expected string
+	}{
+		{
+			name:     "dialing",
+			response: []string{`+CLCC: 1,0,2,0,0,"89964126670",129`},
+			expected: "dialing",
+		},
+		{
+			name:     "ringing",
+			response: []string{`+CLCC: 1,0,3,0,0,"89964126670",129`},
+			expected: "ringing",
+		},
+		{
+			name:     "answered",
+			response: []string{`+CLCC: 1,0,0,0,0,"89964126670",129`},
+			expected: "answered",
+		},
+		{
+			name:     "idle",
+			response: []string{},
+			expected: "idle",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner.responses["AT+CLCC"] = &at.Response{
+				OK:    true,
+				Lines: tt.response,
+			}
+			state, err := driver.CheckCallState()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if state != tt.expected {
+				t.Errorf("expected state %q, got %q", tt.expected, state)
+			}
+		})
+	}
+}
+
+func TestSiemensDriver_Identify(t *testing.T) {
+	runner := newMockATRunner()
+	runner.responses["ATI"] = &at.Response{
+		OK:    true,
+		Lines: []string{"SIEMENS", "MC35i", "REVISION 02.00"},
+	}
+	runner.responses["AT+CGSN"] = &at.Response{
+		OK:    true,
+		Lines: []string{"353857015410240"},
+	}
+	runner.responses["AT+CIMI"] = &at.Response{
+		OK:    true,
+		Lines: []string{"250023055574883"},
+	}
+
+	driver := NewSiemensDriver(runner)
+	info, err := driver.Identify()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Manufacturer != "SIEMENS" {
+		t.Errorf("expected manufacturer SIEMENS, got %q", info.Manufacturer)
+	}
+	if info.Model != "MC35i" {
+		t.Errorf("expected model MC35i, got %q", info.Model)
+	}
+	if info.Revision != "REVISION 02.00" {
+		t.Errorf("expected revision 'REVISION 02.00', got %q", info.Revision)
+	}
+	if info.IMEI != "353857015410240" {
+		t.Errorf("expected IMEI '353857015410240', got %q", info.IMEI)
+	}
+}

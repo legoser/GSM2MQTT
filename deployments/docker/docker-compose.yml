@@ -1,41 +1,22 @@
 services:
-  mosquitto:
-    image: eclipse-mosquitto:latest
-    container_name: gsm2mqtt-mosquitto
-    restart: unless-stopped
-    ports:
-      - "${MQTT_PORT:-1883}:1883"
-    volumes:
-      - ../../configs/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 2 mosquitto_sub -t '$$SYS/#' -C 1 || exit 0"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
-
   gsm2mqtt:
-    build:
-      context: ../..
-      dockerfile: deployments/docker/Dockerfile
+    image: ghcr.io/legoser/gsm2mqtt:latest
     container_name: gsm2mqtt-service
     restart: unless-stopped
-    depends_on:
-      - mosquitto
     ports:
       - "${API_PORT:-8080}:8080"
+    env_file:
+      - .env
     environment:
-      - GSM2MQTT_MQTT_BROKER=mosquitto
-      - GSM2MQTT_MQTT_PORT=1883
+      - GSM2MQTT_MQTT_BROKER=${GSM2MQTT_MQTT_BROKER:-127.0.0.1}
+      - GSM2MQTT_MQTT_PORT=${GSM2MQTT_MQTT_PORT:-1883}
       - GSM2MQTT_API_ENABLED=true
       - GSM2MQTT_API_HOST=0.0.0.0
       - GSM2MQTT_API_PORT=8080
-      - MODEM_DEVICE=${MODEM_DEVICE:-}
-      - GSM2MQTT_MODEM_PORT=${MODEM_DEVICE:-}
-      - MOCK_MODEM=${MOCK_MODEM:-false}
+      - MODEM_DEVICE=${MODEM_DEVICE:-/dev/ttyUSB0}
+      # Make sure you provide GSM2MQTT_API_TOKEN in .env for API security!
     volumes:
-      - ../../configs/gsm2mqtt.yaml:/etc/gsm2mqtt/gsm2mqtt.yaml:ro
-      - /dev:/dev
-      - /dev/pts:/dev/pts
-      - /tmp:/tmp
-    privileged: true
-
+      - ./configs/gsm2mqtt.yaml:/etc/gsm2mqtt/gsm2mqtt.yaml:ro
+      - ./data:/app/data
+    devices:
+      - "${MODEM_DEVICE:-/dev/ttyUSB0}:${MODEM_DEVICE:-/dev/ttyUSB0}"

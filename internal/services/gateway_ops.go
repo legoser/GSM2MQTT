@@ -14,6 +14,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/modem/drivers"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/operator"
+	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
 
@@ -70,6 +71,10 @@ func (r *ModemRunner) Hangup(ctx context.Context) error {
 
 // SendRawAT sends an arbitrary AT command directly through the modem driver.
 func (r *ModemRunner) SendRawAT(ctx context.Context, cmd string) (string, error) {
+	if err := r.sanitizer.Validate(cmd); err != nil {
+		return "", err
+	}
+
 	r.mu.RLock()
 	drv := r.driver
 	r.mu.RUnlock()
@@ -115,16 +120,53 @@ func (r *ModemRunner) applyParsedBalance(text string) {
 }
 
 func (r *ModemRunner) createDriver(engine *at.Engine) modem.Driver {
-	switch strings.ToLower(r.mCfg.Type) {
-	case "siemens":
+	modemType := strings.ToLower(r.mCfg.Type)
+	if modemType == "" || modemType == "auto" {
+		detectCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		detected, err := modem.Detect(detectCtx, engine)
+		cancel()
+		if err == nil && detected != "" && detected != modem.TypeGeneric {
+			slog.Info("auto-detected modem type", slog.String("modem", r.mCfg.ID), slog.String("detected", string(detected)))
+			modemType = string(detected)
+		}
+	}
+
+	switch modemType {
+	case "siemens", "tc35", "tc35i", "mc35", "mc35i", "mc55", "tc65", "cinterion":
 		return drivers.NewSiemensDriver(engine)
-	case "simcom":
+	case "simcom", "sim800", "sim800l", "sim800c", "sim900", "sim7000", "sim7600":
 		return drivers.NewSIMComDriver(engine)
 	case "huawei":
 		return drivers.NewHuaweiDriver(engine)
+	case "neoway", "m590", "m590e", "m580":
+		return drivers.NewNeowayDriver(engine)
 	default:
 		return drivers.NewGenericDriver(engine)
 	}
+}
+
+// SetSlotIndex sets the 1-based modem slot index for Home Assistant auto-discovery.
+func (r *ModemRunner) SetSlotIndex(index int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if index <= 0 {
+		index = 1
+	}
+	r.slotIndex = index
+}
+
+// SlotIndex returns the 1-based modem slot index.
+func (r *ModemRunner) SlotIndex() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.slotIndex
+}
+
+// SetRecipientsManager registers the dynamic alert recipients manager.
+func (r *ModemRunner) SetRecipientsManager(mgr *security.RecipientsManager) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.recipientsMgr = mgr
 }
 
 func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
@@ -132,24 +174,83 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 		return
 	}
 	info, _ := driver.Identify()
-	mfg := "Generic"
-	model := "Modem"
+	mfg := ""
+	model := ""
+	sw := ""
 	if info != nil {
-		if info.Manufacturer != "" {
-			mfg = info.Manufacturer
-		}
-		if info.Model != "" {
-			model = info.Model
+		mfg = info.Manufacturer
+		model = info.Model
+		sw = info.Revision
+	}
+	if mfg == "" || strings.EqualFold(mfg, "undefined") {
+		mfg = "Unknown"
+	}
+	if model == "" {
+		model = r.mCfg.Type
+	}
+
+	if gwMsg, err := mqtt.BuildGatewayDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(gwMsg.Topic, 1, true, gwMsg.Payload)
+	}
+	if mcMsg, err := mqtt.BuildGatewayModemCountDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(mcMsg.Topic, 1, true, mcMsg.Payload)
+	}
+	if amMsg, err := mqtt.BuildGatewayActiveModemDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(amMsg.Topic, 1, true, amMsg.Payload)
+	}
+
+	gwModemsPayload, _ := json.Marshal(map[string]any{
+		"count":        1,
+		"active_modem": model,
+		"modems": []map[string]any{
+			{
+				"id":           r.mCfg.ID,
+				"model":        model,
+				"manufacturer": mfg,
+				"port":         r.mCfg.Port,
+				"status":       "ready",
+			},
+		},
+	})
+	_ = r.mqttClient.Publish(fmt.Sprintf("%s/gateway/modems", r.cfg.MQTT.TopicPrefix), 1, true, gwModemsPayload)
+
+	if recMsg, err := mqtt.BuildRecipientsTextDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(recMsg.Topic, 1, true, recMsg.Payload)
+	}
+
+	if r.recipientsMgr != nil && r.mqttClient.IsConnected() {
+		recPayload, _ := json.Marshal(r.recipientsMgr.Get())
+		_ = r.mqttClient.Publish(fmt.Sprintf("%s/config/recipients", r.cfg.MQTT.TopicPrefix), 1, true, recPayload)
+	}
+
+	messages, err := mqtt.BuildModemDiscoveries(mqtt.ModemDiscoveryParams{
+		DiscoveryPrefix: r.cfg.MQTT.DiscoveryPrefix,
+		TopicPrefix:     r.cfg.MQTT.TopicPrefix,
+		ModemID:         r.mCfg.ID,
+		Manufacturer:    mfg,
+		Model:           model,
+		SwVersion:       sw,
+		Currency:        r.lastCurrency,
+		SlotIndex:       r.SlotIndex(),
+	})
+	if err == nil && r.mqttClient.IsConnected() {
+		for _, msg := range messages {
+			_ = r.mqttClient.Publish(msg.Topic, 1, true, msg.Payload)
 		}
 	}
-	disc, err := mqtt.BuildSignalDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, r.mCfg.ID, mfg, model)
-	if err == nil && r.mqttClient.IsConnected() {
-		_ = r.mqttClient.Publish(disc.Topic, 1, true, disc.Payload)
+
+	r.mu.RLock()
+	tm := r.tariffMgr
+	r.mu.RUnlock()
+	if tm != nil && r.mqttClient.IsConnected() {
+		st := tm.Status()
+		stPayload, _ := json.Marshal(st)
+		_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, true, stPayload)
 	}
 }
 
 func (r *ModemRunner) startStorageCheckLoop(ctx context.Context, smsSvc *SMSService) {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -158,17 +259,14 @@ func (r *ModemRunner) startStorageCheckLoop(ctx context.Context, smsSvc *SMSServ
 			return
 		case <-ticker.C:
 			cap, err := smsSvc.CheckStorageCapacity()
-			if err == nil && cap != nil && cap.Total > 0 {
-				ratio := float64(cap.Used) / float64(cap.Total)
-				if ratio >= 0.8 {
-					slog.Warn("SMS storage capacity high, triggering sync & purge",
-						slog.String("modem", r.mCfg.ID),
-						slog.String("storage", cap.Name),
-						slog.Int("used", cap.Used),
-						slog.Int("total", cap.Total),
-					)
-					_, _ = smsSvc.SyncStoredMessages(ctx, "SM", "ME")
-				}
+			if err == nil && cap != nil && cap.Used > 0 {
+				slog.Info("unprocessed SMS detected in storage, triggering sync & purge",
+					slog.String("modem", r.mCfg.ID),
+					slog.String("storage", cap.Name),
+					slog.Int("used", cap.Used),
+					slog.Int("total", cap.Total),
+				)
+				_, _ = smsSvc.SyncStoredMessages(ctx, "SM", "ME")
 			}
 		}
 	}

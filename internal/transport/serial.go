@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"go.bug.st/serial"
 )
@@ -77,12 +78,22 @@ func (c *PortConfig) ToSerialMode() (*serial.Mode, error) {
 
 	parity, _ := parseParity(c.Parity)
 
-	return &serial.Mode{
+	mode := &serial.Mode{
 		BaudRate: c.BaudRate,
 		DataBits: dataBits,
 		StopBits: stopBits,
 		Parity:   parity,
-	}, nil
+	}
+
+	// go.bug.st/serial has no explicit RTS/CTS flow-control flag; the
+	// closest equivalent is asserting DTR/RTS on open so hardware-handshake
+	// modems do not see a deasserted line. Software (XON/XOFF) flow control
+	// is a line discipline handled by the modem firmware, nothing to set here.
+	if strings.ToLower(strings.TrimSpace(c.FlowControl)) == "hardware" {
+		mode.InitialStatusBits = &serial.ModemOutputBits{DTR: true, RTS: true}
+	}
+
+	return mode, nil
 }
 
 // Opener opens a serial port with the given configuration.
@@ -108,6 +119,11 @@ func (o *SerialOpener) Open(cfg PortConfig) (Port, error) {
 	p, err := serial.Open(cfg.Device, mode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open serial port %s: %w", cfg.Device, err)
+	}
+
+	if err := p.SetReadTimeout(1 * time.Second); err != nil {
+		_ = p.Close()
+		return nil, fmt.Errorf("failed to set read timeout on %s: %w", cfg.Device, err)
 	}
 
 	return p, nil

@@ -83,6 +83,18 @@ type RawCommander interface {
 	SendRawAT(cmd string) (string, error)
 }
 
+// BatteryInfo contains battery charging status and voltage information.
+type BatteryInfo struct {
+	Charging   bool `json:"charging"`
+	Percent    int  `json:"percent"`
+	Millivolts int  `json:"millivolts"`
+}
+
+// BatteryProvider is implemented by modems supporting battery status querying (AT+CBC).
+type BatteryProvider interface {
+	BatteryStatus() (*BatteryInfo, error)
+}
+
 // Info contains identification information about a modem.
 type Info struct {
 	Manufacturer string

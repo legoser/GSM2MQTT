@@ -22,6 +22,9 @@ func parseEnvFile(path string) map[string]string {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		if strings.HasPrefix(line, "export ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "export"))
+		}
 		idx := strings.IndexByte(line, '=')
 		if idx <= 0 {
 			continue
@@ -30,23 +33,34 @@ func parseEnvFile(path string) map[string]string {
 		v := strings.TrimSpace(line[idx+1:])
 		if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
 			v = v[1 : len(v)-1]
+		} else if cIdx := strings.IndexByte(v, '#'); cIdx >= 0 {
+			v = strings.TrimSpace(v[:cIdx])
 		}
 		res[k] = v
-	}
-	if err := scanner.Err(); err != nil {
-		// Just ignore or log it, for now we will return what we successfully parsed
 	}
 	return res
 }
 
-// loadDotEnv searches for and loads a .env file from the current directory or config directory.
+// loadDotEnv searches for and loads .env files from candidate locations.
 func loadDotEnv(dirs ...string) map[string]string {
-	candidates := []string{".env"}
+	var candidates []string
+
+	for _, envKey := range []string{"GSM2MQTT_ENV_FILE", "DOTENV_PATH", "ENV_FILE"} {
+		if p := os.Getenv(envKey); p != "" {
+			candidates = append(candidates, p)
+		}
+	}
+
 	for _, d := range dirs {
 		if d != "" && d != "." {
 			candidates = append(candidates, filepath.Join(d, ".env"))
+			if filepath.Base(d) == "configs" {
+				candidates = append(candidates, filepath.Join(d, "..", ".env"))
+			}
 		}
 	}
+
+	candidates = append(candidates, ".env", "configs/.env")
 
 	merged := make(map[string]string)
 	for _, c := range candidates {
