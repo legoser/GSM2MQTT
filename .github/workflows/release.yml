@@ -13,23 +13,7 @@ permissions:
   contents: write
 
 jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Vet
-        run: go vet ./...
-      - name: Test
-        run: go test -race -count=1 ./...
-
   release:
-    needs: validate
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.ref_name }}
@@ -41,6 +25,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
 
       - name: Validate tag format (vMAJOR.MINOR.PATCH)
         run: |
@@ -68,6 +58,7 @@ jobs:
               -C "${staged}" gsm2mqtt README.md LICENSE gsm2mqtt.example.yaml
             rm -rf "${staged}"
           done
+
       - name: Build OpenWrt packages (OPKG and APK)
         run: |
           ./scripts/build_openwrt_packages.sh --version "${TAG}" --out-dir dist
@@ -97,10 +88,14 @@ jobs:
               echo "### OpenWrt Packages"
               echo '```bash'
               echo "# OpenWrt <= 23.05 (OPKG):"
-              echo "opkg install gsm2mqtt_${ver}-1_x86_64.ipk"
+              echo "# Note: always specify leading './' or full path to local file"
+              echo "# For Raspberry Pi 3 / Cortex-A53:"
+              echo "opkg install ./gsm2mqtt_${ver}-1_aarch64_cortex-a53.ipk"
+              echo "# For x86_64:"
+              echo "opkg install ./gsm2mqtt_${ver}-1_x86_64.ipk"
               echo
               echo "# OpenWrt >= 25.12 (APK):"
-              echo "apk add --allow-untrusted ./gsm2mqtt-${ver}-r1-x86_64.apk"
+              echo "apk add --allow-untrusted ./gsm2mqtt-${ver}-r1-aarch64.apk"
               echo
               echo "/etc/init.d/gsm2mqtt start"
               echo '```'
@@ -111,7 +106,7 @@ jobs:
           cat release_notes.md
 
       - name: Publish GitHub Release with assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}

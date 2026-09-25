@@ -92,6 +92,11 @@ if tar --help 2>&1 | grep -q -- '--owner'; then
     TAR_OWNER_FLAGS=(--owner=0 --group=0 --numeric-owner)
 fi
 
+TAR_FORMAT_FLAGS=()
+if tar --help 2>&1 | grep -q -- '--format'; then
+    TAR_FORMAT_FLAGS=(--format=gnu)
+fi
+
 mkdir -p "$BIN_DIR" "$OUT_DIR"
 BIN_DIR="$(cd "$BIN_DIR" && pwd)"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
@@ -205,11 +210,11 @@ EOF
 
     echo "2.0" > "${stage}/debian-binary"
 
-    tar -czf "${stage}/data.tar.gz" "${TAR_OWNER_FLAGS[@]}" -C "${data_dir}" .
-    tar -czf "${stage}/control.tar.gz" "${TAR_OWNER_FLAGS[@]}" -C "${ctrl_dir}" .
+    tar -czf "${stage}/data.tar.gz" "${TAR_OWNER_FLAGS[@]}" "${TAR_FORMAT_FLAGS[@]}" -C "${data_dir}" .
+    tar -czf "${stage}/control.tar.gz" "${TAR_OWNER_FLAGS[@]}" "${TAR_FORMAT_FLAGS[@]}" -C "${ctrl_dir}" .
 
     local out_file="${OUT_DIR}/${PKG_NAME}_${OPKG_VER}_${opkg_arch}.ipk"
-    tar -czf "$out_file" "${TAR_OWNER_FLAGS[@]}" -C "${stage}" debian-binary control.tar.gz data.tar.gz
+    ( cd "${stage}" && tar -czf "$out_file" "${TAR_OWNER_FLAGS[@]}" "${TAR_FORMAT_FLAGS[@]}" ./debian-binary ./data.tar.gz ./control.tar.gz )
 
     rm -rf "$stage"
     echo "    Created: ${out_file}"
@@ -403,27 +408,27 @@ for arch in "${ARCH_LIST[@]}"; do
     # Map architecture names
     case "$arch" in
         amd64)
-            opkg_arch="x86_64"
+            opkg_arches=("x86_64")
             apk_arch="x86_64"
             ;;
         arm64)
-            opkg_arch="aarch64_generic"
+            opkg_arches=("aarch64_cortex-a53" "aarch64_cortex-a72" "aarch64_generic")
             apk_arch="aarch64"
             ;;
         riscv64)
-            opkg_arch="riscv64"
+            opkg_arches=("riscv64")
             apk_arch="riscv64"
             ;;
         armv7)
-            opkg_arch="arm_cortex-a7_neon-vfpv4"
+            opkg_arches=("arm_cortex-a7_neon-vfpv4" "arm_cortex-a9" "arm_cortex-a15_neon-vfpv4")
             apk_arch="armv7"
             ;;
         mipsel)
-            opkg_arch="mipsel_24kc"
+            opkg_arches=("mipsel_24kc")
             apk_arch="mipsel"
             ;;
         mips)
-            opkg_arch="mips_24kc"
+            opkg_arches=("mips_24kc")
             apk_arch="mips"
             ;;
         *)
@@ -433,7 +438,9 @@ for arch in "${ARCH_LIST[@]}"; do
     esac
 
     if [[ "$TARGET_TYPE" == "ipk" || "$TARGET_TYPE" == "all" ]]; then
-        build_ipk "$arch" "$opkg_arch"
+        for o_arch in "${opkg_arches[@]}"; do
+            build_ipk "$arch" "$o_arch"
+        done
     fi
 
     if [[ "$TARGET_TYPE" == "apk" || "$TARGET_TYPE" == "all" ]]; then

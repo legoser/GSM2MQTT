@@ -83,10 +83,14 @@ jobs:
               echo "### OpenWrt Packages"
               echo '```bash'
               echo "# OpenWrt <= 23.05 (OPKG):"
-              echo "opkg install gsm2mqtt_${ver}-1_x86_64.ipk"
+              echo "# Note: always specify leading './' or full path to local file"
+              echo "# For Raspberry Pi 3 / Cortex-A53:"
+              echo "opkg install ./gsm2mqtt_${ver}-1_aarch64_cortex-a53.ipk"
+              echo "# For x86_64:"
+              echo "opkg install ./gsm2mqtt_${ver}-1_x86_64.ipk"
               echo
               echo "# OpenWrt >= 25.12 (APK):"
-              echo "apk add --allow-untrusted ./gsm2mqtt-${ver}-r1-x86_64.apk"
+              echo "apk add --allow-untrusted ./gsm2mqtt-${ver}-r1-aarch64.apk"
               echo
               echo "/etc/init.d/gsm2mqtt start"
               echo '```'
