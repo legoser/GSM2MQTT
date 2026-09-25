@@ -1,6 +1,7 @@
 # ============================================================
-# GSM2MQTT Configuration
+# GSM2MQTT Configuration for OpenWrt
 # ============================================================
+# This configuration file documents all available options.
 # Environment variables override any YAML setting.
 # Pattern: GSM2MQTT_<SECTION>_<PARAM> (uppercase, underscore-separated)
 # Example: GSM2MQTT_MQTT_BROKER=192.168.1.100
@@ -12,19 +13,19 @@ log_level: info
 # MQTT Broker Connection
 # ------------------------------------------------------------
 mqtt:
-  broker: "localhost"                  # GSM2MQTT_MQTT_BROKER — Broker hostname or IP
-  port: 1883                           # GSM2MQTT_MQTT_PORT — Broker port (usually 1883, or 8883 for TLS)
-  username: ""                         # GSM2MQTT_MQTT_USERNAME — Broker username (leave empty if none)
-  password: ""                         # GSM2MQTT_MQTT_PASSWORD — Broker password
-  client_id: "gsm2mqtt"                # GSM2MQTT_MQTT_CLIENT_ID — Unique MQTT client ID
+  broker: "127.0.0.1"                  # Broker address (localhost or LAN IP, e.g., 192.168.1.100)
+  port: 1883                           # Broker port (usually 1883, or 8883 for TLS)
+  username: ""                         # Broker username (leave empty if authentication is not required)
+  password: ""                         # Broker password
+  client_id: "gsm2mqtt-openwrt"        # Unique MQTT client identifier
   topic_prefix: "gsm2mqtt"             # Root MQTT topic prefix
-  discovery: true                      # Home Assistant MQTT Auto Discovery (true / false)
-  discovery_prefix: "homeassistant"    # Home Assistant Discovery topic prefix
+  discovery: true                      # Enable Home Assistant MQTT Auto Discovery (true / false)
+  discovery_prefix: "homeassistant"    # Home Assistant Discovery prefix
 
   # TLS / SSL encrypted connection (optional)
   tls:
     enabled: false                     # Enable TLS connection
-    ca_cert: ""                        # Path to custom CA certificate file
+    ca_cert: ""                        # Path to CA certificate (e.g., /etc/ssl/certs/ca-certificates.crt)
     client_cert: ""                    # Path to client certificate (for mutual TLS / mTLS)
     client_key: ""                     # Path to client private key
     insecure_skip_verify: false        # Skip TLS certificate validation (NOT recommended in production)
@@ -32,12 +33,14 @@ mqtt:
 # ------------------------------------------------------------
 # GSM Modems Configuration
 # ------------------------------------------------------------
-# One or more GSM modems can be configured.
+# Configure one or more modems connected to your OpenWrt router.
+# Required OpenWrt kernel modules for USB modems:
+#   kmod-usb-serial, kmod-usb-serial-option (3G/4G modems), kmod-usb-acm (CDC ACM modems)
 modems:
   - id: "modem1"                       # Unique identifier for the modem in topics and logs
-    name: "Siemens TC35"               # Human-readable descriptive name
-    port: "/dev/ttyS0"                 # Serial port device path
-    baud_rate: 9600                    # Serial baud rate: 9600, 19200, 38400, 57600, 115200
+    name: "Primary GSM Modem"          # Human-readable descriptive name
+    port: "/dev/ttyUSB0"               # Serial port device path (/dev/ttyUSB0, /dev/ttyACM0, /dev/ttyS0)
+    baud_rate: 115200                  # Serial baud rate: 9600, 19200, 38400, 57600, 115200
     type: "auto"                       # Modem type: auto | siemens | simcom | huawei | generic
     pin: ""                            # SIM PIN code (leave empty if PIN lock is disabled)
     data_bits: 8                       # Data bits: 7, 8
@@ -48,7 +51,7 @@ modems:
   # Example 2: USB Huawei 3G/4G Modem (stick mode)
   # - id: "huawei_e3372"
   #   name: "Huawei E3372 4G"
-  #   port: "/dev/serial/by-id/usb-HUAWEI_MOBILE-if00-port0"
+  #   port: "/dev/ttyUSB1"
   #   baud_rate: 115200
   #   type: "huawei"
   #   pin: ""
@@ -60,7 +63,7 @@ modems:
   # Example 3: SIM800L / SIM900 via UART or USB-UART converter
   # - id: "sim800"
   #   name: "SIM800L Module"
-  #   port: "/dev/ttyUSB0"
+  #   port: "/dev/ttyUSB2"
   #   baud_rate: 9600
   #   type: "simcom"
   #   pin: ""
@@ -69,11 +72,11 @@ modems:
   #   parity: "none"
   #   flow_control: "none"
 
-  # Example 4: Quectel EC25 / EG25 LTE Modem
-  # - id: "quectel_ec25"
-  #   name: "Quectel EC25"
-  #   port: "/dev/ttyUSB2"
-  #   baud_rate: 115200
+  # Example 4: Router internal serial / COM port
+  # - id: "serial_modem"
+  #   name: "Serial Modem"
+  #   port: "/dev/ttyS0"
+  #   baud_rate: 9600
   #   type: "generic"
   #   pin: ""
 
@@ -117,7 +120,7 @@ security:
   blacklist: []                        # e.g., ["+1000000000"]
 
   # File path for persistent dynamic recipients list
-  recipients_file: "data/recipients.json"
+  recipients_file: "/etc/gsm2mqtt/recipients.json"
 
   # Trigger a voice call alert if SMS delivery fails (optional)
   fallback_call: false
@@ -162,7 +165,7 @@ status:
 # Tariff, Balance & Traffic Accounting
 # ------------------------------------------------------------
 tariff:
-  enabled: true                        # Enable periodic balance queries and quota tracking
+  enabled: false                       # Enable periodic balance queries and quota tracking
   operator_preset: "generic"           # Operator USSD parser preset: mts, megafon, beeline, tele2, generic
   balance_ussd: "*100#"                # USSD code for balance inquiry
   balance_regex: ""                    # Custom regex to extract balance amount (used when operator_preset is generic)
@@ -173,14 +176,14 @@ tariff:
   call_minutes_limit: 0                # Monthly voice call minutes allowance (0 = unlimited)
   data_traffic_limit_mb: 0             # Monthly data allowance in megabytes (0 = unlimited)
   reset_day_of_month: 1                # Day of month to reset monthly quota counters
-  storage_dir: "data/tariff"           # Directory for persisting tariff accounting statistics
+  storage_dir: "/etc/gsm2mqtt/tariff"  # Directory for persisting tariff accounting statistics
 
 # ------------------------------------------------------------
 # Embedded Web Dashboard & REST API
 # ------------------------------------------------------------
 api:
-  enabled: true                        # Enable HTTP REST API and Web UI dashboard
-  host: "0.0.0.0"                      # Listen address (0.0.0.0 for Docker/network access)
+  enabled: false                       # Enable HTTP REST API and Web UI (disabled by default on routers to save RAM)
+  host: "127.0.0.1"                    # Listen address (127.0.0.1 for local only, 0.0.0.0 for LAN access)
   port: 8080                           # HTTP port
   token: ""                            # Bearer secret token for HTTP API. If empty, API is unauthenticated!
 

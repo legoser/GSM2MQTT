@@ -68,7 +68,10 @@ jobs:
               -C "${staged}" gsm2mqtt README.md LICENSE gsm2mqtt.example.yaml
             rm -rf "${staged}"
           done
-          (cd dist && sha256sum ./*.tar.gz > checksums.txt)
+      - name: Build OpenWrt packages (OPKG and APK)
+        run: |
+          ./scripts/build_openwrt_packages.sh --version "${TAG}" --out-dir dist
+          (cd dist && sha256sum ./*.tar.gz ./*.ipk ./*.apk > checksums.txt)
           ls -la dist && cat dist/checksums.txt
 
       - name: Generate release notes (CHANGELOG.md section, fallback to git log)
@@ -109,4 +112,6 @@ jobs:
           body_path: release_notes.md
           files: |
             dist/*.tar.gz
+            dist/*.ipk
+            dist/*.apk
             dist/checksums.txt

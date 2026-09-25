@@ -72,6 +72,27 @@ tar -xzf gsm2mqtt-v1.2.3-linux-amd64.tar.gz
 docker-compose -f deployments/docker/docker-compose.yml up -d
 ```
 
+## OpenWrt (OPKG & APK)
+
+GSM2MQTT provides ready-to-use packages for OpenWrt routers with `procd` service integration:
+
+- **OPKG (`.ipk`)** for OpenWrt 23.05 and earlier:
+  ```bash
+  opkg install gsm2mqtt_<version>_<arch>.ipk
+  ```
+- **APK (`.apk`)** for OpenWrt 25.12+ and snapshots:
+  ```bash
+  apk add --allow-untrusted ./gsm2mqtt-<version>-<arch>.apk
+  ```
+
+Manage the service via `procd`:
+```bash
+/etc/init.d/gsm2mqtt start
+/etc/init.d/gsm2mqtt status
+```
+Configuration is stored in `/etc/gsm2mqtt/gsm2mqtt.yaml` and `/etc/config/gsm2mqtt`.
+For detailed architecture tables and feed integration, see [OpenWrt Deployment Guide](docs/openwrt.md).
+
 ## MQTT Topics
 
 ```
