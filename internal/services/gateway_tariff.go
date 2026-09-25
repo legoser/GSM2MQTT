@@ -74,13 +74,13 @@ func (r *ModemRunner) subscribeTariff(tariffMgr *tariff.Manager) {
 		r.publishAccountingStatus(tariffMgr)
 	}
 
-	_ = r.mqttClient.Subscribe(r.topics.TariffSet(), 1, setHandler)
-	_ = r.mqttClient.Subscribe(r.topics.TariffReset(), 1, resetHandler)
+	_ = r.mqttClient.Subscribe(r.topics.TariffSet(), r.qos(), setHandler)
+	_ = r.mqttClient.Subscribe(r.topics.TariffReset(), r.qos(), resetHandler)
 	if r.SlotIndex() == 1 {
-		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/tariff/set", r.cfg.MQTT.TopicPrefix), 1, setHandler)
-		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/tariff/reset", r.cfg.MQTT.TopicPrefix), 1, resetHandler)
-		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/tariff/set", r.cfg.MQTT.TopicPrefix), 1, setHandler)
-		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/tariff/reset", r.cfg.MQTT.TopicPrefix), 1, resetHandler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/tariff/set", r.cfg.MQTT.TopicPrefix), r.qos(), setHandler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/tariff/reset", r.cfg.MQTT.TopicPrefix), r.qos(), resetHandler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/tariff/set", r.cfg.MQTT.TopicPrefix), r.qos(), setHandler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/tariff/reset", r.cfg.MQTT.TopicPrefix), r.qos(), resetHandler)
 	}
 }
 
@@ -92,7 +92,7 @@ func (r *ModemRunner) publishAccountingStatus(tariffMgr *tariff.Manager) {
 	metrics.DefaultRegistry.SetGauge("gsm2mqtt_tariff_sms_used", map[string]string{"modem": r.mCfg.ID}, float64(st.SMSMonthCount))
 	metrics.DefaultRegistry.SetGauge("gsm2mqtt_tariff_sms_limit", map[string]string{"modem": r.mCfg.ID}, float64(st.SMSLimit))
 	stPayload, _ := json.Marshal(st)
-	_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, true, stPayload)
+	_ = r.mqttClient.Publish(r.topics.AccountingStatus(), r.qos(), true, stPayload)
 }
 
 // UpdateTariffConfig updates the active tariff parameters and publishes new state.

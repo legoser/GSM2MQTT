@@ -36,15 +36,21 @@ type Config struct {
 
 // MQTTConfig holds MQTT broker connection parameters.
 type MQTTConfig struct {
-	Broker          string    `yaml:"broker"`
-	Port            int       `yaml:"port"`
-	Username        string    `yaml:"username"`
-	Password        string    `yaml:"password"`
-	ClientID        string    `yaml:"client_id"`
-	TopicPrefix     string    `yaml:"topic_prefix"`
-	Discovery       bool      `yaml:"discovery"`
-	DiscoveryPrefix string    `yaml:"discovery_prefix"`
-	TLS             TLSConfig `yaml:"tls"`
+	Broker               string        `yaml:"broker"`
+	Port                 int           `yaml:"port"`
+	Username             string        `yaml:"username"`
+	Password             string        `yaml:"password"`
+	ClientID             string        `yaml:"client_id"`
+	TopicPrefix          string        `yaml:"topic_prefix"`
+	QoS                  int           `yaml:"qos"`
+	CleanSession         bool          `yaml:"clean_session"`
+	KeepAlive            time.Duration `yaml:"keep_alive"`
+	ConnectTimeout       time.Duration `yaml:"connect_timeout"`
+	AutoReconnect        bool          `yaml:"auto_reconnect"`
+	MaxReconnectInterval time.Duration `yaml:"max_reconnect_interval"`
+	Discovery            bool          `yaml:"discovery"`
+	DiscoveryPrefix      string        `yaml:"discovery_prefix"`
+	TLS                  TLSConfig     `yaml:"tls"`
 }
 
 // TLSConfig holds TLS/SSL settings for MQTT connection.

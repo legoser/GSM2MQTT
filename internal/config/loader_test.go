@@ -22,6 +22,24 @@ func TestDefaults(t *testing.T) {
 	if cfg.MQTT.TopicPrefix != "gsm2mqtt" {
 		t.Errorf("expected MQTT.TopicPrefix 'gsm2mqtt', got %q", cfg.MQTT.TopicPrefix)
 	}
+	if cfg.MQTT.QoS != 1 {
+		t.Errorf("expected default MQTT.QoS 1, got %d", cfg.MQTT.QoS)
+	}
+	if !cfg.MQTT.CleanSession {
+		t.Errorf("expected default MQTT.CleanSession true")
+	}
+	if cfg.MQTT.KeepAlive != 60*time.Second {
+		t.Errorf("expected default MQTT.KeepAlive 60s, got %v", cfg.MQTT.KeepAlive)
+	}
+	if cfg.MQTT.ConnectTimeout != 10*time.Second {
+		t.Errorf("expected default MQTT.ConnectTimeout 10s, got %v", cfg.MQTT.ConnectTimeout)
+	}
+	if !cfg.MQTT.AutoReconnect {
+		t.Errorf("expected default MQTT.AutoReconnect true")
+	}
+	if cfg.MQTT.MaxReconnectInterval != 10*time.Minute {
+		t.Errorf("expected default MQTT.MaxReconnectInterval 10m, got %v", cfg.MQTT.MaxReconnectInterval)
+	}
 	if !cfg.MQTT.Discovery {
 		t.Errorf("expected MQTT.Discovery to be true")
 	}
@@ -308,6 +326,107 @@ func TestLoad_ExampleConfig(t *testing.T) {
 	if cfg.Security.RecipientsFile == "" {
 		t.Errorf("expected recipients_file to be specified in example config")
 	}
+	if cfg.MQTT.QoS != 1 {
+		t.Errorf("expected example config MQTT.QoS 1, got %d", cfg.MQTT.QoS)
+	}
 }
+
+func TestLoad_MainConfig(t *testing.T) {
+	cfgPath := filepath.Join("..", "..", "configs", "gsm2mqtt.yaml")
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("failed to load main configuration file %s: %v", cfgPath, err)
+	}
+	if cfg.MQTT.QoS != 2 {
+		t.Errorf("expected main config MQTT.QoS 2, got %d", cfg.MQTT.QoS)
+	}
+	if !cfg.MQTT.CleanSession {
+		t.Errorf("expected CleanSession true")
+	}
+	if cfg.MQTT.KeepAlive != 60*time.Second {
+		t.Errorf("expected KeepAlive 60s, got %v", cfg.MQTT.KeepAlive)
+	}
+}
+
+func TestLoad_QoSValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	validYAML := `
+mqtt:
+  broker: "localhost"
+  port: 1883
+  topic_prefix: "test"
+  qos: 2
+`
+	validPath := filepath.Join(tmpDir, "valid.yaml")
+	if err := os.WriteFile(validPath, []byte(validYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(validPath)
+	if err != nil {
+		t.Fatalf("expected valid config to load, got %v", err)
+	}
+	if cfg.MQTT.QoS != 2 {
+		t.Errorf("expected QoS 2, got %d", cfg.MQTT.QoS)
+	}
+
+	invalidYAML := `
+mqtt:
+  broker: "localhost"
+  port: 1883
+  topic_prefix: "test"
+  qos: 3
+`
+	invalidPath := filepath.Join(tmpDir, "invalid.yaml")
+	if err := os.WriteFile(invalidPath, []byte(invalidYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(invalidPath); err == nil {
+		t.Fatal("expected error for qos = 3, got nil")
+	}
+}
+
+func TestLoad_MQTTParameters(t *testing.T) {
+	tmpDir := t.TempDir()
+	content := `
+mqtt:
+  broker: "broker.lan"
+  port: 1883
+  topic_prefix: "gsm"
+  qos: 0
+  clean_session: false
+  keep_alive: 45s
+  connect_timeout: 5s
+  auto_reconnect: false
+  max_reconnect_interval: 2m
+`
+	p := filepath.Join(tmpDir, "params.yaml")
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("failed to load: %v", err)
+	}
+	if cfg.MQTT.QoS != 0 {
+		t.Errorf("expected QoS 0, got %d", cfg.MQTT.QoS)
+	}
+	if cfg.MQTT.CleanSession != false {
+		t.Errorf("expected CleanSession false, got %v", cfg.MQTT.CleanSession)
+	}
+	if cfg.MQTT.KeepAlive != 45*time.Second {
+		t.Errorf("expected KeepAlive 45s, got %v", cfg.MQTT.KeepAlive)
+	}
+	if cfg.MQTT.ConnectTimeout != 5*time.Second {
+		t.Errorf("expected ConnectTimeout 5s, got %v", cfg.MQTT.ConnectTimeout)
+	}
+	if cfg.MQTT.AutoReconnect != false {
+		t.Errorf("expected AutoReconnect false, got %v", cfg.MQTT.AutoReconnect)
+	}
+	if cfg.MQTT.MaxReconnectInterval != 2*time.Minute {
+		t.Errorf("expected MaxReconnectInterval 2m, got %v", cfg.MQTT.MaxReconnectInterval)
+	}
+}
+
 
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/config"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
@@ -31,6 +32,9 @@ func TestGatewayManager_MQTTStatus(t *testing.T) {
 			TopicPrefix:     "gsm2mqtt",
 			Username:        "admin",
 			Password:        "secret123",
+			QoS:             2,
+			CleanSession:    true,
+			KeepAlive:       30 * time.Second,
 			Discovery:       true,
 			DiscoveryPrefix: "homeassistant",
 		}
@@ -52,6 +56,15 @@ func TestGatewayManager_MQTTStatus(t *testing.T) {
 		}
 		if st.Username != "admin" {
 			t.Errorf("expected username admin, got %s", st.Username)
+		}
+		if st.QoS != 2 {
+			t.Errorf("expected QoS 2, got %d", st.QoS)
+		}
+		if !st.CleanSession {
+			t.Error("expected CleanSession true")
+		}
+		if st.KeepAliveSeconds != 30 {
+			t.Errorf("expected KeepAliveSeconds 30, got %d", st.KeepAliveSeconds)
 		}
 		if !st.Discovery {
 			t.Error("expected discovery true")

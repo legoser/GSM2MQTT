@@ -25,6 +25,10 @@ type GatewayManager struct {
 func NewGatewayManager() *GatewayManager {
 	return &GatewayManager{
 		runners: make(map[string]*ModemRunner),
+		mqttCfg: config.MQTTConfig{
+			QoS:          1,
+			CleanSession: true,
+		},
 	}
 }
 
@@ -182,14 +186,17 @@ func (m *GatewayManager) findRunner(modemID string) (*ModemRunner, error) {
 
 // MQTTStatus contains connection state and non-sensitive configuration for the MQTT broker.
 type MQTTStatus struct {
-	Connected       bool   `json:"connected"`
-	Broker          string `json:"broker"`
-	Port            int    `json:"port"`
-	ClientID        string `json:"client_id"`
-	TopicPrefix     string `json:"topic_prefix"`
-	Username        string `json:"username,omitempty"`
-	Discovery       bool   `json:"discovery"`
-	DiscoveryPrefix string `json:"discovery_prefix,omitempty"`
+	Connected        bool   `json:"connected"`
+	Broker           string `json:"broker"`
+	Port             int    `json:"port"`
+	ClientID         string `json:"client_id"`
+	TopicPrefix      string `json:"topic_prefix"`
+	Username         string `json:"username,omitempty"`
+	QoS              int    `json:"qos"`
+	CleanSession     bool   `json:"clean_session"`
+	KeepAliveSeconds int    `json:"keep_alive_seconds,omitempty"`
+	Discovery        bool   `json:"discovery"`
+	DiscoveryPrefix  string `json:"discovery_prefix,omitempty"`
 }
 
 // SetMQTT stores the MQTT client and configuration for reporting and binds recipients.
@@ -218,13 +225,22 @@ func (m *GatewayManager) GetMQTTStatus() MQTTStatus {
 		connected = m.mqttClient.IsConnected()
 	}
 	return MQTTStatus{
-		Connected:       connected,
-		Broker:          m.mqttCfg.Broker,
-		Port:            m.mqttCfg.Port,
-		ClientID:        m.mqttCfg.ClientID,
-		TopicPrefix:     m.mqttCfg.TopicPrefix,
-		Username:        m.mqttCfg.Username,
-		Discovery:       m.mqttCfg.Discovery,
-		DiscoveryPrefix: m.mqttCfg.DiscoveryPrefix,
+		Connected:        connected,
+		Broker:           m.mqttCfg.Broker,
+		Port:             m.mqttCfg.Port,
+		ClientID:         m.mqttCfg.ClientID,
+		TopicPrefix:      m.mqttCfg.TopicPrefix,
+		Username:         m.mqttCfg.Username,
+		QoS:              m.mqttCfg.QoS,
+		CleanSession:     m.mqttCfg.CleanSession,
+		KeepAliveSeconds: int(m.mqttCfg.KeepAlive.Seconds()),
+		Discovery:        m.mqttCfg.Discovery,
+		DiscoveryPrefix:  m.mqttCfg.DiscoveryPrefix,
 	}
+}
+
+func (m *GatewayManager) qos() byte {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return byte(m.mqttCfg.QoS)
 }

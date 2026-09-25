@@ -19,6 +19,12 @@ mqtt:
   password: ""                         # Broker password
   client_id: "gsm2mqtt-openwrt"        # Unique MQTT client identifier
   topic_prefix: "gsm2mqtt"             # Root MQTT topic prefix
+  qos: 1                               # MQTT QoS level: 0 (at most once), 1 (at least once), 2 (exactly once)
+  clean_session: true                  # Clean session flag (set false to persist subscriptions across reconnects)
+  keep_alive: 60s                      # MQTT keep-alive ping interval (e.g., 30s, 60s)
+  connect_timeout: 10s                 # Broker connection timeout (e.g., 10s)
+  auto_reconnect: true                 # Automatically reconnect on connection loss
+  max_reconnect_interval: 10m          # Maximum reconnection backoff interval
   discovery: true                      # Enable Home Assistant MQTT Auto Discovery (true / false)
   discovery_prefix: "homeassistant"    # Home Assistant Discovery prefix
 

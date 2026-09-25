@@ -19,13 +19,23 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/services"
 	"github.com/legoser/gsm2mqtt/internal/transport"
+	verPkg "github.com/legoser/gsm2mqtt/internal/version"
 )
 
 // version and buildTime are set at compile time via ldflags.
 var (
-	version   = "dev"
-	buildTime = "unknown"
+	version   = verPkg.Version
+	buildTime = verPkg.BuildTime
 )
+
+func init() {
+	if version != "" && version != "dev" {
+		verPkg.Version = version
+	}
+	if buildTime != "" && buildTime != "unknown" {
+		verPkg.BuildTime = buildTime
+	}
+}
 
 func main() {
 	os.Exit(run())
@@ -95,7 +105,7 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 	<-ctx.Done()
 	logger.Info("shutting down runners...")
 	wg.Wait()
-	_ = mqttClient.Publish(fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix), 1, true, []byte("offline"))
+	_ = mqttClient.Publish(fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix), byte(cfg.MQTT.QoS), true, []byte("offline"))
 	logger.Info("gsm2mqtt stopped cleanly")
 	return 0
 }
@@ -150,19 +160,31 @@ func startAPIServer(ctx context.Context, cfg *config.Config, manager *services.G
 func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {
 	brokerURI := cfg.MQTT.Broker
 	if cfg.MQTT.Port > 0 && !strings.Contains(brokerURI, ":") {
-		brokerURI = fmt.Sprintf("tcp://%s:%d", brokerURI, cfg.MQTT.Port)
+		scheme := "tcp"
+		if cfg.MQTT.TLS.Enabled {
+			scheme = "ssl"
+		}
+		brokerURI = fmt.Sprintf("%s://%s:%d", scheme, brokerURI, cfg.MQTT.Port)
 	}
 
 	client, err := mqtt.NewPahoClient(mqtt.ClientConfig{
-		Broker:      brokerURI,
-		Port:        cfg.MQTT.Port,
-		Username:    cfg.MQTT.Username,
-		Password:    cfg.MQTT.Password,
-		ClientID:    cfg.MQTT.ClientID,
-		LWTTopic:    fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix),
-		LWTPayload:  "offline",
-		TLSEnabled:  cfg.MQTT.TLS.Enabled,
-		InsecureTLS: cfg.MQTT.TLS.InsecureSkipVerify,
+		Broker:               brokerURI,
+		Port:                 cfg.MQTT.Port,
+		Username:             cfg.MQTT.Username,
+		Password:             cfg.MQTT.Password,
+		ClientID:             cfg.MQTT.ClientID,
+		QoS:                  byte(cfg.MQTT.QoS),
+		CleanSession:         cfg.MQTT.CleanSession,
+		KeepAlive:            cfg.MQTT.KeepAlive,
+		ConnectTimeout:       cfg.MQTT.ConnectTimeout,
+		AutoReconnect:        cfg.MQTT.AutoReconnect,
+		MaxReconnectInterval: cfg.MQTT.MaxReconnectInterval,
+		LWTTopic:             fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix),
+		LWTPayload:           "offline",
+		LWTQoS:               byte(cfg.MQTT.QoS),
+		LWTRetained:          true,
+		TLSEnabled:           cfg.MQTT.TLS.Enabled,
+		InsecureTLS:          cfg.MQTT.TLS.InsecureSkipVerify,
 	})
 	if err != nil {
 		return nil, err
@@ -172,7 +194,7 @@ func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {
 		return nil, fmt.Errorf("connect to broker %s: %w", brokerURI, err)
 	}
 
-	_ = client.Publish(fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix), 1, true, []byte("online"))
+	_ = client.Publish(fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix), byte(cfg.MQTT.QoS), true, []byte("online"))
 	return client, nil
 }
 

@@ -66,9 +66,9 @@ func (r *ModemRunner) subscribeSMS(ctx context.Context,
 			}
 		}
 	}
-	_ = r.mqttClient.Subscribe(r.topics.SMSSend(), 1, handler)
+	_ = r.mqttClient.Subscribe(r.topics.SMSSend(), r.qos(), handler)
 	if r.SlotIndex() == 1 {
-		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/sms/send", r.cfg.MQTT.TopicPrefix), 1, handler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/sms/send", r.cfg.MQTT.TopicPrefix), r.qos(), handler)
 	}
 }
 
@@ -93,7 +93,7 @@ func (r *ModemRunner) sendAndReportSMS(ctx context.Context,
 			rep, _ := diagSvc.RunDiagnostic(ctx, "sms_send_failure")
 			if rep != nil {
 				dPayload, _ := json.Marshal(rep)
-				_ = r.mqttClient.Publish(r.topics.Diagnostic(), 1, false, dPayload)
+				_ = r.mqttClient.Publish(r.topics.Diagnostic(), r.qos(), false, dPayload)
 			}
 		}
 		if r.cfg.Security.FallbackCall && callSvc != nil {
@@ -111,7 +111,7 @@ func (r *ModemRunner) sendAndReportSMS(ctx context.Context,
 	tariffMgr.RecordSMS(len(refs))
 	st := tariffMgr.Status()
 	stPayload, _ := json.Marshal(st)
-	_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, false, stPayload)
+	_ = r.mqttClient.Publish(r.topics.AccountingStatus(), r.qos(), false, stPayload)
 }
 
 func extractLeadingRecipient(text string) (string, string, bool) {
@@ -149,11 +149,11 @@ func (r *ModemRunner) subscribeCall(ctx context.Context, callSvc *CallService) {
 		slog.Info("call hangup requested via MQTT", slog.String("modem", r.mCfg.ID))
 		_ = callSvc.Hangup(ctx)
 	}
-	_ = r.mqttClient.Subscribe(r.topics.CallDial(), 1, dialHandler)
-	_ = r.mqttClient.Subscribe(r.topics.CallHangup(), 1, hangupHandler)
+	_ = r.mqttClient.Subscribe(r.topics.CallDial(), r.qos(), dialHandler)
+	_ = r.mqttClient.Subscribe(r.topics.CallHangup(), r.qos(), hangupHandler)
 	if r.SlotIndex() == 1 {
-		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/call/dial", r.cfg.MQTT.TopicPrefix), 1, dialHandler)
-		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/call/hangup", r.cfg.MQTT.TopicPrefix), 1, hangupHandler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/call/dial", r.cfg.MQTT.TopicPrefix), r.qos(), dialHandler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/call/hangup", r.cfg.MQTT.TopicPrefix), r.qos(), hangupHandler)
 	}
 }
 
@@ -177,9 +177,9 @@ func (r *ModemRunner) subscribeUSSD(ctx context.Context, ussdSvc *USSDService) {
 			}
 		}
 	}
-	_ = r.mqttClient.Subscribe(r.topics.USSDSend(), 1, handler)
+	_ = r.mqttClient.Subscribe(r.topics.USSDSend(), r.qos(), handler)
 	if r.SlotIndex() == 1 {
-		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/ussd/send", r.cfg.MQTT.TopicPrefix), 1, handler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/ussd/send", r.cfg.MQTT.TopicPrefix), r.qos(), handler)
 	}
 }
 
@@ -189,19 +189,19 @@ func (r *ModemRunner) subscribeRawAT(ctx context.Context, driver modem.Driver, s
 		slog.Info("raw AT command requested via MQTT", slog.String("modem", r.mCfg.ID), slog.String("cmd", cmd))
 		if err := sanitizer.Validate(cmd); err != nil {
 			slog.Warn("raw AT command rejected by sanitizer", slog.String("modem", r.mCfg.ID), slog.String("cmd", cmd), slog.Any("error", err))
-			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(fmt.Sprintf("REJECTED: %v", err)))
+			_ = r.mqttClient.Publish(r.topics.CommandResponse(), r.qos(), false, []byte(fmt.Sprintf("REJECTED: %v", err)))
 			return
 		}
 		out, err := driver.SendRawAT(cmd)
 		if err != nil {
 			slog.Error("raw AT command execution failed", slog.String("modem", r.mCfg.ID), slog.String("cmd", cmd), slog.Any("error", err))
-			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(fmt.Sprintf("ERROR: %v", err)))
+			_ = r.mqttClient.Publish(r.topics.CommandResponse(), r.qos(), false, []byte(fmt.Sprintf("ERROR: %v", err)))
 		} else {
-			_ = r.mqttClient.Publish(r.topics.CommandResponse(), 1, false, []byte(out))
+			_ = r.mqttClient.Publish(r.topics.CommandResponse(), r.qos(), false, []byte(out))
 		}
 	}
-	_ = r.mqttClient.Subscribe(r.topics.CommandRaw(), 1, handler)
+	_ = r.mqttClient.Subscribe(r.topics.CommandRaw(), r.qos(), handler)
 	if r.SlotIndex() == 1 {
-		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/command/raw", r.cfg.MQTT.TopicPrefix), 1, handler)
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/command/raw", r.cfg.MQTT.TopicPrefix), r.qos(), handler)
 	}
 }

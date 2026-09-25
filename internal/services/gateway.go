@@ -180,7 +180,7 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 			"text":      last.Text,
 			"timestamp": last.Timestamp,
 		})
-		_ = r.mqttClient.Publish(r.topics.SMSReceived(), 1, true, lastPayload)
+		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), true, lastPayload)
 	}
 	r.mu.RUnlock()
 
@@ -308,4 +308,11 @@ func (r *ModemRunner) urcLoop(
 			ussdSvc.HandleURC(line)
 		}
 	}
+}
+
+func (r *ModemRunner) qos() byte {
+	if r.cfg != nil {
+		return byte(r.cfg.MQTT.QoS)
+	}
+	return 1
 }

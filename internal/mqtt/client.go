@@ -16,21 +16,32 @@ type MessageHandler func(topic string, payload []byte)
 
 // ClientConfig holds settings for establishing MQTT broker sessions.
 type ClientConfig struct {
-	Broker      string
-	Port        int
-	Username    string
-	Password    string
-	ClientID    string
-	LWTTopic    string
-	LWTPayload  string
-	TLSEnabled  bool
-	InsecureTLS bool
+	Broker               string
+	Port                 int
+	Username             string
+	Password             string
+	ClientID             string
+	QoS                  byte
+	CleanSession         bool
+	KeepAlive            time.Duration
+	ConnectTimeout       time.Duration
+	AutoReconnect        bool
+	MaxReconnectInterval time.Duration
+	LWTTopic             string
+	LWTPayload           string
+	LWTQoS               byte
+	LWTRetained          bool
+	TLSEnabled           bool
+	InsecureTLS          bool
 }
 
 // Validate checks essential MQTT client configuration parameters.
 func (c *ClientConfig) Validate() error {
 	if strings.TrimSpace(c.Broker) == "" {
 		return fmt.Errorf("broker address cannot be empty")
+	}
+	if c.QoS > 2 {
+		return fmt.Errorf("invalid QoS %d: must be 0, 1, or 2", c.QoS)
 	}
 	return nil
 }
@@ -70,7 +81,11 @@ func NewPahoClient(cfg ClientConfig) (*PahoClient, error) {
 	}
 
 	if cfg.LWTTopic != "" {
-		opts.SetWill(cfg.LWTTopic, cfg.LWTPayload, 1, true)
+		lwtQoS := cfg.LWTQoS
+		if lwtQoS == 0 && cfg.QoS != 0 {
+			lwtQoS = cfg.QoS
+		}
+		opts.SetWill(cfg.LWTTopic, cfg.LWTPayload, lwtQoS, cfg.LWTRetained)
 	}
 
 	if cfg.TLSEnabled {
@@ -79,8 +94,25 @@ func NewPahoClient(cfg ClientConfig) (*PahoClient, error) {
 		})
 	}
 
-	opts.SetAutoReconnect(true)
-	opts.SetConnectTimeout(10 * time.Second)
+	opts.SetCleanSession(cfg.CleanSession)
+	opts.SetAutoReconnect(cfg.AutoReconnect)
+
+	if cfg.KeepAlive > 0 {
+		opts.SetKeepAlive(cfg.KeepAlive)
+	} else {
+		opts.SetKeepAlive(60 * time.Second)
+	}
+
+	timeout := cfg.ConnectTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	opts.SetConnectTimeout(timeout)
+
+	if cfg.MaxReconnectInterval > 0 {
+		opts.SetMaxReconnectInterval(cfg.MaxReconnectInterval)
+	}
+
 	opts.SetOnConnectHandler(func(_ paho.Client) {
 		slog.Info("connected to MQTT broker", slog.String("broker", cfg.Broker), slog.String("client_id", cfg.ClientID))
 	})
@@ -128,7 +160,11 @@ func (c *PahoClient) Publish(topic string, qos byte, retained bool, payload []by
 		return ErrNotConnected
 	}
 	token := c.client.Publish(topic, qos, retained, payload)
-	if !token.WaitTimeout(10 * time.Second) {
+	timeout := 10 * time.Second
+	if c.cfg.ConnectTimeout > 0 {
+		timeout = c.cfg.ConnectTimeout
+	}
+	if !token.WaitTimeout(timeout) {
 		return fmt.Errorf("MQTT operation timed out")
 	}
 	if token.Error() != nil {
@@ -145,7 +181,11 @@ func (c *PahoClient) Subscribe(topic string, qos byte, handler MessageHandler) e
 		slog.Debug("received MQTT message", slog.String("topic", m.Topic()), slog.Int("bytes", len(m.Payload())))
 		handler(m.Topic(), m.Payload())
 	})
-	if !token.WaitTimeout(10 * time.Second) {
+	timeout := 10 * time.Second
+	if c.cfg.ConnectTimeout > 0 {
+		timeout = c.cfg.ConnectTimeout
+	}
+	if !token.WaitTimeout(timeout) {
 		return fmt.Errorf("MQTT operation timed out")
 	}
 	if token.Error() != nil {
@@ -160,11 +200,20 @@ func (c *PahoClient) IsConnected() bool {
 	return c.client.IsConnected()
 }
 
+// PublishedMessage records an invocation of Publish for inspection in tests.
+type PublishedMessage struct {
+	Topic    string
+	QoS      byte
+	Retained bool
+	Payload  []byte
+}
+
 // MockClient implements an in-memory MQTTClient for tests.
 type MockClient struct {
 	mu          sync.RWMutex
 	connected   bool
 	subscribers map[string][]MessageHandler
+	published   []PublishedMessage
 }
 
 // NewMockClient creates a new mock MQTT client.
@@ -189,19 +238,35 @@ func (m *MockClient) Disconnect(_ uint) {
 	m.connected = false
 }
 
-// Publish routes the payload in-memory to subscribed handlers.
+// Publish routes the payload in-memory to subscribed handlers and records the message.
 func (m *MockClient) Publish(topic string, qos byte, retained bool, payload []byte) error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
 	if !m.connected {
+		m.mu.Unlock()
 		return ErrNotConnected
 	}
-	if handlers, ok := m.subscribers[topic]; ok {
-		for _, h := range handlers {
-			h(topic, payload)
-		}
+	m.published = append(m.published, PublishedMessage{
+		Topic:    topic,
+		QoS:      qos,
+		Retained: retained,
+		Payload:  payload,
+	})
+	handlers := append([]MessageHandler(nil), m.subscribers[topic]...)
+	m.mu.Unlock()
+
+	for _, h := range handlers {
+		h(topic, payload)
 	}
 	return nil
+}
+
+// Published returns a snapshot of all messages published to this mock client.
+func (m *MockClient) Published() []PublishedMessage {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	res := make([]PublishedMessage, len(m.published))
+	copy(res, m.published)
+	return res
 }
 
 // Subscribe registers an in-memory topic handler.

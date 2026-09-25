@@ -306,3 +306,42 @@ SPACED_KEY = spaced_val
 		t.Errorf("SPACED_KEY = %q, want 'spaced_val'", m["SPACED_KEY"])
 	}
 }
+
+func TestMQTTConnectionOverrides(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgFile := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgFile, []byte("mqtt:\n  broker: localhost\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GSM2MQTT_MQTT_QOS", "2")
+	t.Setenv("GSM2MQTT_MQTT_CLEAN_SESSION", "false")
+	t.Setenv("GSM2MQTT_MQTT_KEEP_ALIVE", "30s")
+	t.Setenv("GSM2MQTT_MQTT_CONNECT_TIMEOUT", "15s")
+	t.Setenv("GSM2MQTT_MQTT_AUTO_RECONNECT", "false")
+	t.Setenv("GSM2MQTT_MQTT_MAX_RECONNECT_INTERVAL", "5m")
+
+	cfg, err := Load(cfgFile)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.MQTT.QoS != 2 {
+		t.Errorf("expected QoS 2, got %d", cfg.MQTT.QoS)
+	}
+	if cfg.MQTT.CleanSession != false {
+		t.Errorf("expected CleanSession false, got %v", cfg.MQTT.CleanSession)
+	}
+	if cfg.MQTT.KeepAlive != 30*time.Second {
+		t.Errorf("expected KeepAlive 30s, got %v", cfg.MQTT.KeepAlive)
+	}
+	if cfg.MQTT.ConnectTimeout != 15*time.Second {
+		t.Errorf("expected ConnectTimeout 15s, got %v", cfg.MQTT.ConnectTimeout)
+	}
+	if cfg.MQTT.AutoReconnect != false {
+		t.Errorf("expected AutoReconnect false, got %v", cfg.MQTT.AutoReconnect)
+	}
+	if cfg.MQTT.MaxReconnectInterval != 5*time.Minute {
+		t.Errorf("expected MaxReconnectInterval 5m, got %v", cfg.MQTT.MaxReconnectInterval)
+	}
+}
+

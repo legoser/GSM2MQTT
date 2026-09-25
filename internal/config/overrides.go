@@ -63,6 +63,24 @@ func applyMQTTOverrides(cfg *Config, dotEnv map[string]string) {
 	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_MQTT_TOPIC_PREFIX", "MQTT_TOPIC_PREFIX"); v != "" {
 		cfg.MQTT.TopicPrefix = v
 	}
+	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_MQTT_QOS", "MQTT_QOS"); v != "" {
+		cfg.MQTT.QoS = atoi(v, cfg.MQTT.QoS)
+	}
+	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_MQTT_CLEAN_SESSION", "MQTT_CLEAN_SESSION"); v != "" {
+		cfg.MQTT.CleanSession = parseBool(v, cfg.MQTT.CleanSession)
+	}
+	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_MQTT_KEEP_ALIVE", "MQTT_KEEP_ALIVE"); v != "" {
+		cfg.MQTT.KeepAlive = parseDuration(v, cfg.MQTT.KeepAlive)
+	}
+	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_MQTT_CONNECT_TIMEOUT", "MQTT_CONNECT_TIMEOUT"); v != "" {
+		cfg.MQTT.ConnectTimeout = parseDuration(v, cfg.MQTT.ConnectTimeout)
+	}
+	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_MQTT_AUTO_RECONNECT", "MQTT_AUTO_RECONNECT"); v != "" {
+		cfg.MQTT.AutoReconnect = parseBool(v, cfg.MQTT.AutoReconnect)
+	}
+	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_MQTT_MAX_RECONNECT_INTERVAL", "MQTT_MAX_RECONNECT_INTERVAL"); v != "" {
+		cfg.MQTT.MaxReconnectInterval = parseDuration(v, cfg.MQTT.MaxReconnectInterval)
+	}
 	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_MQTT_DISCOVERY", "MQTT_DISCOVERY"); v != "" {
 		cfg.MQTT.Discovery = parseBool(v, cfg.MQTT.Discovery)
 	}

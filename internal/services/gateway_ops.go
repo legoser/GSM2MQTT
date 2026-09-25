@@ -16,6 +16,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/operator"
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
+	"github.com/legoser/gsm2mqtt/internal/version"
 )
 
 // ID returns the configured identifier of the modem.
@@ -109,13 +110,13 @@ func (r *ModemRunner) applyParsedBalance(text string) {
 
 	metrics.DefaultRegistry.SetGauge("gsm2mqtt_balance_rub", map[string]string{"modem": r.mCfg.ID}, bal)
 	if r.mqttClient != nil && r.mqttClient.IsConnected() {
-		_ = r.mqttClient.Publish(r.topics.Balance(), 1, false, []byte(fmt.Sprintf("%.2f", bal)))
+		_ = r.mqttClient.Publish(r.topics.Balance(), r.qos(), false, []byte(fmt.Sprintf("%.2f", bal)))
 		if tm != nil {
 			st := tm.Status()
 			metrics.DefaultRegistry.SetGauge("gsm2mqtt_tariff_sms_used", map[string]string{"modem": r.mCfg.ID}, float64(st.SMSMonthCount))
 			metrics.DefaultRegistry.SetGauge("gsm2mqtt_tariff_sms_limit", map[string]string{"modem": r.mCfg.ID}, float64(st.SMSLimit))
 			stPayload, _ := json.Marshal(st)
-			_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, false, stPayload)
+			_ = r.mqttClient.Publish(r.topics.AccountingStatus(), r.qos(), false, stPayload)
 		}
 	}
 	slog.Info("modem balance updated", slog.String("modem", r.mCfg.ID), slog.Float64("balance", bal), slog.String("currency", currency))
@@ -191,14 +192,15 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 		model = r.mCfg.Type
 	}
 
-	if gwMsg, err := mqtt.BuildGatewayDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
-		_ = r.mqttClient.Publish(gwMsg.Topic, 1, true, gwMsg.Payload)
+	gwVer := version.Version
+	if gwMsg, err := mqtt.BuildGatewayDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, gwVer); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(gwMsg.Topic, r.qos(), true, gwMsg.Payload)
 	}
-	if mcMsg, err := mqtt.BuildGatewayModemCountDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
-		_ = r.mqttClient.Publish(mcMsg.Topic, 1, true, mcMsg.Payload)
+	if mcMsg, err := mqtt.BuildGatewayModemCountDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, gwVer); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(mcMsg.Topic, r.qos(), true, mcMsg.Payload)
 	}
-	if amMsg, err := mqtt.BuildGatewayActiveModemDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, "1.0.0"); err == nil && r.mqttClient.IsConnected() {
-		_ = r.mqttClient.Publish(amMsg.Topic, 1, true, amMsg.Payload)
+	if amMsg, err := mqtt.BuildGatewayActiveModemDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, gwVer); err == nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(amMsg.Topic, r.qos(), true, amMsg.Payload)
 	}
 
 	gwModemsPayload, _ := json.Marshal(map[string]any{
@@ -214,15 +216,15 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 			},
 		},
 	})
-	_ = r.mqttClient.Publish(fmt.Sprintf("%s/gateway/modems", r.cfg.MQTT.TopicPrefix), 1, true, gwModemsPayload)
+	_ = r.mqttClient.Publish(fmt.Sprintf("%s/gateway/modems", r.cfg.MQTT.TopicPrefix), r.qos(), true, gwModemsPayload)
 
 	if recMsg, err := mqtt.BuildRecipientsTextDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix); err == nil && r.mqttClient.IsConnected() {
-		_ = r.mqttClient.Publish(recMsg.Topic, 1, true, recMsg.Payload)
+		_ = r.mqttClient.Publish(recMsg.Topic, r.qos(), true, recMsg.Payload)
 	}
 
 	if r.recipientsMgr != nil && r.mqttClient.IsConnected() {
 		recPayload, _ := json.Marshal(r.recipientsMgr.Get())
-		_ = r.mqttClient.Publish(fmt.Sprintf("%s/config/recipients", r.cfg.MQTT.TopicPrefix), 1, true, recPayload)
+		_ = r.mqttClient.Publish(fmt.Sprintf("%s/config/recipients", r.cfg.MQTT.TopicPrefix), r.qos(), true, recPayload)
 	}
 
 	messages, err := mqtt.BuildModemDiscoveries(mqtt.ModemDiscoveryParams{
@@ -237,7 +239,7 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 	})
 	if err == nil && r.mqttClient.IsConnected() {
 		for _, msg := range messages {
-			_ = r.mqttClient.Publish(msg.Topic, 1, true, msg.Payload)
+			_ = r.mqttClient.Publish(msg.Topic, r.qos(), true, msg.Payload)
 		}
 	}
 
@@ -247,7 +249,7 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 	if tm != nil && r.mqttClient.IsConnected() {
 		st := tm.Status()
 		stPayload, _ := json.Marshal(st)
-		_ = r.mqttClient.Publish(r.topics.AccountingStatus(), 1, true, stPayload)
+		_ = r.mqttClient.Publish(r.topics.AccountingStatus(), r.qos(), true, stPayload)
 	}
 }
 

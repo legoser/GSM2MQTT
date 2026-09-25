@@ -18,6 +18,12 @@ mqtt:
   password: ""                         # GSM2MQTT_MQTT_PASSWORD — Broker password
   client_id: "gsm2mqtt"                # GSM2MQTT_MQTT_CLIENT_ID — Unique MQTT client ID
   topic_prefix: "gsm2mqtt"             # Root MQTT topic prefix
+  qos: 1                               # GSM2MQTT_MQTT_QOS — MQTT QoS level: 0 (at most once), 1 (at least once), 2 (exactly once)
+  clean_session: true                  # GSM2MQTT_MQTT_CLEAN_SESSION — Clean session flag (set false to persist subscriptions)
+  keep_alive: 60s                      # GSM2MQTT_MQTT_KEEP_ALIVE — MQTT keep-alive ping interval (e.g., 30s, 60s)
+  connect_timeout: 10s                 # GSM2MQTT_MQTT_CONNECT_TIMEOUT — Broker connection timeout (e.g., 10s)
+  auto_reconnect: true                 # GSM2MQTT_MQTT_AUTO_RECONNECT — Automatically reconnect on connection loss
+  max_reconnect_interval: 10m          # GSM2MQTT_MQTT_MAX_RECONNECT_INTERVAL — Maximum backoff interval between reconnects
   discovery: true                      # Home Assistant MQTT Auto Discovery (true / false)
   discovery_prefix: "homeassistant"    # Home Assistant Discovery topic prefix
 
