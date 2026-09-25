@@ -178,7 +178,7 @@ def format_markdown(grouped, tag_name, range_spec):
     return "\n".join(lines).strip() + "\n"
 
 
-def update_changelog_file(changelog_path, tag_name, grouped):
+def update_changelog_file(changelog_path, tag_name, grouped, force=False):
     if not os.path.exists(changelog_path):
         print(f"Warning: {changelog_path} not found, skipping update.", file=sys.stderr)
         return
@@ -188,7 +188,7 @@ def update_changelog_file(changelog_path, tag_name, grouped):
 
     clean_ver = tag_name.lstrip("v")
     header_pattern = f"## [{clean_ver}]"
-    if header_pattern in content:
+    if header_pattern in content and not force:
         print(f"Note: {changelog_path} already contains section {header_pattern}. Skipping update.")
         return
 
@@ -208,22 +208,31 @@ def update_changelog_file(changelog_path, tag_name, grouped):
                     section_lines.append(f"    {b_strip}")
         section_lines.append("")
 
-    new_section = "\n".join(section_lines)
+    new_section = "\n".join(section_lines).strip()
 
-    # Insert under ## [Unreleased]
-    unreleased_idx = content.find("## [Unreleased]")
-    if unreleased_idx != -1:
-        insert_pos = content.find("\n", unreleased_idx)
-        if insert_pos != -1:
-            updated = content[:insert_pos + 1] + "\n" + new_section + content[insert_pos + 1:]
+    if header_pattern in content and force:
+        pattern = rf"(?ms)^## \[{re.escape(clean_ver)}\].*?(?=^## \[|\Z)"
+        updated, count = re.subn(pattern, new_section + "\n\n", content, count=1)
+        if count == 0:
+            print(f"Warning: Could not match existing {header_pattern} block to replace; appending under Unreleased.", file=sys.stderr)
+            updated = content + "\n\n" + new_section + "\n"
         else:
-            updated = content + "\n\n" + new_section
+            print(f"Successfully replaced existing section {header_pattern} in {changelog_path} (--force)")
     else:
-        updated = content + "\n\n" + new_section
+        # Insert under ## [Unreleased]
+        unreleased_idx = content.find("## [Unreleased]")
+        if unreleased_idx != -1:
+            insert_pos = content.find("\n", unreleased_idx)
+            if insert_pos != -1:
+                updated = content[:insert_pos + 1] + "\n" + new_section + "\n\n" + content[insert_pos + 1:].lstrip("\n")
+            else:
+                updated = content + "\n\n" + new_section + "\n"
+        else:
+            updated = content + "\n\n" + new_section + "\n"
+        print(f"Successfully updated {changelog_path} with {header_pattern}")
 
     with open(changelog_path, "w", encoding="utf-8") as f:
         f.write(updated)
-    print(f"Successfully updated {changelog_path} with {header_pattern}")
 
 
 def git_ref_exists(ref):
@@ -245,6 +254,8 @@ def main():
     parser.add_argument("--update-changelog", action="store_true", help="Automatically update CHANGELOG.md")
     parser.add_argument("--changelog-file", default="CHANGELOG.md", help="Path to CHANGELOG.md")
     parser.add_argument("--include-internal", action="store_true", help="Include internal repository automation and chore commits")
+    parser.add_argument("--force", "-f", action="store_true", help="Overwrite existing section in CHANGELOG.md and evaluate commits up to HEAD")
+    parser.add_argument("--head", action="store_true", help="Always evaluate commit range up to HEAD instead of tag")
     args = parser.parse_args()
 
     tag = args.tag
@@ -257,13 +268,14 @@ def main():
     if not from_tag:
         from_tag = get_previous_tag(current_tag=tag)
 
+    use_head = args.head or args.force
     if from_tag:
-        if git_ref_exists(tag) and tag != "dev":
+        if git_ref_exists(tag) and tag != "dev" and not use_head:
             range_spec = f"{from_tag}..{tag}"
         else:
             range_spec = f"{from_tag}..HEAD"
     else:
-        if git_ref_exists(tag) and tag != "dev":
+        if git_ref_exists(tag) and tag != "dev" and not use_head:
             range_spec = tag
         else:
             range_spec = "HEAD"
@@ -280,7 +292,7 @@ def main():
         print(notes_markdown)
 
     if args.update_changelog:
-        update_changelog_file(args.changelog_file, tag, grouped)
+        update_changelog_file(args.changelog_file, tag, grouped, force=args.force)
 
 
 if __name__ == "__main__":
