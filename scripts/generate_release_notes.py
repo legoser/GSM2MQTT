@@ -17,19 +17,33 @@ import re
 import subprocess
 import sys
 
-CATEGORY_MAP = [
+# Product-facing categories included in user-facing Release Notes
+PRODUCT_CATEGORIES = [
     ("feat", "Features & Improvements"),
     ("fix", "Bug Fixes"),
-    ("perf", "Performance"),
-    ("refactor", "Refactoring"),
+    ("perf", "Performance Improvements"),
     ("docs", "Documentation"),
-    ("build", "Build & Packaging"),
+    ("refactor", "Refactoring"),
+]
+
+# Internal repository automation categories (excluded from release notes by default)
+INTERNAL_CATEGORIES = [
+    ("build", "Build System"),
     ("ci", "CI/CD & Automation"),
     ("test", "Tests"),
     ("chore", "Maintenance"),
 ]
 
-DEFAULT_CATEGORY = "Other Changes"
+DEFAULT_CATEGORY = "Other Product Changes"
+
+
+def is_internal_commit(ctype, scope):
+    """Check whether a commit belongs to repository automation / internal tooling."""
+    if ctype in ("ci", "chore", "test"):
+        return True
+    if scope and scope.lower() in ("ci", "repo", "workflow", "actions", "deps", "infra"):
+        return True
+    return False
 
 
 def run_git(args, check=True):
@@ -83,18 +97,26 @@ def parse_conventional_commit(subj):
     return "other", None, subj
 
 
-def group_commits(commits):
-    cat_lookup = dict(CATEGORY_MAP)
+def group_commits(commits, include_internal=False):
+    prod_lookup = dict(PRODUCT_CATEGORIES)
+    all_lookup = dict(PRODUCT_CATEGORIES + INTERNAL_CATEGORIES)
     grouped = {}
 
     for h, subj, body in commits:
         ctype, scope, desc = parse_conventional_commit(subj)
-        cat = cat_lookup.get(ctype, DEFAULT_CATEGORY)
+        if not include_internal and is_internal_commit(ctype, scope):
+            continue
+
+        cat = prod_lookup.get(ctype) if not include_internal else all_lookup.get(ctype)
+        if not cat:
+            cat = DEFAULT_CATEGORY
+
         grouped.setdefault(cat, []).append((h, scope, desc, body))
 
     # Maintain defined category order
+    cat_order = PRODUCT_CATEGORIES if not include_internal else (PRODUCT_CATEGORIES + INTERNAL_CATEGORIES)
     ordered = {}
-    for _, cat_title in CATEGORY_MAP:
+    for _, cat_title in cat_order:
         if cat_title in grouped:
             ordered[cat_title] = grouped[cat_title]
     if DEFAULT_CATEGORY in grouped:
@@ -212,6 +234,7 @@ def main():
     parser.add_argument("--output", "-o", default="", help="File to write release notes to (e.g., release_notes.md)")
     parser.add_argument("--update-changelog", action="store_true", help="Automatically update CHANGELOG.md")
     parser.add_argument("--changelog-file", default="CHANGELOG.md", help="Path to CHANGELOG.md")
+    parser.add_argument("--include-internal", action="store_true", help="Include internal repository automation and chore commits")
     args = parser.parse_args()
 
     tag = args.tag
@@ -236,7 +259,7 @@ def main():
             range_spec = "HEAD"
 
     commits = get_commits(range_spec)
-    grouped = group_commits(commits)
+    grouped = group_commits(commits, include_internal=args.include_internal)
     notes_markdown = format_markdown(grouped, tag, range_spec)
 
     if args.output:
