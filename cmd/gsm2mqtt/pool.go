@@ -50,7 +50,9 @@ func bindPoolMQTT(
 ) {
 	topics := mqtt.NewTopics(cfg.MQTT.TopicPrefix, "")
 
-	_ = mqttClient.Subscribe(topics.PoolSMSSend(), 1, func(_ string, payload []byte) {
+	qos := byte(cfg.MQTT.QoS)
+
+	_ = mqttClient.Subscribe(topics.PoolSMSSend(), qos, func(_ string, payload []byte) {
 		var req struct {
 			To   string `json:"to"`
 			Text string `json:"text"`
@@ -63,7 +65,7 @@ func bindPoolMQTT(
 		}
 	})
 
-	_ = mqttClient.Subscribe(topics.PoolCallDial(), 1, func(_ string, payload []byte) {
+	_ = mqttClient.Subscribe(topics.PoolCallDial(), qos, func(_ string, payload []byte) {
 		var req struct {
 			Number string `json:"number"`
 		}
@@ -74,11 +76,11 @@ func bindPoolMQTT(
 		}
 	})
 
-	_ = mqttClient.Subscribe(topics.PoolCallHangup(), 1, func(_ string, _ []byte) {
+	_ = mqttClient.Subscribe(topics.PoolCallHangup(), qos, func(_ string, _ []byte) {
 		_ = p.Hangup(ctx)
 	})
 
-	_ = mqttClient.Subscribe(topics.PoolUSSDSend(), 1, func(_ string, payload []byte) {
+	_ = mqttClient.Subscribe(topics.PoolUSSDSend(), qos, func(_ string, payload []byte) {
 		var req struct {
 			Code string `json:"code"`
 		}
@@ -99,7 +101,7 @@ func bindPoolMQTT(
 				metrics.DefaultRegistry.SetGauge("gsm2mqtt_pool_modems_total", nil, float64(st.TotalModems))
 				metrics.DefaultRegistry.SetGauge("gsm2mqtt_pool_modems_ready", nil, float64(st.ReadyModems))
 				payload, _ := json.Marshal(st)
-				_ = mqttClient.Publish(topics.PoolStatus(), 1, false, payload)
+				_ = mqttClient.Publish(topics.PoolStatus(), qos, false, payload)
 			}
 		}
 	}()

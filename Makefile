@@ -1,7 +1,7 @@
 APP_NAME := gsm2mqtt
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)"
+LDFLAGS := -ldflags "-s -w -X github.com/legoser/gsm2mqtt/internal/version.Version=$(VERSION) -X github.com/legoser/gsm2mqtt/internal/version.BuildTime=$(BUILD_TIME) -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)"
 
 .PHONY: build build-all build-riscv64 package-openwrt package-opkg package-apk changelog release-notes test test-cover lint vet docker clean help
 

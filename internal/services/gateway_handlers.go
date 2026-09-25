@@ -48,8 +48,8 @@ func (r *ModemRunner) wireServices(
 		StorageDir:         r.cfg.Tariff.StorageDir,
 	}, func(a tariff.AlertEvent) {
 		payload, _ := json.Marshal(a)
-		_ = r.mqttClient.Publish(r.topics.AccountingAlert(), 1, false, payload)
-		_ = r.mqttClient.Publish(r.topics.Alert(), 1, false, []byte(a.Message))
+		_ = r.mqttClient.Publish(r.topics.AccountingAlert(), r.qos(), false, payload)
+		_ = r.mqttClient.Publish(r.topics.Alert(), r.qos(), false, []byte(a.Message))
 	})
 
 	r.mu.Lock()
@@ -66,19 +66,19 @@ func (r *ModemRunner) wireServices(
 
 	ussdSvc := NewUSSDService(r.mCfg.ID, driver, func(resp *ussd.Response) {
 		payload, _ := json.Marshal(resp)
-		_ = r.mqttClient.Publish(r.topics.USSDResponse(), 1, false, payload)
+		_ = r.mqttClient.Publish(r.topics.USSDResponse(), r.qos(), false, payload)
 	})
 
 	diagSvc := NewDiagnosticService(r.mCfg.ID, driver, func() (float64, string, error) {
 		st := tariffMgr.Status()
 		return st.Balance, st.Currency, nil
 	}, func(alert string) {
-		_ = r.mqttClient.Publish(r.topics.Alert(), 1, false, []byte(alert))
+		_ = r.mqttClient.Publish(r.topics.Alert(), r.qos(), false, []byte(alert))
 	})
 
 	smsTracker := sms.NewTracker(r.cfg.SMS.DeliveryReport.Timeout, func(e sms.DeliveryEvent) {
 		payload, _ := json.Marshal(e)
-		_ = r.mqttClient.Publish(r.topics.SMSStatus(), 1, false, payload)
+		_ = r.mqttClient.Publish(r.topics.SMSStatus(), r.qos(), false, payload)
 	})
 
 	assembler := sms.NewAssembler(24 * time.Hour)
@@ -98,7 +98,7 @@ func (r *ModemRunner) wireServices(
 		r.recordIncomingSMS(msg)
 		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_received_total", map[string]string{"modem": r.mCfg.ID})
 		payload, _ := json.Marshal(msg)
-		_ = r.mqttClient.Publish(r.topics.SMSReceived(), 1, true, payload)
+		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), true, payload)
 
 		r.applyParsedBalance(msg.Text)
 	})
@@ -114,10 +114,11 @@ func (r *ModemRunner) wireServices(
 		}
 
 		payload, _ := json.Marshal(e)
-		if e.Type == "incoming" || e.Type == "ended" {
-			_ = r.mqttClient.Publish(r.topics.CallIncoming(), 1, false, payload)
-		} else if e.Type == "dtmf" {
-			_ = r.mqttClient.Publish(r.topics.CallDTMF(), 1, false, payload)
+		switch e.Type {
+		case "incoming", "ended":
+			_ = r.mqttClient.Publish(r.topics.CallIncoming(), r.qos(), false, payload)
+		case "dtmf":
+			_ = r.mqttClient.Publish(r.topics.CallDTMF(), r.qos(), false, payload)
 		}
 	})
 
@@ -128,7 +129,7 @@ func (r *ModemRunner) wireServices(
 		metrics.DefaultRegistry.SetGauge("gsm2mqtt_signal_rssi", map[string]string{"modem": r.mCfg.ID}, float64(rssi))
 		metrics.DefaultRegistry.SetGauge("gsm2mqtt_signal_dbm", map[string]string{"modem": r.mCfg.ID}, float64(dbm))
 		payload := fmt.Sprintf(`{"rssi":%d,"dbm":%d}`, rssi, dbm)
-		_ = r.mqttClient.Publish(r.topics.SignalStrength(), 1, false, []byte(payload))
+		_ = r.mqttClient.Publish(r.topics.SignalStrength(), r.qos(), false, []byte(payload))
 	}, func(h ModemHealth) {
 		h.ModemID = r.mCfg.ID
 		r.updateHealth(h)
@@ -138,7 +139,7 @@ func (r *ModemRunner) wireServices(
 		}
 		metrics.DefaultRegistry.SetGauge("gsm2mqtt_modem_status", map[string]string{"modem": r.mCfg.ID}, stVal)
 		payload, _ := json.Marshal(h)
-		_ = r.mqttClient.Publish(r.topics.Health(), 1, false, payload)
+		_ = r.mqttClient.Publish(r.topics.Health(), r.qos(), false, payload)
 	})
 
 	return smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc

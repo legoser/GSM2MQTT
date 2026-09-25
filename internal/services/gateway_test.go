@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/config"
 	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
+	"github.com/legoser/gsm2mqtt/internal/tariff"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 )
 
@@ -47,8 +49,16 @@ func (p *mockGatewayPort) Write(b []byte) (int, error) {
 	if p.closed {
 		return 0, io.EOF
 	}
-	// Echo OK for standard commands
-	p.buf = append(p.buf, []byte("\r\nOK\r\n")...)
+	cmd := string(b)
+	switch {
+	case strings.HasPrefix(cmd, "AT+CMGS="):
+		p.buf = append(p.buf, []byte("\r\n> ")...)
+	case strings.HasSuffix(cmd, "\x1A"):
+		p.buf = append(p.buf, []byte("\r\n+CMGS: 42\r\n\r\nOK\r\n")...)
+	default:
+		// Echo OK for standard commands
+		p.buf = append(p.buf, []byte("\r\nOK\r\n")...)
+	}
 	p.cond.Broadcast()
 	return len(b), nil
 }
@@ -259,3 +269,41 @@ func TestExtractLeadingRecipient(t *testing.T) {
 		})
 	}
 }
+
+func TestModemRunner_ConfiguredQoS(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.MQTT.QoS = 2
+
+	mockClient := mqtt.NewMockClient()
+	_ = mockClient.Connect()
+
+	runner := &ModemRunner{
+		mCfg: config.ModemConfig{
+			ID:   "modem1",
+			Port: "/dev/ttyUSB0",
+			Type: "generic",
+		},
+		cfg:        cfg,
+		mqttClient: mockClient,
+		topics:     mqtt.NewTopics("gsm2mqtt", "modem1"),
+	}
+
+	if runner.qos() != 2 {
+		t.Fatalf("expected runner.qos() == 2, got %d", runner.qos())
+	}
+
+	tm := tariff.NewManager("modem1", tariff.Config{OperatorPreset: "generic"}, nil)
+	runner.publishAccountingStatus(tm)
+
+	published := mockClient.Published()
+	if len(published) == 0 {
+		t.Fatal("expected at least one published message")
+	}
+
+	for _, p := range published {
+		if p.QoS != 2 {
+			t.Errorf("expected published QoS 2 for topic %s, got %d", p.Topic, p.QoS)
+		}
+	}
+}
+

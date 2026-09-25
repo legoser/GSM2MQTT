@@ -32,9 +32,26 @@ func TestBuildGatewayDiscovery(t *testing.T) {
 	if devRaw["name"] != "GSM2MQTT Gateway" {
 		t.Errorf("expected device name 'GSM2MQTT Gateway', got %v", devRaw["name"])
 	}
+	if devRaw["sw_version"] != "1.2.0" {
+		t.Errorf("expected sw_version '1.2.0', got %v", devRaw["sw_version"])
+	}
 	ids, ok := devRaw["identifiers"].([]interface{})
 	if !ok || len(ids) == 0 || ids[0] != "gsm2mqtt_gateway" {
 		t.Errorf("expected identifier 'gsm2mqtt_gateway', got %v", ids)
+	}
+
+	// Test default version fallback to version.Version
+	msgDef, err := BuildGatewayDiscovery("homeassistant", "gsm2mqtt", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var payloadDef map[string]interface{}
+	if err := json.Unmarshal(msgDef.Payload, &payloadDef); err != nil {
+		t.Fatalf("invalid JSON payload: %v", err)
+	}
+	devDef := payloadDef["device"].(map[string]interface{})
+	if devDef["sw_version"] == "" || devDef["sw_version"] == "1.0.0" {
+		t.Errorf("expected sw_version to come from version package, got %v", devDef["sw_version"])
 	}
 }
 

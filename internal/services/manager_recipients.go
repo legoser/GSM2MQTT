@@ -70,12 +70,13 @@ func (m *GatewayManager) publishRecipientsState(nums []string) {
 
 	if client != nil && client.IsConnected() && prefix != "" {
 		payload, _ := json.Marshal(nums)
-		_ = client.Publish(fmt.Sprintf("%s/config/recipients", prefix), 1, true, payload)
+		_ = client.Publish(fmt.Sprintf("%s/config/recipients", prefix), m.qos(), true, payload)
 	}
 }
 
 func (m *GatewayManager) subscribeRecipientsMQTT(client mqtt.MQTTClient, prefix string) {
-	_ = client.Subscribe(fmt.Sprintf("%s/config/recipients/set", prefix), 1, func(_ string, payload []byte) {
+	qos := m.qos()
+	_ = client.Subscribe(fmt.Sprintf("%s/config/recipients/set", prefix), qos, func(_ string, payload []byte) {
 		var nums []string
 		if err := json.Unmarshal(payload, &nums); err != nil {
 			raw := string(payload)
@@ -94,7 +95,7 @@ func (m *GatewayManager) subscribeRecipientsMQTT(client mqtt.MQTTClient, prefix 
 		}
 	})
 
-	_ = client.Subscribe(fmt.Sprintf("%s/config/recipients/add", prefix), 1, func(_ string, payload []byte) {
+	_ = client.Subscribe(fmt.Sprintf("%s/config/recipients/add", prefix), qos, func(_ string, payload []byte) {
 		var req struct {
 			Number string `json:"number"`
 		}
@@ -111,7 +112,7 @@ func (m *GatewayManager) subscribeRecipientsMQTT(client mqtt.MQTTClient, prefix 
 		}
 	})
 
-	_ = client.Subscribe(fmt.Sprintf("%s/config/recipients/remove", prefix), 1, func(_ string, payload []byte) {
+	_ = client.Subscribe(fmt.Sprintf("%s/config/recipients/remove", prefix), qos, func(_ string, payload []byte) {
 		var req struct {
 			Number string `json:"number"`
 		}

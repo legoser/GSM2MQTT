@@ -3,6 +3,8 @@ package mqtt
 import (
 	"fmt"
 	"strings"
+
+	"github.com/legoser/gsm2mqtt/internal/version"
 )
 
 // GatewayIdentifier is the canonical identifier for the parent GSM2MQTT Gateway device in Home Assistant.
@@ -96,16 +98,16 @@ func BuildRecipientsTextDiscovery(discoveryPrefix, topicPrefix string) (*Discove
 	return marshalDiscovery(topic, payload)
 }
 
-func gatewayDeviceInfo(version string) *DeviceInfo {
-	if version == "" {
-		version = "1.0.0"
+func gatewayDeviceInfo(ver string) *DeviceInfo {
+	if ver == "" {
+		ver = version.Version
 	}
 	return &DeviceInfo{
 		Identifiers:  []string{GatewayIdentifier},
 		Name:         "GSM2MQTT Gateway",
 		Manufacturer: "GSM2MQTT",
 		Model:        "Go GSM Gateway",
-		SwVersion:    version,
+		SwVersion:    ver,
 	}
 }
 

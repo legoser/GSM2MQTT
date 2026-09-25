@@ -19,6 +19,22 @@ func TestClientConfig_Validation(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid broker with qos 2",
+			cfg: ClientConfig{
+				Broker: "tcp://localhost:1883",
+				QoS:    2,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid qos",
+			cfg: ClientConfig{
+				Broker: "tcp://localhost:1883",
+				QoS:    3,
+			},
+			wantErr: true,
+		},
+		{
 			name: "empty broker",
 			cfg: ClientConfig{
 				Broker: "",
@@ -47,7 +63,7 @@ func TestMockClient_PubSub(t *testing.T) {
 	var receivedTopic string
 	var receivedPayload []byte
 
-	err := mock.Subscribe("gsm2mqtt/test", 1, func(topic string, payload []byte) {
+	err := mock.Subscribe("gsm2mqtt/test", 2, func(topic string, payload []byte) {
 		receivedTopic = topic
 		receivedPayload = payload
 	})
@@ -56,7 +72,7 @@ func TestMockClient_PubSub(t *testing.T) {
 	}
 
 	msg := []byte("hello mqtt")
-	if err := mock.Publish("gsm2mqtt/test", 1, false, msg); err != nil {
+	if err := mock.Publish("gsm2mqtt/test", 2, false, msg); err != nil {
 		t.Fatalf("Publish error: %v", err)
 	}
 
@@ -64,12 +80,20 @@ func TestMockClient_PubSub(t *testing.T) {
 		t.Errorf("expected received msg 'hello mqtt', got %q", string(receivedPayload))
 	}
 
+	published := mock.Published()
+	if len(published) != 1 {
+		t.Fatalf("expected 1 published message, got %d", len(published))
+	}
+	if published[0].QoS != 2 {
+		t.Errorf("expected published QoS 2, got %d", published[0].QoS)
+	}
+
 	mock.Disconnect(0)
 	if mock.IsConnected() {
 		t.Errorf("expected IsConnected to be false after disconnect")
 	}
 
-	if err := mock.Publish("gsm2mqtt/test", 1, false, msg); !errors.Is(err, ErrNotConnected) {
+	if err := mock.Publish("gsm2mqtt/test", 2, false, msg); !errors.Is(err, ErrNotConnected) {
 		t.Errorf("expected ErrNotConnected, got %v", err)
 	}
 }

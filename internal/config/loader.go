@@ -40,12 +40,18 @@ func Defaults() *Config {
 	return &Config{
 		LogLevel: "info",
 		MQTT: MQTTConfig{
-			Broker:          "localhost",
-			Port:            1883,
-			ClientID:        "gsm2mqtt",
-			TopicPrefix:     "gsm2mqtt",
-			Discovery:       true,
-			DiscoveryPrefix: "homeassistant",
+			Broker:               "localhost",
+			Port:                 1883,
+			ClientID:             "gsm2mqtt",
+			TopicPrefix:          "gsm2mqtt",
+			QoS:                  1,
+			CleanSession:         true,
+			KeepAlive:            60 * time.Second,
+			ConnectTimeout:       10 * time.Second,
+			AutoReconnect:        true,
+			MaxReconnectInterval: 10 * time.Minute,
+			Discovery:            true,
+			DiscoveryPrefix:      "homeassistant",
 		},
 		Security: SecurityConfig{
 			IncomingFilter: "all",
@@ -179,6 +185,18 @@ func validate(cfg *Config) error {
 	}
 	if cfg.MQTT.TopicPrefix == "" {
 		return fmt.Errorf("invalid config: mqtt.topic_prefix is required")
+	}
+	if cfg.MQTT.QoS < 0 || cfg.MQTT.QoS > 2 {
+		return fmt.Errorf("invalid config: mqtt.qos must be between 0 and 2, got %d", cfg.MQTT.QoS)
+	}
+	if cfg.MQTT.KeepAlive < 0 {
+		return fmt.Errorf("invalid config: mqtt.keep_alive cannot be negative")
+	}
+	if cfg.MQTT.ConnectTimeout < 0 {
+		return fmt.Errorf("invalid config: mqtt.connect_timeout cannot be negative")
+	}
+	if cfg.MQTT.MaxReconnectInterval < 0 {
+		return fmt.Errorf("invalid config: mqtt.max_reconnect_interval cannot be negative")
 	}
 
 	validEncodings := map[string]bool{"auto": true, "translit": true, "ucs2": true, "gsm7": true}
