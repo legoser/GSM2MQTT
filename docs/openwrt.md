@@ -13,11 +13,18 @@
 | Архитектура Go | Пакет OPKG | Пакет APK | Примеры устройств |
 |---|---|---|---|
 | `amd64` | `x86_64` | `x86_64` | x86/x64 мини-ПК, виртуальные машины, x86_64 роутеры |
-| `arm64` | `aarch64_generic` | `aarch64` | Raspberry Pi 3/4/5, NanoPi R4S/R5S, GL.iNet MT3000 / Flint 2 |
-| `arm` (ARMv7) | `arm_cortex-a7_neon-vfpv4` | `armv7` | Роутеры на Cortex-A7/A9 (IPQ40xx, BCM53xx, Marvell Armada) |
+| `arm64` | `aarch64_cortex-a53`<br>`aarch64_cortex-a72`<br>`aarch64_generic` | `aarch64` | Raspberry Pi 3 (`cortex-a53`), Raspberry Pi 4 (`cortex-a72`), NanoPi R2S/R4S/R5S, GL.iNet MT3000 / Flint 2 |
+| `arm` (ARMv7) | `arm_cortex-a7_neon-vfpv4`<br>`arm_cortex-a9`<br>`arm_cortex-a15_neon-vfpv4` | `armv7` | Роутеры на Cortex-A7/A9 (IPQ40xx, BCM53xx, Marvell Armada) |
 | `mipsle` | `mipsel_24kc` | `mipsel` | MediaTek MT7621, MT7628, GL.iNet Mango/Shadow |
 | `mips` | `mips_24kc` | `mips` | Atheros AR9331, AR9344, QCA9531 |
 | `riscv64` | `riscv64` | `riscv64` | RISC-V платы и роутеры |
+
+> **Подсказка по выбору пакета OPKG:**
+> Узнайте точное имя архитектуры вашего устройства командой:
+> ```sh
+> opkg print-architecture
+> ```
+> Для **Raspberry Pi 3** это `aarch64_cortex-a53`, для **Raspberry Pi 4** — `aarch64_cortex-a72`, для x86_64 — `x86_64`.
 
 ---
 
@@ -48,15 +55,19 @@ ls -la /dev/ttyUSB* /dev/ttyACM*
 
 Для OpenWrt 23.05 и более ранних версий:
 
-1. Скачайте `.ipk` пакет нужной архитектуры из раздела [Releases](https://github.com/legoser/gsm2mqtt/releases) (например, `gsm2mqtt_1.0.0-1_x86_64.ipk`).
+1. Скачайте `.ipk` пакет нужной архитектуры из раздела [Releases](https://github.com/legoser/gsm2mqtt/releases) (например, для Raspberry Pi 3: `gsm2mqtt_1.0.0-1_aarch64_cortex-a53.ipk`).
 2. Скопируйте файл на роутер через `scp`:
    ```sh
-   scp gsm2mqtt_1.0.0-1_x86_64.ipk root@192.168.1.1:/tmp/
+   scp gsm2mqtt_1.0.0-1_aarch64_cortex-a53.ipk root@192.168.1.1:/tmp/
    ```
-3. Установите пакет:
+3. Установите пакет (обязательно указывайте полный путь `/tmp/...` или `./...`):
    ```sh
-   opkg install /tmp/gsm2mqtt_1.0.0-1_x86_64.ipk
+   opkg install /tmp/gsm2mqtt_1.0.0-1_aarch64_cortex-a53.ipk
    ```
+   > **Важно:** Если вы скачали пакет `aarch64_generic.ipk` и хотите установить его на архитектуру Cortex-A53 без пересборки, используйте флаг `--force-architecture`:
+   > ```sh
+   > opkg install --force-architecture /tmp/gsm2mqtt_1.0.0-1_aarch64_generic.ipk
+   > ```
 
 Пакет автоматически создаст и включит службу автозапуска `procd`.
 
