@@ -8,27 +8,8 @@ on:
     tags:
       - 'v*.*.*'
 
-permissions:
-  contents: write
-
 jobs:
-  validate:
-    runs-on: release
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Vet
-        run: go vet ./...
-      - name: Test
-        run: go test -race -count=1 ./...
-
   release:
-    needs: validate
     runs-on: release
     env:
       TAG: ${{ github.ref_name }}
@@ -40,6 +21,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
 
       - name: Validate tag format (vMAJOR.MINOR.PATCH)
         run: |

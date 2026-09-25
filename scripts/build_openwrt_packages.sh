@@ -215,6 +215,71 @@ EOF
     echo "    Created: ${out_file}"
 }
 
+APK_CMD=""
+
+setup_apk_tool() {
+    # 1. System apk if apk-tools v3 is available
+    if command -v apk >/dev/null 2>&1 && apk --version 2>/dev/null | grep -q 'apk-tools 3\.'; then
+        APK_CMD="apk"
+        return 0
+    fi
+
+    # 2. Existing cached apk.static in BIN_DIR or PATH
+    if [[ -x "${BIN_DIR}/apk.static" ]] && "${BIN_DIR}/apk.static" --version 2>/dev/null | grep -q 'apk-tools 3\.'; then
+        APK_CMD="${BIN_DIR}/apk.static"
+        return 0
+    fi
+    if command -v apk.static >/dev/null 2>&1 && apk.static --version 2>/dev/null | grep -q 'apk-tools 3\.'; then
+        APK_CMD="apk.static"
+        return 0
+    fi
+
+    # 3. Auto-download standalone apk.static for host architecture
+    local host_arch=""
+    case "$(uname -m)" in
+        x86_64|amd64) host_arch="x86_64" ;;
+        aarch64|arm64) host_arch="aarch64" ;;
+        *) host_arch="" ;;
+    esac
+
+    if [[ -n "$host_arch" ]] && (command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1); then
+        echo "=> Downloading standalone apk-tools (apk.static) for ${host_arch}..."
+        local tmp_apk_dir
+        tmp_apk_dir="$(mktemp -d)"
+        local download_url="https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/${host_arch}/apk-tools-static-3.0.8-r0.apk"
+        if command -v curl >/dev/null 2>&1; then
+            local index_url="https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/${host_arch}/APKINDEX.tar.gz"
+            local dynamic_ver
+            dynamic_ver="$(curl -sSL "$index_url" 2>/dev/null | tar -xz -O APKINDEX 2>/dev/null | awk '/^P:apk-tools-static$/{getline; print $0}' | sed 's/^V://' || true)"
+            if [[ -n "$dynamic_ver" ]]; then
+                download_url="https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/${host_arch}/apk-tools-static-${dynamic_ver}.apk"
+            fi
+            curl -sSL "$download_url" 2>/dev/null | tar -xz -C "$tmp_apk_dir" 2>/dev/null || true
+        elif command -v wget >/dev/null 2>&1; then
+            wget -qO- "$download_url" 2>/dev/null | tar -xz -C "$tmp_apk_dir" 2>/dev/null || true
+        fi
+
+        if [[ -x "${tmp_apk_dir}/sbin/apk.static" ]]; then
+            mkdir -p "${BIN_DIR}"
+            cp "${tmp_apk_dir}/sbin/apk.static" "${BIN_DIR}/apk.static"
+            chmod 755 "${BIN_DIR}/apk.static"
+            rm -rf "$tmp_apk_dir"
+            APK_CMD="${BIN_DIR}/apk.static"
+            echo "=> Installed standalone apk.static to ${BIN_DIR}/apk.static"
+            return 0
+        fi
+        rm -rf "$tmp_apk_dir"
+    fi
+
+    # 4. Fallback to Docker
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        APK_CMD="docker"
+        return 0
+    fi
+
+    return 1
+}
+
 build_apk() {
     local arch="$1"
     local apk_arch="$2"
@@ -266,19 +331,7 @@ EOF
 
     local out_file="${OUT_DIR}/${PKG_NAME}-${APK_VER}-${apk_arch}.apk"
 
-    if command -v apk >/dev/null 2>&1 && apk mkpkg --help >/dev/null 2>&1; then
-        apk mkpkg \
-            --files "${root_dir}" \
-            --info "name:${PKG_NAME}" \
-            --info "version:${APK_VER}" \
-            --info "arch:${apk_arch}" \
-            --info "description:${PKG_DESC}" \
-            --info "license:${PKG_LICENSE}" \
-            --info "url:${PKG_URL}" \
-            --script "post-install:${scripts_dir}/post-install.sh" \
-            --script "pre-deinstall:${scripts_dir}/pre-deinstall.sh" \
-            -o "$out_file"
-    elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    if [[ "$APK_CMD" == "docker" ]]; then
         docker run --rm \
             -v "${stage}:/stage:rw" \
             -v "${OUT_DIR}:/out:rw" \
@@ -295,6 +348,18 @@ EOF
                     --script 'pre-deinstall:/stage/scripts/pre-deinstall.sh' \
                     -o '/out/$(basename "$out_file")'
             "
+    elif [[ -n "$APK_CMD" ]]; then
+        "$APK_CMD" mkpkg \
+            --files "${root_dir}" \
+            --info "name:${PKG_NAME}" \
+            --info "version:${APK_VER}" \
+            --info "arch:${apk_arch}" \
+            --info "description:${PKG_DESC}" \
+            --info "license:${PKG_LICENSE}" \
+            --info "url:${PKG_URL}" \
+            --script "post-install:${scripts_dir}/post-install.sh" \
+            --script "pre-deinstall:${scripts_dir}/pre-deinstall.sh" \
+            -o "$out_file"
     else
         echo "Error: apk-tools (with 'apk mkpkg') or Docker is required to build APK packages." >&2
         rm -rf "$stage"
@@ -320,6 +385,17 @@ echo " Format:  ${TARGET_TYPE}"
 echo " Arches:  ${ARCH_LIST[*]}"
 echo " Output:  ${OUT_DIR}"
 echo "=================================================="
+
+if [[ "$TARGET_TYPE" == "apk" || "$TARGET_TYPE" == "all" ]]; then
+    if ! setup_apk_tool; then
+        if [[ "$TARGET_TYPE" == "apk" ]]; then
+            echo "Error: apk-tools (with 'apk mkpkg') or Docker is required to build APK packages." >&2
+            exit 1
+        else
+            echo "Warning: Neither apk-tools (with 'apk mkpkg') nor Docker is available. Skipping APK packages." >&2
+        fi
+    fi
+fi
 
 for arch in "${ARCH_LIST[@]}"; do
     compile_binary "$arch"
@@ -361,7 +437,9 @@ for arch in "${ARCH_LIST[@]}"; do
     fi
 
     if [[ "$TARGET_TYPE" == "apk" || "$TARGET_TYPE" == "all" ]]; then
-        build_apk "$arch" "$apk_arch"
+        if [[ -n "$APK_CMD" ]]; then
+            build_apk "$arch" "$apk_arch"
+        fi
     fi
 done
 
