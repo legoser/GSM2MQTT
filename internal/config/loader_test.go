@@ -275,3 +275,39 @@ modems:
 		t.Errorf("expected port /dev/ttyACM0, got %v", cfg.Modems[0].Port)
 	}
 }
+
+func TestLoad_OpenWrtConfig(t *testing.T) {
+	cfgPath := filepath.Join("..", "..", "deployments", "openwrt", "files", "gsm2mqtt.yaml")
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("failed to load OpenWrt configuration file %s: %v", cfgPath, err)
+	}
+	if len(cfg.Modems) == 0 {
+		t.Fatalf("expected at least one modem configured in OpenWrt config")
+	}
+	if len(cfg.Security.AllowedATCommands) == 0 {
+		t.Errorf("expected allowed_at_commands to be configured in OpenWrt config")
+	}
+	if cfg.Security.RecipientsFile == "" {
+		t.Errorf("expected recipients_file to be specified in OpenWrt config")
+	}
+}
+
+func TestLoad_ExampleConfig(t *testing.T) {
+	cfgPath := filepath.Join("..", "..", "configs", "gsm2mqtt.example.yaml")
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("failed to load example configuration file %s: %v", cfgPath, err)
+	}
+	if len(cfg.Modems) == 0 {
+		t.Fatalf("expected at least one modem configured in example config")
+	}
+	if len(cfg.Security.AllowedATCommands) == 0 {
+		t.Errorf("expected allowed_at_commands to be configured in example config")
+	}
+	if cfg.Security.RecipientsFile == "" {
+		t.Errorf("expected recipients_file to be specified in example config")
+	}
+}
+
+

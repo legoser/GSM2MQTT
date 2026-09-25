@@ -6,6 +6,47 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.3-ge7a392d] - 2026-09-25
+
+### Features & Improvements
+
+- **openwrt**: add OPKG (.ipk) and APK (.apk) packaging and service integration (`85181ae`)
+  - Add OpenWrt procd init script (deployments/openwrt/files/gsm2mqtt.init) supporting
+    start, stop, restart, reload, enable, disable, and auto-respawn
+  - Add UCI configuration template (deployments/openwrt/files/gsm2mqtt.config)
+  - Add complete OpenWrt configuration file (deployments/openwrt/files/gsm2mqtt.yaml)
+    with thorough English comments and documented allowed_at_commands allowlist
+  - Sync main configs/gsm2mqtt.example.yaml with full English documentation,
+    accounting fields, and raw AT command allowlist
+  - Add official OpenWrt package recipe (deployments/openwrt/Makefile) for buildroot/SDK
+  - Add portable package build script (scripts/build_openwrt_packages.sh) producing:
+  * OPKG (.ipk) archives for OpenWrt <= 23.05 (x86_64, aarch64, armv7, mipsel, mips, riscv64)
+  * APK (.apk) archives for OpenWrt >= 25.12 using apk-tools v3 / Alpine Docker fallback
+  - Add make targets: package-openwrt, package-opkg, package-apk
+  - Update GitHub and Forgejo release workflows to publish .ipk and .apk assets
+  - Add OpenWrt deployment and driver guide in docs/openwrt.md and update README.md
+  - Add regression tests in internal/config/loader_test.go validating config schemas
+
+### Bug Fixes
+
+- **core**: resolve concurrency data races and deadlocks (`e7a392d`)
+  - Fixed RWMutex data race on `lastCurrency` read in gateway ops
+  - Fixed critical deadlock in `tariff.Manager` by firing MQTT alerts outside of the mutex lock
+  - Added 10-second timeouts to MQTT Connect, Publish, and Subscribe operations to prevent infinite blocking
+  - Fixed goroutine leak by adding context timeouts to fallback voice call operations
+  - Propagated execution contexts down to SMS PDU encoding and AT engine layers
+- **security**: reject requests with empty API token and mask logs (`b3e6e25`)
+  - Updated API auth middleware to return 403 Forbidden for protected routes if token is empty (fails closed instead of open)
+  - Masked phone numbers in rate limiter and alert recipient logs (+7999***1234 pattern)
+  - Removed privileged flag from development docker-compose file
+
+### Performance Improvements
+
+- **build**: add build-noapi and build-small targets for OpenWrt (`e8beacd`)
+  - Introduced `build-noapi` Makefile target using `no_api` build tag to strip HTTP API server
+  - Introduced `build-small` Makefile target for automated UPX compression
+  - Reduced binary size by ~10% for storage-constrained OpenWrt environments
+
 ## [0.1.0] - 2026-09-24
 
 First public release: GSM-to-MQTT gateway connecting GSM/3G/4G modems
@@ -27,9 +68,7 @@ Single static binary, no runtime dependencies.
 ## Release process
 
 1. Merge `development` into `main`.
-2. Write the release notes: move `[Unreleased]` entries into a new `## [X.Y.Z] - YYYY-MM-DD` section above.
-   The release workflows publish exactly this section as the release description.
-3. Commit, then tag the release: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. CI builds `gsm2mqtt-<version>-linux-{amd64,arm64,riscv64}.tar.gz` + `checksums.txt`
-   and publishes a Release with the same name in Forgejo and (via push-mirror) on GitHub.
-4. Verify: `sha256sum -c checksums.txt && ./gsm2mqtt --version`.
+2. Generate changelog: run `make changelog` (or `python3 scripts/generate_release_notes.py --update-changelog`) to automatically collect changes from git commits into `CHANGELOG.md`.
+3. Commit and tag the release: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
+4. CI builds `tar.gz` archives, OpenWrt packages (`.ipk` and `.apk`) and `checksums.txt`, automatically generates categorized release notes with full commit details, and publishes the Release in Forgejo and on GitHub.
+5. Verify: `sha256sum -c checksums.txt && ./gsm2mqtt --version`.

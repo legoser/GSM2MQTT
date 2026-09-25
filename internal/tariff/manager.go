@@ -151,13 +151,19 @@ func (m *Manager) RecordSMS(count int) {
 		return
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	m.smsDayCount += count
 	m.smsMonthCount += count
 	slog.Debug("tariff SMS usage recorded", slog.String("modem", m.modemID), slog.Int("count", count), slog.Int("day_total", m.smsDayCount), slog.Int("month_total", m.smsMonthCount))
-	m.evaluateSMSLimits()
+	alerts := m.evaluateSMSLimits()
 	m.persistLocked()
+	m.mu.Unlock()
+
+	for _, a := range alerts {
+		if m.onAlert != nil {
+			m.onAlert(a)
+		}
+	}
 }
 
 // RecordCallDuration increments voice call minutes from duration.
@@ -174,12 +180,18 @@ func (m *Manager) RecordCallMinutes(minutes float64) {
 		return
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	m.callMinutesUsed += minutes
 	slog.Debug("tariff call usage recorded", slog.String("modem", m.modemID), slog.Float64("minutes", minutes), slog.Float64("month_total", m.callMinutesUsed))
-	m.evaluateCallLimits()
+	alerts := m.evaluateCallLimits()
 	m.persistLocked()
+	m.mu.Unlock()
+
+	for _, a := range alerts {
+		if m.onAlert != nil {
+			m.onAlert(a)
+		}
+	}
 }
 
 // RecordData records transmitted data bytes and checks quotas.
@@ -188,18 +200,23 @@ func (m *Manager) RecordData(bytes int64) {
 		return
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	m.dataBytesUsed += bytes
 	slog.Debug("tariff data usage recorded", slog.String("modem", m.modemID), slog.Int64("bytes", bytes), slog.Int64("month_total", m.dataBytesUsed))
-	m.evaluateDataLimits()
+	alerts := m.evaluateDataLimits()
 	m.persistLocked()
+	m.mu.Unlock()
+
+	for _, a := range alerts {
+		if m.onAlert != nil {
+			m.onAlert(a)
+		}
+	}
 }
 
 // UpdateBalance updates the known monetary balance and checks thresholds.
 func (m *Manager) UpdateBalance(balance float64, currency string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	m.balance = balance
 	if currency != "" {
@@ -207,8 +224,15 @@ func (m *Manager) UpdateBalance(balance float64, currency string) {
 	}
 	m.lastBalanceCheck = time.Now()
 	slog.Info("tariff balance updated", slog.String("modem", m.modemID), slog.Float64("balance", balance), slog.String("currency", m.currency))
-	m.evaluateBalanceLimits(balance)
+	alerts := m.evaluateBalanceLimits(balance)
 	m.persistLocked()
+	m.mu.Unlock()
+
+	for _, a := range alerts {
+		if m.onAlert != nil {
+			m.onAlert(a)
+		}
+	}
 }
 
 // ResetDaily zeroes the daily counter.

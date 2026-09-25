@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -13,8 +14,8 @@ type atPDUSender struct {
 	engine *at.Engine
 }
 
-func (s *atPDUSender) SendPDU(cmdLength int, pduHex string) (byte, error) {
-	resp, err := s.engine.SendPDU(cmdLength, pduHex, 30*time.Second)
+func (s *atPDUSender) SendPDU(ctx context.Context, cmdLength int, pduHex string) (byte, error) {
+	resp, err := s.engine.SendPDU(ctx, cmdLength, pduHex, 30*time.Second)
 	if err != nil {
 		return 0, err
 	}

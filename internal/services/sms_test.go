@@ -21,7 +21,7 @@ type mockPDUSender struct {
 	err      error
 }
 
-func (m *mockPDUSender) SendPDU(cmdLength int, pduHex string) (byte, error) {
+func (m *mockPDUSender) SendPDU(ctx context.Context, cmdLength int, pduHex string) (byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.err != nil {

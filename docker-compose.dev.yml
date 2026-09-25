@@ -47,5 +47,4 @@ services:
       - /dev:/dev
       - /dev/pts:/dev/pts
       - /tmp:/tmp
-    privileged: true
 

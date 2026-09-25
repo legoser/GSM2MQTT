@@ -3,11 +3,19 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)"
 
-.PHONY: build build-all build-riscv64 test test-cover lint vet docker clean help
+.PHONY: build build-all build-riscv64 package-openwrt package-opkg package-apk changelog release-notes test test-cover lint vet docker clean help
 
 ## build: Build for current platform
 build:
 	CGO_ENABLED=0 go build -trimpath $(LDFLAGS) -o bin/$(APP_NAME) ./cmd/gsm2mqtt/
+
+## build-small: Build for current platform and compress with UPX
+build-small: build
+	upx --best --lzma bin/$(APP_NAME)
+
+## build-noapi: Build for current platform without HTTP API (smaller binary)
+build-noapi:
+	CGO_ENABLED=0 go build -tags no_api -trimpath $(LDFLAGS) -o bin/$(APP_NAME) ./cmd/gsm2mqtt/
 
 ## build-all: Cross-compile for all target platforms (amd64, arm64, riscv64)
 build-all:
@@ -18,6 +26,26 @@ build-all:
 ## build-riscv64: Cross-compile for Linux RISC-V 64-bit
 build-riscv64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath $(LDFLAGS) -o bin/$(APP_NAME)-linux-riscv64 ./cmd/gsm2mqtt/
+
+## package-openwrt: Build OpenWrt packages (both OPKG and APK for all architectures)
+package-openwrt:
+	./scripts/build_openwrt_packages.sh --type all --arch all --version $(VERSION)
+
+## package-opkg: Build OpenWrt OPKG (.ipk) packages for all architectures
+package-opkg:
+	./scripts/build_openwrt_packages.sh --type ipk --arch all --version $(VERSION)
+
+## package-apk: Build OpenWrt APK (.apk) packages for all architectures
+package-apk:
+	./scripts/build_openwrt_packages.sh --type apk --arch all --version $(VERSION)
+
+## changelog: Auto-generate and record release section into CHANGELOG.md
+changelog:
+	python3 scripts/generate_release_notes.py --update-changelog
+
+## release-notes: Generate formatted release notes for current tag/HEAD
+release-notes:
+	python3 scripts/generate_release_notes.py
 
 ## test: Run all tests
 test:
@@ -50,7 +78,7 @@ docker-down:
 
 ## clean: Remove build artifacts
 clean:
-	rm -rf bin/ coverage.out coverage.html
+	rm -rf bin/ dist/ coverage.out coverage.html
 
 ## help: Show this help
 help:

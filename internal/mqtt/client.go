@@ -99,7 +99,10 @@ func NewPahoClient(cfg ClientConfig) (*PahoClient, error) {
 func (c *PahoClient) Connect() error {
 	slog.Info("connecting to MQTT broker", slog.String("broker", c.cfg.Broker))
 	token := c.client.Connect()
-	if token.Wait() && token.Error() != nil {
+	if !token.WaitTimeout(10 * time.Second) {
+		return fmt.Errorf("MQTT operation timed out")
+	}
+	if token.Error() != nil {
 		slog.Error("failed to connect to MQTT broker", slog.String("broker", c.cfg.Broker), slog.Any("error", token.Error()))
 		return token.Error()
 	}
@@ -125,7 +128,10 @@ func (c *PahoClient) Publish(topic string, qos byte, retained bool, payload []by
 		return ErrNotConnected
 	}
 	token := c.client.Publish(topic, qos, retained, payload)
-	if token.Wait() && token.Error() != nil {
+	if !token.WaitTimeout(10 * time.Second) {
+		return fmt.Errorf("MQTT operation timed out")
+	}
+	if token.Error() != nil {
 		slog.Error("MQTT publish failed", slog.String("topic", topic), slog.Any("error", token.Error()))
 		return token.Error()
 	}
@@ -139,7 +145,10 @@ func (c *PahoClient) Subscribe(topic string, qos byte, handler MessageHandler) e
 		slog.Debug("received MQTT message", slog.String("topic", m.Topic()), slog.Int("bytes", len(m.Payload())))
 		handler(m.Topic(), m.Payload())
 	})
-	if token.Wait() && token.Error() != nil {
+	if !token.WaitTimeout(10 * time.Second) {
+		return fmt.Errorf("MQTT operation timed out")
+	}
+	if token.Error() != nil {
 		slog.Error("MQTT subscribe failed", slog.String("topic", topic), slog.Any("error", token.Error()))
 		return token.Error()
 	}
