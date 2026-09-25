@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/metrics"
 	"github.com/legoser/gsm2mqtt/internal/modem"
@@ -13,7 +14,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
 
-func (r *ModemRunner) subscribeMQTT(
+func (r *ModemRunner) subscribeMQTT(ctx context.Context, 
 	smsSvc *SMSService,
 	callSvc *CallService,
 	ussdSvc *USSDService,
@@ -21,14 +22,14 @@ func (r *ModemRunner) subscribeMQTT(
 	diagSvc *DiagnosticService,
 	driver modem.Driver,
 ) {
-	r.subscribeSMS(smsSvc, callSvc, tariffMgr, diagSvc)
-	r.subscribeCall(callSvc)
-	r.subscribeUSSD(ussdSvc)
-	r.subscribeRawAT(driver, r.sanitizer)
+	r.subscribeSMS(ctx, smsSvc, callSvc, tariffMgr, diagSvc)
+	r.subscribeCall(ctx, callSvc)
+	r.subscribeUSSD(ctx, ussdSvc)
+	r.subscribeRawAT(ctx, driver, r.sanitizer)
 	r.subscribeTariff(tariffMgr)
 }
 
-func (r *ModemRunner) subscribeSMS(
+func (r *ModemRunner) subscribeSMS(ctx context.Context, 
 	smsSvc *SMSService,
 	callSvc *CallService,
 	tariffMgr *tariff.Manager,
@@ -61,7 +62,7 @@ func (r *ModemRunner) subscribeSMS(
 
 		for _, target := range targets {
 			if target != "" {
-				r.sendAndReportSMS(smsSvc, callSvc, tariffMgr, diagSvc, req, target, text)
+				r.sendAndReportSMS(ctx, smsSvc, callSvc, tariffMgr, diagSvc, req, target, text)
 			}
 		}
 	}
@@ -71,7 +72,7 @@ func (r *ModemRunner) subscribeSMS(
 	}
 }
 
-func (r *ModemRunner) sendAndReportSMS(
+func (r *ModemRunner) sendAndReportSMS(ctx context.Context, 
 	smsSvc *SMSService,
 	callSvc *CallService,
 	tariffMgr *tariff.Manager,
@@ -84,12 +85,12 @@ func (r *ModemRunner) sendAndReportSMS(
 	sendReq.Text = text
 
 	slog.Info("processing outgoing SMS request", slog.String("modem", r.mCfg.ID), slog.String("target", target))
-	refs, err := smsSvc.Send(context.Background(), sendReq)
+	refs, err := smsSvc.Send(ctx, sendReq)
 	if err != nil {
 		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "failed"})
 		slog.Error("sms send failure", slog.String("modem", r.mCfg.ID), slog.String("target", target), slog.Any("error", err))
 		if r.cfg.Tariff.AutoCheckOnError {
-			rep, _ := diagSvc.RunDiagnostic(context.Background(), "sms_send_failure")
+			rep, _ := diagSvc.RunDiagnostic(ctx, "sms_send_failure")
 			if rep != nil {
 				dPayload, _ := json.Marshal(rep)
 				_ = r.mqttClient.Publish(r.topics.Diagnostic(), 1, false, dPayload)
@@ -98,7 +99,9 @@ func (r *ModemRunner) sendAndReportSMS(
 		if r.cfg.Security.FallbackCall && callSvc != nil {
 			slog.Info("triggering fallback voice call after SMS failure", slog.String("modem", r.mCfg.ID), slog.String("target", target))
 			go func(num string) {
-				_ = callSvc.Dial(context.Background(), num)
+				callCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+				defer cancel()
+				_ = callSvc.Dial(callCtx, num)
 			}(target)
 		}
 		return
@@ -132,19 +135,19 @@ func extractLeadingRecipient(text string) (string, string, bool) {
 	return norm, rest, true
 }
 
-func (r *ModemRunner) subscribeCall(callSvc *CallService) {
+func (r *ModemRunner) subscribeCall(ctx context.Context, callSvc *CallService) {
 	dialHandler := func(_ string, payload []byte) {
 		var req struct {
 			Number string `json:"number"`
 		}
 		if err := json.Unmarshal(payload, &req); err == nil && req.Number != "" {
 			slog.Info("call dial requested via MQTT", slog.String("modem", r.mCfg.ID), slog.String("number", req.Number))
-			_ = callSvc.Dial(context.Background(), req.Number)
+			_ = callSvc.Dial(ctx, req.Number)
 		}
 	}
 	hangupHandler := func(_ string, _ []byte) {
 		slog.Info("call hangup requested via MQTT", slog.String("modem", r.mCfg.ID))
-		_ = callSvc.Hangup(context.Background())
+		_ = callSvc.Hangup(ctx)
 	}
 	_ = r.mqttClient.Subscribe(r.topics.CallDial(), 1, dialHandler)
 	_ = r.mqttClient.Subscribe(r.topics.CallHangup(), 1, hangupHandler)
@@ -154,7 +157,7 @@ func (r *ModemRunner) subscribeCall(callSvc *CallService) {
 	}
 }
 
-func (r *ModemRunner) subscribeUSSD(ussdSvc *USSDService) {
+func (r *ModemRunner) subscribeUSSD(ctx context.Context, ussdSvc *USSDService) {
 	handler := func(_ string, payload []byte) {
 		raw := strings.TrimSpace(string(payload))
 		code := raw
@@ -168,7 +171,7 @@ func (r *ModemRunner) subscribeUSSD(ussdSvc *USSDService) {
 		if code != "" {
 			slog.Info("USSD query requested via MQTT", slog.String("modem", r.mCfg.ID), slog.String("code", code))
 			metrics.DefaultRegistry.IncCounter("gsm2mqtt_ussd_requests_total", map[string]string{"modem": r.mCfg.ID})
-			resp, err := ussdSvc.Send(context.Background(), code)
+			resp, err := ussdSvc.Send(ctx, code)
 			if err == nil && resp != nil {
 				r.applyParsedBalance(resp.Message)
 			}
@@ -180,7 +183,7 @@ func (r *ModemRunner) subscribeUSSD(ussdSvc *USSDService) {
 	}
 }
 
-func (r *ModemRunner) subscribeRawAT(driver modem.Driver, sanitizer *security.Sanitizer) {
+func (r *ModemRunner) subscribeRawAT(ctx context.Context, driver modem.Driver, sanitizer *security.Sanitizer) {
 	handler := func(_ string, payload []byte) {
 		cmd := strings.TrimSpace(string(payload))
 		slog.Info("raw AT command requested via MQTT", slog.String("modem", r.mCfg.ID), slog.String("cmd", cmd))

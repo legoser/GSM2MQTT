@@ -418,7 +418,7 @@ func TestEngine_SendPDU_Success(t *testing.T) {
 		port.FeedResponse("\r\n+CMGS: 42\r\n\r\nOK\r\n")
 	}()
 
-	resp, err := engine.SendPDU(15, "0011000B91", 500*time.Millisecond)
+	resp, err := engine.SendPDU(context.Background(), 15, "0011000B91", 500*time.Millisecond)
 	if err != nil {
 		t.Fatalf("unexpected SendPDU error: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestEngine_SendPDU_EarlyError(t *testing.T) {
 		port.FeedResponse("\r\n+CMS ERROR: 304\r\n")
 	}()
 
-	resp, err := engine.SendPDU(15, "0011000B91", 500*time.Millisecond)
+	resp, err := engine.SendPDU(context.Background(), 15, "0011000B91", 500*time.Millisecond)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestEngine_SendPDU_Timeout(t *testing.T) {
 		port.FeedResponse("\r\n> ")
 	}()
 
-	_, err := engine.SendPDU(15, "0011000B91", 50*time.Millisecond)
+	_, err := engine.SendPDU(context.Background(), 15, "0011000B91", 50*time.Millisecond)
 	if !errors.Is(err, ErrTimeout) {
 		t.Fatalf("expected ErrTimeout, got: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestEngine_SendPDU_PromptTimeout(t *testing.T) {
 	// Never feed the '>' prompt: engine must abort with ESC and must NOT
 	// blind-send the PDU payload (regression: old code fell through).
 	const pduHex = "0011000B91AA"
-	_, err := engine.SendPDU(15, pduHex, 500*time.Millisecond)
+	_, err := engine.SendPDU(context.Background(), 15, pduHex, 500*time.Millisecond)
 	if err == nil || !strings.Contains(err.Error(), "prompt") {
 		t.Fatalf("expected prompt timeout error, got: %v", err)
 	}

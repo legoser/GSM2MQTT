@@ -5,9 +5,10 @@ import (
 	"log/slog"
 )
 
-func (m *Manager) evaluateSMSLimits() {
+func (m *Manager) evaluateSMSLimits() []AlertEvent {
+	var alerts []AlertEvent
 	if m.cfg.SMSLimit <= 0 || m.onAlert == nil {
-		return
+		return alerts
 	}
 
 	ratio := float64(m.smsMonthCount) / float64(m.cfg.SMSLimit)
@@ -16,7 +17,7 @@ func (m *Manager) evaluateSMSLimits() {
 		m.warnedSMS90 = true
 		msg := fmt.Sprintf("90%% of monthly SMS quota reached (%d/%d)", m.smsMonthCount, m.cfg.SMSLimit)
 		slog.Warn("tariff quota warning: 90% reached", slog.String("modem", m.modemID), slog.String("quota", "sms"), slog.Int("used", m.smsMonthCount), slog.Int("limit", m.cfg.SMSLimit))
-		m.onAlert(AlertEvent{
+		alerts = append(alerts, AlertEvent{
 			Type:    "sms_limit_warning",
 			Message: msg,
 			Value:   float64(m.smsMonthCount),
@@ -28,18 +29,20 @@ func (m *Manager) evaluateSMSLimits() {
 		m.warnedSMSExceeded = true
 		msg := fmt.Sprintf("Monthly SMS quota exceeded (%d/%d)", m.smsMonthCount, m.cfg.SMSLimit)
 		slog.Warn("tariff quota exceeded", slog.String("modem", m.modemID), slog.String("quota", "sms"), slog.Int("used", m.smsMonthCount), slog.Int("limit", m.cfg.SMSLimit))
-		m.onAlert(AlertEvent{
+		alerts = append(alerts, AlertEvent{
 			Type:    "sms_limit_exceeded",
 			Message: msg,
 			Value:   float64(m.smsMonthCount),
 			ModemID: m.modemID,
 		})
 	}
+	return alerts
 }
 
-func (m *Manager) evaluateCallLimits() {
+func (m *Manager) evaluateCallLimits() []AlertEvent {
+	var alerts []AlertEvent
 	if m.cfg.CallMinutesLimit <= 0 || m.onAlert == nil {
-		return
+		return alerts
 	}
 
 	ratio := m.callMinutesUsed / m.cfg.CallMinutesLimit
@@ -48,7 +51,7 @@ func (m *Manager) evaluateCallLimits() {
 		m.warnedCall90 = true
 		msg := fmt.Sprintf("90%% of call minutes quota reached (%.1f/%.1f)", m.callMinutesUsed, m.cfg.CallMinutesLimit)
 		slog.Warn("tariff quota warning: 90% reached", slog.String("modem", m.modemID), slog.String("quota", "call_minutes"), slog.Float64("used", m.callMinutesUsed), slog.Float64("limit", m.cfg.CallMinutesLimit))
-		m.onAlert(AlertEvent{
+		alerts = append(alerts, AlertEvent{
 			Type:    "call_limit_warning",
 			Message: msg,
 			Value:   m.callMinutesUsed,
@@ -60,18 +63,20 @@ func (m *Manager) evaluateCallLimits() {
 		m.warnedCallExceeded = true
 		msg := fmt.Sprintf("Call minutes quota exceeded (%.1f/%.1f)", m.callMinutesUsed, m.cfg.CallMinutesLimit)
 		slog.Warn("tariff quota exceeded", slog.String("modem", m.modemID), slog.String("quota", "call_minutes"), slog.Float64("used", m.callMinutesUsed), slog.Float64("limit", m.cfg.CallMinutesLimit))
-		m.onAlert(AlertEvent{
+		alerts = append(alerts, AlertEvent{
 			Type:    "call_limit_exceeded",
 			Message: msg,
 			Value:   m.callMinutesUsed,
 			ModemID: m.modemID,
 		})
 	}
+	return alerts
 }
 
-func (m *Manager) evaluateDataLimits() {
+func (m *Manager) evaluateDataLimits() []AlertEvent {
+	var alerts []AlertEvent
 	if m.cfg.DataTrafficLimitMB <= 0 || m.onAlert == nil {
-		return
+		return alerts
 	}
 
 	limitBytes := m.cfg.DataTrafficLimitMB * 1024 * 1024
@@ -81,7 +86,7 @@ func (m *Manager) evaluateDataLimits() {
 		m.warnedData90 = true
 		msg := fmt.Sprintf("90%% of data traffic quota reached (%.1f MB/%d MB)", float64(m.dataBytesUsed)/(1024*1024), m.cfg.DataTrafficLimitMB)
 		slog.Warn("tariff quota warning: 90% reached", slog.String("modem", m.modemID), slog.String("quota", "data"), slog.Float64("used_mb", float64(m.dataBytesUsed)/(1024*1024)), slog.Int64("limit_mb", m.cfg.DataTrafficLimitMB))
-		m.onAlert(AlertEvent{
+		alerts = append(alerts, AlertEvent{
 			Type:    "data_limit_warning",
 			Message: msg,
 			Value:   float64(m.dataBytesUsed),
@@ -93,18 +98,20 @@ func (m *Manager) evaluateDataLimits() {
 		m.warnedDataExceeded = true
 		msg := fmt.Sprintf("Data traffic quota exceeded (%.1f MB/%d MB)", float64(m.dataBytesUsed)/(1024*1024), m.cfg.DataTrafficLimitMB)
 		slog.Warn("tariff quota exceeded", slog.String("modem", m.modemID), slog.String("quota", "data"), slog.Float64("used_mb", float64(m.dataBytesUsed)/(1024*1024)), slog.Int64("limit_mb", m.cfg.DataTrafficLimitMB))
-		m.onAlert(AlertEvent{
+		alerts = append(alerts, AlertEvent{
 			Type:    "data_limit_exceeded",
 			Message: msg,
 			Value:   float64(m.dataBytesUsed),
 			ModemID: m.modemID,
 		})
 	}
+	return alerts
 }
 
-func (m *Manager) evaluateBalanceLimits(balance float64) {
+func (m *Manager) evaluateBalanceLimits(balance float64) []AlertEvent {
+	var alerts []AlertEvent
 	if m.cfg.MinBalanceAlert <= 0 || m.onAlert == nil {
-		return
+		return alerts
 	}
 
 	if balance < m.cfg.MinBalanceAlert {
@@ -112,7 +119,7 @@ func (m *Manager) evaluateBalanceLimits(balance float64) {
 			m.warnedLowBalance = true
 			msg := fmt.Sprintf("Balance is low: %.2f %s (threshold: %.2f)", balance, m.currency, m.cfg.MinBalanceAlert)
 			slog.Warn("tariff low balance warning", slog.String("modem", m.modemID), slog.Float64("balance", balance), slog.Float64("threshold", m.cfg.MinBalanceAlert), slog.String("currency", m.currency))
-			m.onAlert(AlertEvent{
+			alerts = append(alerts, AlertEvent{
 				Type:    "low_balance",
 				Message: msg,
 				Value:   balance,
@@ -122,4 +129,5 @@ func (m *Manager) evaluateBalanceLimits(balance float64) {
 	} else {
 		m.warnedLowBalance = false
 	}
+	return alerts
 }

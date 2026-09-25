@@ -108,7 +108,7 @@ func (e *Engine) SendCommand(ctx context.Context, cmd string) (string, error) {
 }
 
 // SendPDU transmits an SMS PDU via AT+CMGS, waits for the '>' prompt, then sends the PDU payload with Ctrl+Z (\x1A).
-func (e *Engine) SendPDU(cmdLength int, pduHex string, timeout time.Duration) (*Response, error) {
+func (e *Engine) SendPDU(ctx context.Context, cmdLength int, pduHex string, timeout time.Duration) (*Response, error) {
 	e.cmdMu.Lock()
 	defer e.cmdMu.Unlock()
 
@@ -134,6 +134,9 @@ func (e *Engine) SendPDU(cmdLength int, pduHex string, timeout time.Duration) (*
 
 	// 2. Wait for '>' prompt or early error
 	select {
+	case <-ctx.Done():
+		_, _ = e.port.Write([]byte("\x1B"))
+		return nil, ctx.Err()
 	case <-promptChan:
 		slog.Debug("AT prompt received ('>')")
 	case resp := <-respChan:
@@ -153,6 +156,9 @@ func (e *Engine) SendPDU(cmdLength int, pduHex string, timeout time.Duration) (*
 
 	// 4. Wait for final response (+CMGS: <ref> and OK)
 	select {
+	case <-ctx.Done():
+		_, _ = e.port.Write([]byte("\x1B"))
+		return nil, ctx.Err()
 	case resp := <-respChan:
 		slog.Debug("AT PDU final response", slog.Bool("ok", resp.OK), slog.Bool("error", resp.Error), slog.Any("lines", resp.Lines))
 		return resp, nil

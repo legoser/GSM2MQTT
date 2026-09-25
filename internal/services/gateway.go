@@ -168,7 +168,7 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 	r.publishDiscovery(driver)
 
 	go r.urcLoop(childCtx, engine, smsSvc, callSvc, ussdSvc)
-	r.subscribeMQTT(smsSvc, callSvc, ussdSvc, tariffMgr, diagSvc, driver)
+	r.subscribeMQTT(childCtx, smsSvc, callSvc, ussdSvc, tariffMgr, diagSvc, driver)
 	go statusSvc.Start(childCtx)
 	go r.startBalanceLoop(childCtx)
 

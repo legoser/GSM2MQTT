@@ -37,7 +37,7 @@ func (r SendSMSRequest) GetText() string {
 
 // PDUSender transmits encoded PDU octets to the modem.
 type PDUSender interface {
-	SendPDU(cmdLength int, pduHex string) (byte, error)
+	SendPDU(ctx context.Context, cmdLength int, pduHex string) (byte, error)
 }
 
 // NumberFilter validates whether an external number is allowed.
@@ -124,13 +124,13 @@ func (s *SMSService) Send(ctx context.Context, req SendSMSRequest) ([]byte, erro
 		return nil, fmt.Errorf("failed to encode SMS PDU: %w", err)
 	}
 
-	return s.dispatchPDUs(pdus, normNumber, text, requestReport)
+	return s.dispatchPDUs(ctx, pdus, normNumber, text, requestReport)
 }
 
-func (s *SMSService) dispatchPDUs(pdus []pdu.PDU, normNumber, text string, requestReport bool) ([]byte, error) {
+func (s *SMSService) dispatchPDUs(ctx context.Context, pdus []pdu.PDU, normNumber, text string, requestReport bool) ([]byte, error) {
 	refs := make([]byte, len(pdus))
 	for i, part := range pdus {
-		ref, err := s.sender.SendPDU(part.CommandLength, part.Hex)
+		ref, err := s.sender.SendPDU(ctx, part.CommandLength, part.Hex)
 		if err != nil {
 			slog.Error("failed to send PDU part",
 				slog.String("modem", s.cfg.ModemID),

@@ -90,7 +90,9 @@ func (r *ModemRunner) applyParsedBalance(text string) {
 		return
 	}
 
+	r.mu.RLock()
 	currency := r.lastCurrency
+	r.mu.RUnlock()
 	if currency == "" {
 		currency = tariff.DefaultCurrency
 	}
