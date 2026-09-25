@@ -6,7 +6,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.1.0-7-ge7a392d] - 2026-09-25
+## [0.1.3-ge7a392d] - 2026-09-25
 
 ### Features & Improvements
 

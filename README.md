@@ -19,6 +19,7 @@ Home Assistant and other MQTT-based systems via AT commands.
 - **MQTT Auto Discovery** — seamless Home Assistant integration
 - **Security** — sliding-window rate limiting, phone number filtering, AT command sanitization
 - **Cross-platform** — zero-CGO static binaries for Linux `amd64`, `arm64`, and `riscv64`
+- **Lightweight & Embedded Ready** — optional headless build (`-tags no_api`) and automated UPX compression (`make build-small`) for storage-constrained OpenWrt routers
 
 ## Supported Modems
 
@@ -119,7 +120,18 @@ gsm2mqtt/
 
 ## REST API & Web Dashboard
 
-The embedded HTTP server provides an interactive Web UI (`http://localhost:8088/` in Docker) and a REST API:
+The embedded HTTP server provides an interactive Web UI (`http://localhost:8088/` in Docker) and a REST API.
+
+### Authentication & Access Control
+
+Protected endpoints require a Bearer token:
+```bash
+curl -H "Authorization: Bearer <your-token>" http://localhost:8088/api/modems
+```
+
+> [!IMPORTANT]
+> If `api.token` is left empty in configuration, all mutating and sensitive `/api/*` endpoints return `403 Forbidden` (`{"error":"forbidden","message":"API token is required for this endpoint"}`).
+> The monitoring endpoints `GET /metrics` (Prometheus) and `GET /health` always remain publicly accessible without a token.
 
 ### 1. Direct AT Commands (`POST /api/at/send`)
 Execute arbitrary AT commands directly on any connected modem:
@@ -223,15 +235,36 @@ curl http://localhost:8088/api/modems
 
 ## Building
 
+GSM2MQTT provides multiple build targets tailored for different use cases and deployment targets:
+
+| Make Target | Build Flags | Description | Recommended For |
+|:---|:---|:---|:---|
+| `make build` | `-trimpath -ldflags "-s -w"` | Standard full-featured build (~8.3 MB) | Servers, Docker, Raspberry Pi |
+| `make build-small` | `build` + `upx --best --lzma` | Full-featured build compressed using UPX (~2.5 MB) | OpenWrt routers with limited Flash storage |
+| `make build-noapi` | `-tags no_api -trimpath ...` | Headless gateway without HTTP server / Web UI (~7.6 MB uncompressed, ~2.2 MB with UPX) | Dedicated headless gateways, routers with very tight RAM/Flash |
+| `make build-all` | Cross-compilation | Builds standard binaries for `amd64`, `arm64`, and `riscv64` | Multi-arch distributions |
+
+### Build Commands
+
 ```bash
-# Current platform
+# Standard build for current platform
 make build
 
-# All platforms
+# Ultra-compact build using UPX compression (requires upx installed)
+make build-small
+
+# Headless build without HTTP API server (saves binary size and RAM)
+make build-noapi
+
+# Headless build compressed with UPX
+make build-noapi && upx --best --lzma bin/gsm2mqtt
+
+# Cross-compile standard binaries for all architectures
 make build-all
 
-# Run tests
+# Run test suite & linters
 make test
+make vet
 ```
 
 ## License
