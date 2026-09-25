@@ -61,10 +61,10 @@ release-notes:
 	@command -v python3 >/dev/null 2>&1 || { echo "Error: 'python3' is required to generate release notes." >&2; exit 1; }
 	python3 scripts/generate_release_notes.py
 
-## prepare-release: Prepare release cut (update CHANGELOG, commit, tag) [VERSION=vX.Y.Z] [BUMP=patch|minor|major]
+## prepare-release: Prepare release cut (update CHANGELOG, commit, tag) [VERSION=vX.Y.Z] [BUMP=patch|minor|major] [FORCE=1]
 prepare-release:
 	@command -v python3 >/dev/null 2>&1 || { echo "Error: 'python3' is required for release preparation." >&2; exit 1; }
-	python3 scripts/prepare_release.py $(if $(VERSION),--version $(VERSION),) $(if $(BUMP),--bump $(BUMP),)
+	python3 scripts/prepare_release.py $(if $(VERSION),--version $(VERSION),) $(if $(BUMP),--bump $(BUMP),) $(if $(FORCE),--force,)
 
 ## setup-hooks: Configure local Git to use project hooks from .githooks/
 setup-hooks:
