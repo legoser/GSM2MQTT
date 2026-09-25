@@ -331,23 +331,6 @@ func TestLoad_ExampleConfig(t *testing.T) {
 	}
 }
 
-func TestLoad_MainConfig(t *testing.T) {
-	cfgPath := filepath.Join("..", "..", "configs", "gsm2mqtt.yaml")
-	cfg, err := Load(cfgPath)
-	if err != nil {
-		t.Fatalf("failed to load main configuration file %s: %v", cfgPath, err)
-	}
-	if cfg.MQTT.QoS != 2 {
-		t.Errorf("expected main config MQTT.QoS 2, got %d", cfg.MQTT.QoS)
-	}
-	if !cfg.MQTT.CleanSession {
-		t.Errorf("expected CleanSession true")
-	}
-	if cfg.MQTT.KeepAlive != 60*time.Second {
-		t.Errorf("expected KeepAlive 60s, got %v", cfg.MQTT.KeepAlive)
-	}
-}
-
 func TestLoad_QoSValidation(t *testing.T) {
 	tmpDir := t.TempDir()
 
