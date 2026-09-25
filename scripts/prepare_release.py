@@ -120,6 +120,9 @@ def main():
     gen_script = os.path.join(script_dir, "generate_release_notes.py")
 
     cmd = [sys.executable, gen_script, "--tag", new_tag, "--from-tag", previous_tag]
+    if args.force:
+        cmd.append("--force")
+
     if not args.dry_run:
         cmd.append("--update-changelog")
         run_cmd(cmd)
@@ -134,8 +137,12 @@ def main():
     # 2. Commit release
     commit_msg = f"[chore] (release) Bump version to {new_tag}\n\n- Update CHANGELOG.md for {new_tag}"
     run_cmd(["git", "add", "CHANGELOG.md"])
-    run_cmd(["git", "commit", "-m", commit_msg])
-    print(f"✓ Created release commit: {commit_msg.splitlines()[0]}")
+    staged_diff = run_cmd(["git", "diff", "--cached", "--name-only"], check=False)
+    if staged_diff.strip():
+        run_cmd(["git", "commit", "-m", commit_msg])
+        print(f"✓ Created release commit: {commit_msg.splitlines()[0]}")
+    else:
+        print("Note: CHANGELOG.md was already up-to-date; skipping commit.")
 
     # 3. Create annotated tag
     tag_cmd = ["git", "tag", "-a", new_tag, "-m", f"Release {new_tag}"]
