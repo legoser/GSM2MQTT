@@ -28,6 +28,21 @@
 
 ---
 
+## Быстрая установка одной строкой (Рекомендуется)
+
+Скрипт установки автоматически определяет тип вашей OpenWrt системы, архитектуру процессора, скачивает подходящий пакет (`.ipk` или `.apk`), регистрирует службу `procd` и подготавливает конфигурационный файл:
+
+```sh
+sh -c "$(wget --no-check-certificate -qO- https://raw.githubusercontent.com/legoser/gsm2mqtt/main/scripts/install.sh)"
+```
+
+Или с помощью `curl` (если установлен):
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/legoser/gsm2mqtt/main/scripts/install.sh)"
+```
+
+---
+
 ## 1. Подготовка OpenWrt к работе с модемами
 
 Для доступа к USB/Serial GSM-модемам установите драйверы ядра:

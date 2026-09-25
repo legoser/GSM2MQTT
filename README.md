@@ -31,21 +31,30 @@ Home Assistant and other MQTT-based systems via AT commands.
 | Quectel EC25/EG25 | USB/UART | Supported (Generic/AT) |
 | Generic AT Modems | UART / USB ACM | Supported |
 
-## Quick Start
+## Quick Installation (One-Liner)
 
+Install or upgrade GSM2MQTT with a single command on **Linux** (Debian, Ubuntu, Raspberry Pi OS, Armbian, Arch, Fedora) or **OpenWrt** (Raspberry Pi, x86_64, MT7621, etc.):
+
+### Linux (systemd / OpenRC)
 ```bash
-# Build
-make build
-
-# Configure
-cp configs/gsm2mqtt.example.yaml /etc/gsm2mqtt/gsm2mqtt.yaml
-# Edit the config file with your settings
-
-# Run
-./bin/gsm2mqtt --config /etc/gsm2mqtt/gsm2mqtt.yaml
+curl -fsSL https://raw.githubusercontent.com/legoser/gsm2mqtt/main/scripts/install.sh | sudo sh
 ```
 
-## Install from Release
+### OpenWrt (OPKG / APK / Standalone procd)
+```sh
+sh -c "$(wget --no-check-certificate -qO- https://raw.githubusercontent.com/legoser/gsm2mqtt/main/scripts/install.sh)"
+```
+
+The installer automatically:
+- Detects the CPU architecture (`x86_64`, `aarch64_cortex-a53`, `aarch64_cortex-a72`, `armv7`, `mipsel`, `riscv64`, etc.).
+- Downloads the latest release package (`.ipk` / `.apk`) or standalone binary for your device.
+- Preserves existing configuration files in `/etc/gsm2mqtt/gsm2mqtt.yaml`.
+- Registers and enables the service for autostart (`systemd` or OpenWrt `procd`).
+- Detects connected USB/Serial modems (`/dev/ttyUSB*`, `/dev/ttyACM*`) and provides ready-to-run commands.
+
+---
+
+## Manual Installation from Release
 
 Download the archive for your platform from the **Releases** page
 (available both in Forgejo and on GitHub):
