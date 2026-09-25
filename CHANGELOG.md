@@ -10,6 +10,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Features & Improvements
 
+- **installer**: Add universal one-line installer script for Linux and OpenWrt (`25873c4`)
+  - Add scripts/install.sh with automated platform, architecture, and package manager detection
+  - Support native OPKG (.ipk) and APK (.apk) installation on OpenWrt with procd service registration
+  - Support systemd service installation and gsm2mqtt user provisioning on Linux distros
+  - Preserve existing user configurations at /etc/gsm2mqtt/gsm2mqtt.yaml
+  - Document one-line installation prominently in README.md and OpenWrt guide
 - **config**: support copying example configuration to working config with custom QoS (`0276457`)
   - Add CopyExampleConfig to generate working YAML configuration from template with custom QoS
   - Export ModemRunner.QoS() to inspect active modem runner QoS level
@@ -24,6 +30,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Bug Fixes
 
+- **packaging**: Add Raspberry Pi 3 OPKG architecture and upgrade GitHub release action to v3 (`28239b6`)
+  - Add aarch64_cortex-a53 and aarch64_cortex-a72 targets for ARM64 OpenWrt OPKG packages
+  - Upgrade softprops/action-gh-release from v2 to v3 for Node.js 24 compatibility
+  - Enforce GNU tar format and standard archive entry order in OPKG generator
+  - Update OpenWrt deployment documentation with device-specific architecture guidance
 - **scripts**: Resolve previous baseline tag and add pre-flight checks in prepare_release.py (`07e065a`)
   - Determine previous tag strictly preceding target release version
   - Validate working tree and tag collision before modifying CHANGELOG
