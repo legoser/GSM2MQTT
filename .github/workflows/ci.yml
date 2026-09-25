@@ -20,5 +20,8 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race -count=1 ./...
-      - name: Cross-compile check
+      - name: Fast build check
+        run: make build
+      - name: Cross-compile check (main and PRs to main)
+        if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
         run: make build-all
