@@ -39,7 +39,7 @@ DEFAULT_CATEGORY = "Other Product Changes"
 
 def is_internal_commit(ctype, scope):
     """Check whether a commit belongs to repository automation / internal tooling."""
-    if ctype in ("ci", "chore", "test"):
+    if ctype in ("ci", "chore", "test", "build"):
         return True
     if scope and scope.lower() in ("ci", "repo", "workflow", "actions", "deps", "infra"):
         return True
@@ -88,6 +88,16 @@ def get_commits(range_spec):
 
 
 def parse_conventional_commit(subj):
+    # Bracket format: [feat] (scope) desc, [feat]: desc, or [feat] desc
+    m_bracket = re.match(r"^\[([a-zA-Z]+)\]\s*(?:\(([^)]+)\)|\[([^\]]+)\])?\s*:?\s*(.+)$", subj)
+    if m_bracket:
+        ctype = m_bracket.group(1).lower()
+        raw_scope = m_bracket.group(2) or m_bracket.group(3)
+        scope = raw_scope.strip() if raw_scope else None
+        desc = m_bracket.group(4).strip()
+        return ctype, scope, desc
+
+    # Standard format: type(scope): desc or type: desc
     m = re.match(r"^([a-zA-Z]+)(?:\(([^)]+)\))?!?:\s*(.+)$", subj)
     if m:
         ctype = m.group(1).lower()

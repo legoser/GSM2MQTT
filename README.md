@@ -267,6 +267,17 @@ make test
 make vet
 ```
 
+## Documentation
+
+Comprehensive documentation guides are available in the [`docs/`](docs/) directory:
+
+- 🏗️ **[Architecture & System Design](docs/architecture.md)** — Core components, multi-modem pool routing, state machine, and 5-layer security model.
+- 📡 **[MQTT Topics & Protocol Reference](docs/mqtt-topics.md)** — Full topic hierarchy, JSON command schemas, and telemetry events.
+- 📟 **[Supported Modems & Hardware Guide](docs/modems.md)** — Wiring diagrams, power supply requirements, and operator tariff presets.
+- 🏠 **[Home Assistant Integration](docs/home-assistant-integration.md)** — Auto-Discovery setup, sensors, and notification automations.
+- 📦 **[OpenWrt Deployment Guide](docs/openwrt.md)** — Standalone package installation (`.ipk` and `.apk`) and procd service management.
+- 🚀 **[Developer & Release Workflow Guide](docs/development-and-release-guide.md)** — Commit conventions, automated Git hooks, and release cut workflows.
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
