@@ -217,9 +217,14 @@ func (m *RecipientsManager) Set(rawNumbers []string) error {
 	count := len(m.numbers)
 	m.mu.Unlock()
 
+	masked := make([]string, len(normalized))
+	for i, n := range normalized {
+		masked[i] = MaskPhone(n)
+	}
+
 	slog.Info("alert recipients list updated",
 		slog.Int("total_recipients", count),
-		slog.Any("numbers", normalized),
+		slog.Any("numbers", masked),
 	)
 
 	if fn != nil {

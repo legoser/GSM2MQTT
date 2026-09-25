@@ -14,12 +14,12 @@ func TestServer_Auth_Table(t *testing.T) {
 		return httptest.NewRequest(http.MethodGet, "/api/modems", nil)
 	}
 
-	t.Run("empty token allows without header (fail-open by design)", func(t *testing.T) {
+	t.Run("empty token rejects without header", func(t *testing.T) {
 		server := NewServer(ServerConfig{Port: 8080}, &mockModemManager{})
 		w := httptest.NewRecorder()
 		server.Handler().ServeHTTP(w, newReq())
-		if w.Code != http.StatusOK {
-			t.Errorf("expected 200 with empty token, got %d", w.Code)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("expected 403 with empty token, got %d", w.Code)
 		}
 	})
 
@@ -103,10 +103,11 @@ func TestServer_Auth_POSTProtected(t *testing.T) {
 
 // TestServer_BodyLimit verifies oversized JSON bodies are rejected (DoS guard).
 func TestServer_BodyLimit(t *testing.T) {
-	server := NewServer(ServerConfig{Port: 8080}, &mockModemManager{})
+	server := NewServer(ServerConfig{Port: 8080, Token: "test"}, &mockModemManager{})
 	big := strings.Repeat("A", (64<<10)+1024)
 	req := httptest.NewRequest(http.MethodPost, "/api/sms/send",
 		strings.NewReader(`{"modem_id":"m1","to":"123","text":"`+big+`"}`))
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 	if w.Code == http.StatusOK {
