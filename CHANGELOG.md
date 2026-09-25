@@ -6,6 +6,47 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-09-25
+
+### Features & Improvements
+
+- **config**: support copying example configuration to working config with custom QoS (`0276457`)
+  - Add CopyExampleConfig to generate working YAML configuration from template with custom QoS
+  - Export ModemRunner.QoS() to inspect active modem runner QoS level
+  - Update TestLoad_MainConfig to automatically bootstrap working config from template during CI
+  - Add integration test verifying working config QoS applies across ModemRunner and GatewayManager
+- **mqtt**: add configurable QoS levels, connection options, and dynamic discovery version (`87cfdf9`)
+  - Add configurable MQTT QoS levels (0, 1, 2) across all publishers, subscribers, and LWT messages
+  - Add MQTT broker connection parameters: clean_session, keep_alive, connect_timeout, auto_reconnect, and max_reconnect_interval
+  - Support environment variable overrides for all MQTT connection parameters (GSM2MQTT_MQTT_*)
+  - Replace hardcoded discovery version in Home Assistant MQTT discovery with dynamic versioning from internal/version
+  - Update OpenWrt and example configuration templates with fully documented MQTT connection options
+
+### Bug Fixes
+
+- **scripts**: Resolve previous baseline tag and add pre-flight checks in prepare_release.py (`07e065a`)
+  - Determine previous tag strictly preceding target release version
+  - Validate working tree and tag collision before modifying CHANGELOG
+  - Support --force flag in prepare_release.py and Makefile
+- Deployment settings (`07370c3`)
+
+### Documentation
+
+- **guides**: Add comprehensive architecture, MQTT protocol, and hardware docs (`d68baa3`)
+  - Add docs/architecture.md detailing component design, modem pool, and 5-layer security
+  - Add docs/mqtt-topics.md with complete topic reference and JSON schemas
+  - Add docs/modems.md with hardware matrix, wiring, and operator tariff presets
+  - Add docs/development-and-release-guide.md with Git hooks and release cut lifecycle
+  - Add .githooks/pre-commit and .githooks/commit-msg for automated testing and format validation
+  - Add scripts/prepare_release.py and make prepare-release to automate version cuts
+  - Update AGENTS.md to offload manual testing to pre-commit automation
+
+### Other Product Changes
+
+- ci(update package) (`56e3128`)
+- ci(Choise runner) (`c81e98a`)
+- ci(Choise runner) (`51f2c07`)
+
 ## [0.1.3-ge7a392d] - 2026-09-25
 
 ### Features & Improvements
