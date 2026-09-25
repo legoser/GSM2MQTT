@@ -332,10 +332,27 @@ func TestLoad_ExampleConfig(t *testing.T) {
 }
 
 func TestLoad_MainConfig(t *testing.T) {
-	cfgPath := filepath.Join("..", "..", "configs", "gsm2mqtt.yaml")
-	cfg, err := Load(cfgPath)
+	examplePath := filepath.Join("..", "..", "configs", "gsm2mqtt.example.yaml")
+	mainPath := filepath.Join("..", "..", "configs", "gsm2mqtt.yaml")
+
+	// If main config does not exist (e.g. in fresh CI checkout),
+	// create it from example configuration with QoS = 2.
+	created := false
+	if _, err := os.Stat(mainPath); os.IsNotExist(err) {
+		if err := CopyExampleConfig(examplePath, mainPath, 2); err != nil {
+			t.Fatalf("failed to create working config from example: %v", err)
+		}
+		created = true
+	}
+	if created {
+		t.Cleanup(func() {
+			_ = os.Remove(mainPath)
+		})
+	}
+
+	cfg, err := Load(mainPath)
 	if err != nil {
-		t.Fatalf("failed to load main configuration file %s: %v", cfgPath, err)
+		t.Fatalf("failed to load main configuration file %s: %v", mainPath, err)
 	}
 	if cfg.MQTT.QoS != 2 {
 		t.Errorf("expected main config MQTT.QoS 2, got %d", cfg.MQTT.QoS)
@@ -345,6 +362,34 @@ func TestLoad_MainConfig(t *testing.T) {
 	}
 	if cfg.MQTT.KeepAlive != 60*time.Second {
 		t.Errorf("expected KeepAlive 60s, got %v", cfg.MQTT.KeepAlive)
+	}
+}
+
+func TestCopyExampleConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	examplePath := filepath.Join("..", "..", "configs", "gsm2mqtt.example.yaml")
+	targetPath := filepath.Join(tmpDir, "gsm2mqtt.yaml")
+
+	// 1. Copy example config into working config and set QoS to 2
+	if err := CopyExampleConfig(examplePath, targetPath, 2); err != nil {
+		t.Fatalf("CopyExampleConfig failed: %v", err)
+	}
+
+	// 2. Load generated working config
+	cfg, err := Load(targetPath)
+	if err != nil {
+		t.Fatalf("failed to load copied config: %v", err)
+	}
+
+	// 3. Verify that QoS 2 was applied to the loaded configuration
+	if cfg.MQTT.QoS != 2 {
+		t.Errorf("expected MQTT.QoS 2, got %d", cfg.MQTT.QoS)
+	}
+	if cfg.MQTT.Broker != "localhost" {
+		t.Errorf("expected MQTT.Broker 'localhost', got %q", cfg.MQTT.Broker)
+	}
+	if cfg.MQTT.KeepAlive != 60*time.Second {
+		t.Errorf("expected MQTT.KeepAlive 60s, got %v", cfg.MQTT.KeepAlive)
 	}
 }
 

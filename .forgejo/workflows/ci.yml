@@ -4,16 +4,20 @@ name: ci
 
 on:
   push:
-    branches: ['**']
-    tags-ignore: ['v*.*.*']
+    branches:
+      - main
+    tags-ignore:
+      - 'v*.*.*'
   pull_request:
+    branches:
+      - main
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: release
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -21,5 +25,8 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race -count=1 ./...
-      - name: Cross-compile check
+      - name: Fast build check
+        run: make build
+      - name: Cross-compile check (main and PRs to main)
+        if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
         run: make build-all

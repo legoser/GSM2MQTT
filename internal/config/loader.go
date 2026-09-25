@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -237,6 +238,34 @@ func validate(cfg *Config) error {
 		if !validStrategies[cfg.Pool.Strategy] {
 			return fmt.Errorf("invalid config: pool.strategy must be one of: round-robin, failover, best-signal, operator-match; got %q", cfg.Pool.Strategy)
 		}
+	}
+
+	return nil
+}
+
+// CopyExampleConfig reads an example YAML configuration file from examplePath,
+// optionally updates the MQTT QoS setting to the specified qos level (0, 1, or 2),
+// and writes the result to targetPath.
+func CopyExampleConfig(examplePath, targetPath string, qos int) error {
+	data, err := os.ReadFile(examplePath)
+	if err != nil {
+		return fmt.Errorf("reading example config %s: %w", examplePath, err)
+	}
+
+	content := string(data)
+	if qos >= 0 && qos <= 2 {
+		re := regexp.MustCompile(`(?m)^(\s*qos:\s*)\d+(.*)$`)
+		if re.MatchString(content) {
+			content = re.ReplaceAllString(content, fmt.Sprintf("${1}%d${2}", qos))
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+		return fmt.Errorf("creating directory for %s: %w", targetPath, err)
+	}
+
+	if err := os.WriteFile(targetPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("writing working config %s: %w", targetPath, err)
 	}
 
 	return nil

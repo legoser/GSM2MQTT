@@ -108,7 +108,7 @@ compile_binary() {
     echo "=> Compiling ${PKG_NAME} for linux/${arch}..."
     local build_time
     build_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-    local ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${build_time}"
+    local ldflags="-s -w -X github.com/legoser/gsm2mqtt/internal/version.Version=${VERSION} -X github.com/legoser/gsm2mqtt/internal/version.BuildTime=${build_time} -X main.version=${VERSION} -X main.buildTime=${build_time}"
 
     case "$arch" in
         amd64)

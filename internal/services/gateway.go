@@ -316,3 +316,8 @@ func (r *ModemRunner) qos() byte {
 	}
 	return 1
 }
+
+// QoS returns the runner's configured MQTT QoS level.
+func (r *ModemRunner) QoS() byte {
+	return r.qos()
+}

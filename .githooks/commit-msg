@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -e
+
+MSG_FILE="$1"
+COMMIT_MSG=$(head -n 1 "$MSG_FILE")
+
+# Allow merge commits and rebase fixups
+if [[ "$COMMIT_MSG" =~ ^Merge ]] || [[ "$COMMIT_MSG" =~ ^(fixup|squash)! ]]; then
+    exit 0
+fi
+
+# Regex supporting both Conventional Commits and Bracketed format:
+# Option A: feat(scope): message OR feat: message
+# Option B: [feat] (scope) message OR [feat] message OR [feat]: message
+REGEX_CONVENTIONAL="^(feat|fix|perf|docs|refactor|ci|test|chore|build)(\([a-zA-Z0-9_\.\/-]+\))?!?: .+$"
+REGEX_BRACKET="^\[(feat|fix|perf|docs|refactor|ci|test|chore|build)\](\s*(\([a-zA-Z0-9_\.\/-]+\)|\[[a-zA-Z0-9_\.\/-]+\]))?\s*:?\s*.+$"
+
+if ! [[ "$COMMIT_MSG" =~ $REGEX_CONVENTIONAL ]] && ! [[ "$COMMIT_MSG" =~ $REGEX_BRACKET ]]; then
+    echo ""
+    echo "❌ [commit-msg hook] Invalid commit message format!"
+    echo "   Your message: \"$COMMIT_MSG\""
+    echo ""
+    echo "   Accepted formats (see docs/development-and-release-guide.md):"
+    echo "     1. [type] (scope) <summary>  -> e.g. [feat] (config) Add QoS support"
+    echo "     2. [type] <summary>          -> e.g. [fix] Bug #10: memory leak"
+    echo "     3. type(scope): <summary>    -> e.g. feat(config): add QoS support"
+    echo ""
+    echo "   Allowed types:"
+    echo "     Product:    feat, fix, perf, docs"
+    echo "     Internal:   ci, test, chore, refactor, build"
+    echo ""
+    exit 1
+fi
