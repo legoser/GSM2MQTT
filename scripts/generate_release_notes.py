@@ -91,7 +91,7 @@ def parse_conventional_commit(subj):
     m = re.match(r"^([a-zA-Z]+)(?:\(([^)]+)\))?!?:\s*(.+)$", subj)
     if m:
         ctype = m.group(1).lower()
-        scope = m.group(2).strip()
+        scope = m.group(2).strip() if m.group(2) else None
         desc = m.group(3).strip()
         return ctype, scope, desc
     return "other", None, subj
