@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -306,4 +307,50 @@ func TestModemRunner_ConfiguredQoS(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkingConfig_AppliesQoSInServices(t *testing.T) {
+	tmpDir := t.TempDir()
+	examplePath := filepath.Join("..", "..", "configs", "gsm2mqtt.example.yaml")
+	targetPath := filepath.Join(tmpDir, "gsm2mqtt.yaml")
+
+	if err := config.CopyExampleConfig(examplePath, targetPath, 2); err != nil {
+		t.Fatalf("failed to copy example config: %v", err)
+	}
+
+	cfg, err := config.Load(targetPath)
+	if err != nil {
+		t.Fatalf("failed to load copied config: %v", err)
+	}
+
+	mockClient := mqtt.NewMockClient()
+	_ = mockClient.Connect()
+
+	// 1. Verify ModemRunner uses QoS 2
+	runner := NewModemRunner(cfg.Modems[0], cfg, nil, mockClient)
+	if runner.QoS() != 2 {
+		t.Errorf("expected runner.QoS() == 2, got %d", runner.QoS())
+	}
+
+	// 2. Verify GatewayManager uses QoS 2
+	mgr := NewGatewayManager()
+	mgr.SetMQTT(mockClient, &cfg.MQTT)
+	if status := mgr.GetMQTTStatus(); status.QoS != 2 {
+		t.Errorf("expected manager MQTT status QoS == 2, got %d", status.QoS)
+	}
+
+	// 3. Verify messages published by runner use QoS 2
+	tm := tariff.NewManager("modem1", tariff.Config{OperatorPreset: "generic"}, nil)
+	runner.publishAccountingStatus(tm)
+
+	published := mockClient.Published()
+	if len(published) == 0 {
+		t.Fatal("expected at least one published message")
+	}
+	for _, p := range published {
+		if p.QoS != 2 {
+			t.Errorf("expected message published with QoS 2, got %d for topic %s", p.QoS, p.Topic)
+		}
+	}
+}
+
 
