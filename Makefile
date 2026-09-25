@@ -11,6 +11,15 @@ build:
 
 ## build-small: Build for current platform and compress with UPX
 build-small: build
+	@command -v upx >/dev/null 2>&1 || { \
+		echo "Error: 'upx' utility is not installed." >&2; \
+		echo "UPX is required to compress binaries for resource-constrained targets." >&2; \
+		echo "Install UPX via your package manager:" >&2; \
+		echo "  - Arch Linux:    sudo pacman -S upx" >&2; \
+		echo "  - Debian/Ubuntu: sudo apt install upx-ucl (or upx)" >&2; \
+		echo "  - macOS:         brew install upx" >&2; \
+		exit 1; \
+	}
 	upx --best --lzma bin/$(APP_NAME)
 
 ## build-noapi: Build for current platform without HTTP API (smaller binary)
@@ -29,22 +38,27 @@ build-riscv64:
 
 ## package-openwrt: Build OpenWrt packages (both OPKG and APK for all architectures)
 package-openwrt:
+	@chmod +x ./scripts/build_openwrt_packages.sh
 	./scripts/build_openwrt_packages.sh --type all --arch all --version $(VERSION)
 
 ## package-opkg: Build OpenWrt OPKG (.ipk) packages for all architectures
 package-opkg:
+	@chmod +x ./scripts/build_openwrt_packages.sh
 	./scripts/build_openwrt_packages.sh --type ipk --arch all --version $(VERSION)
 
 ## package-apk: Build OpenWrt APK (.apk) packages for all architectures
 package-apk:
+	@chmod +x ./scripts/build_openwrt_packages.sh
 	./scripts/build_openwrt_packages.sh --type apk --arch all --version $(VERSION)
 
 ## changelog: Auto-generate and record release section into CHANGELOG.md
 changelog:
+	@command -v python3 >/dev/null 2>&1 || { echo "Error: 'python3' is required to generate changelog." >&2; exit 1; }
 	python3 scripts/generate_release_notes.py --update-changelog
 
 ## release-notes: Generate formatted release notes for current tag/HEAD
 release-notes:
+	@command -v python3 >/dev/null 2>&1 || { echo "Error: 'python3' is required to generate release notes." >&2; exit 1; }
 	python3 scripts/generate_release_notes.py
 
 ## test: Run all tests
@@ -62,10 +76,17 @@ vet:
 
 ## lint: Run golangci-lint
 lint:
+	@command -v golangci-lint >/dev/null 2>&1 || { \
+		echo "Error: 'golangci-lint' is not installed." >&2; \
+		echo "Install it via: https://golangci-lint.run/welcome/install/" >&2; \
+		echo "Or run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest" >&2; \
+		exit 1; \
+	}
 	golangci-lint run ./...
 
 ## docker: Build Docker image
 docker:
+	@command -v docker >/dev/null 2>&1 || { echo "Error: 'docker' is not installed or not in PATH." >&2; exit 1; }
 	docker build -t $(APP_NAME):$(VERSION) -f deployments/docker/Dockerfile .
 
 ## docker-up: Start services with Docker Compose
