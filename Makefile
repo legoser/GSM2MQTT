@@ -9,6 +9,14 @@ LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION) -X main.buildTime=$(BUILD_
 build:
 	CGO_ENABLED=0 go build -trimpath $(LDFLAGS) -o bin/$(APP_NAME) ./cmd/gsm2mqtt/
 
+## build-small: Build for current platform and compress with UPX
+build-small: build
+	upx --best --lzma bin/$(APP_NAME)
+
+## build-noapi: Build for current platform without HTTP API (smaller binary)
+build-noapi:
+	CGO_ENABLED=0 go build -tags no_api -trimpath $(LDFLAGS) -o bin/$(APP_NAME) ./cmd/gsm2mqtt/
+
 ## build-all: Cross-compile for all target platforms (amd64, arm64, riscv64)
 build-all:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath $(LDFLAGS) -o bin/$(APP_NAME)-linux-amd64 ./cmd/gsm2mqtt/

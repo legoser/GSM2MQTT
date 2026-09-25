@@ -1,3 +1,5 @@
+//go:build !no_api
+
 package api
 
 import (
@@ -10,48 +12,11 @@ import (
 	"time"
 
 	"github.com/legoser/gsm2mqtt/internal/metrics"
-	"github.com/legoser/gsm2mqtt/internal/services"
-	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
 
 // maxRequestBodyBytes caps JSON request bodies on mutating endpoints (DoS guard).
 const maxRequestBodyBytes = 64 << 10 // 64 KiB
 
-// ServerConfig configures the embedded HTTP Web and REST server.
-type ServerConfig struct {
-	Host  string
-	Port  int
-	Token string
-}
-
-// ModemSummary is an alias to services.ModemSummary for API presentation.
-type ModemSummary = services.ModemSummary
-
-// ReceivedSMS is an alias to services.ReceivedSMS for API presentation.
-type ReceivedSMS = services.ReceivedSMS
-
-// CallStatus is an alias to services.CallStatus for API presentation.
-type CallStatus = services.CallStatus
-
-// MQTTStatus is an alias to services.MQTTStatus for API presentation.
-type MQTTStatus = services.MQTTStatus
-
-// ModemManager is the interface required by the API to query state and dispatch operations.
-type ModemManager interface {
-	GetModems() []ModemSummary
-	SendSMS(ctx context.Context, modemID, to, text string) ([]byte, error)
-	SendUSSD(ctx context.Context, modemID, code string) (string, error)
-	DialCall(ctx context.Context, modemID, number string) error
-	HangupCall(ctx context.Context, modemID string) error
-	GetCallStatus(modemID string) CallStatus
-	SendRawAT(ctx context.Context, modemID, cmd string) (string, error)
-	GetReceivedSMS() []ReceivedSMS
-	GetMQTTStatus() MQTTStatus
-	UpdateTariffConfig(modemID string, cfg tariff.Config) error
-	SetTariffUsage(modemID string, update tariff.UsageUpdate) error
-	ResetTariffQuotas(modemID string) error
-	GetTariffStatus(modemID string) (*tariff.UsageStatus, error)
-}
 
 // Server provides Web UI and REST API endpoints for GSM2MQTT.
 type Server struct {
@@ -80,9 +45,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) Start(ctx context.Context) error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 	if s.cfg.Token == "" {
-		// Fail-open by design (home network use): empty token means no auth.
-		// Warn loudly so operators do not expose this unintentionally.
-		slog.Warn("HTTP API running WITHOUT auth token (open access)", slog.String("addr", addr))
+		slog.Warn("HTTP REST API disabled because auth token is empty. Only /metrics and /health are available.", slog.String("addr", addr))
+	} else {
+		slog.Info("HTTP API listening", slog.String("addr", addr))
 	}
 	srv := &http.Server{
 		Addr:              addr,
@@ -116,14 +81,16 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		secureHeaders(w)
-		if s.cfg.Token != "" {
-			// Constant-time compare against the expected "Bearer <token>" value.
-			got := []byte(r.Header.Get("Authorization"))
-			want := []byte("Bearer " + s.cfg.Token)
-			if len(got) != len(want) || subtle.ConstantTimeCompare(got, want) != 1 {
-				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-				return
-			}
+		if s.cfg.Token == "" {
+			http.Error(w, `{"error":"forbidden","message":"API token is required for this endpoint"}`, http.StatusForbidden)
+			return
+		}
+		// Constant-time compare against the expected "Bearer <token>" value.
+		got := []byte(r.Header.Get("Authorization"))
+		want := []byte("Bearer " + s.cfg.Token)
+		if len(got) != len(want) || subtle.ConstantTimeCompare(got, want) != 1 {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
 		}
 		next(w, r)
 	}
