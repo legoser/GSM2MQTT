@@ -73,34 +73,40 @@ jobs:
           (cd dist && sha256sum ./*.tar.gz ./*.ipk ./*.apk > checksums.txt)
           ls -la dist && cat dist/checksums.txt
 
-      - name: Generate release notes (CHANGELOG.md section, fallback to git log)
+      - name: Generate release notes (CHANGELOG.md section or auto-generated from git history)
         run: |
           ver="${TAG#v}"
-          {
-            if grep -q "^## \\[${ver}\\]" CHANGELOG.md 2>/dev/null; then
+          if grep -q "^## \\[${ver}\\]" CHANGELOG.md 2>/dev/null; then
+            {
               awk -v ver="$ver" '
                 index($0, "## [" ver "]") == 1 {flag=1; next}
                 flag && /^## / {exit}
                 flag
               ' CHANGELOG.md | sed '/./,$!d'
-            else
-              prev="$(git tag --list 'v*.*.*' --sort=-v:refname | grep -x -v "$TAG" | head -n 1 || true)"
-              if [ -n "$prev" ]; then range="$prev..$TAG"; else range="$TAG"; fi
-              echo "## What's changed ($range)"
               echo
-              git log "$range" --pretty=format:'- %s (%h)' --no-merges 2>/dev/null \
-                || git log -20 HEAD --pretty=format:'- %s (%h)' --no-merges
-            fi
-            echo
-            echo
-            echo "## Install"
-            echo
-            echo '```bash'
-            echo "sha256sum -c checksums.txt"
-            echo "tar -xzf gsm2mqtt-${TAG}-linux-amd64.tar.gz"
-            echo "./gsm2mqtt --version"
-            echo '```'
-          } > release_notes.md
+              echo "## Installation"
+              echo
+              echo "### Standalone Binaries"
+              echo '```bash'
+              echo "sha256sum -c checksums.txt"
+              echo "tar -xzf gsm2mqtt-${TAG}-linux-amd64.tar.gz"
+              echo "./gsm2mqtt --version"
+              echo '```'
+              echo
+              echo "### OpenWrt Packages"
+              echo '```bash'
+              echo "# OpenWrt <= 23.05 (OPKG):"
+              echo "opkg install gsm2mqtt_${ver}-1_x86_64.ipk"
+              echo
+              echo "# OpenWrt >= 25.12 (APK):"
+              echo "apk add --allow-untrusted ./gsm2mqtt-${ver}-r1-x86_64.apk"
+              echo
+              echo "/etc/init.d/gsm2mqtt start"
+              echo '```'
+            } > release_notes.md
+          else
+            python3 scripts/generate_release_notes.py --tag "${TAG}" --output release_notes.md
+          fi
           cat release_notes.md
 
       - name: Publish Forgejo Release with assets

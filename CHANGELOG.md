@@ -27,9 +27,7 @@ Single static binary, no runtime dependencies.
 ## Release process
 
 1. Merge `development` into `main`.
-2. Write the release notes: move `[Unreleased]` entries into a new `## [X.Y.Z] - YYYY-MM-DD` section above.
-   The release workflows publish exactly this section as the release description.
-3. Commit, then tag the release: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. CI builds `gsm2mqtt-<version>-linux-{amd64,arm64,riscv64}.tar.gz` + `checksums.txt`
-   and publishes a Release with the same name in Forgejo and (via push-mirror) on GitHub.
-4. Verify: `sha256sum -c checksums.txt && ./gsm2mqtt --version`.
+2. Generate changelog: run `make changelog` (or `python3 scripts/generate_release_notes.py --update-changelog`) to automatically collect changes from git commits into `CHANGELOG.md`.
+3. Commit and tag the release: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
+4. CI builds `tar.gz` archives, OpenWrt packages (`.ipk` and `.apk`) and `checksums.txt`, automatically generates categorized release notes with full commit details, and publishes the Release in Forgejo and on GitHub.
+5. Verify: `sha256sum -c checksums.txt && ./gsm2mqtt --version`.

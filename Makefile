@@ -3,7 +3,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)"
 
-.PHONY: build build-all build-riscv64 package-openwrt package-opkg package-apk test test-cover lint vet docker clean help
+.PHONY: build build-all build-riscv64 package-openwrt package-opkg package-apk changelog release-notes test test-cover lint vet docker clean help
 
 ## build: Build for current platform
 build:
@@ -30,6 +30,14 @@ package-opkg:
 ## package-apk: Build OpenWrt APK (.apk) packages for all architectures
 package-apk:
 	./scripts/build_openwrt_packages.sh --type apk --arch all --version $(VERSION)
+
+## changelog: Auto-generate and record release section into CHANGELOG.md
+changelog:
+	python3 scripts/generate_release_notes.py --update-changelog
+
+## release-notes: Generate formatted release notes for current tag/HEAD
+release-notes:
+	python3 scripts/generate_release_notes.py
 
 ## test: Run all tests
 test:
