@@ -66,8 +66,11 @@ def is_working_tree_clean():
 
 
 def tag_exists(tag):
+    # Exact ref match only. `git rev-parse --verify refs/tags/<tag>` must NOT be
+    # used here: it false-positives on describe-style strings
+    # (e.g. v0.1.4-30-g21075e7 resolves to HEAD), blocking legitimate releases.
     res = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}"],
+        ["git", "show-ref", "--verify", "--quiet", f"refs/tags/{tag}"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )

@@ -72,7 +72,10 @@ release-notes:
 ## prepare-release: Prepare release cut (update CHANGELOG, commit, tag) [VERSION=vX.Y.Z] [BUMP=patch|minor|major] [FORCE=1]
 prepare-release:
 	@command -v python3 >/dev/null 2>&1 || { echo "Error: 'python3' is required for release preparation." >&2; exit 1; }
-	python3 scripts/prepare_release.py $(if $(VERSION),--version $(VERSION),) $(if $(BUMP),--bump $(BUMP),) $(if $(FORCE),--force,)
+	# NB: VERSION is auto-populated from `git describe` for build stamping (see top of file),
+	# so only forward it as --version when explicitly given on the command line.
+	# Otherwise the script must derive the next version from BUMP (default: patch).
+	python3 scripts/prepare_release.py $(if $(filter command line,$(origin VERSION)),--version $(VERSION),) $(if $(BUMP),--bump $(BUMP),) $(if $(FORCE),--force,)
 
 ## setup-hooks: Configure local Git to use project hooks from .githooks/
 setup-hooks:
