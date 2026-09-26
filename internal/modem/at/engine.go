@@ -146,6 +146,15 @@ func (e *Engine) SendPDU(ctx context.Context, cmdLength int, pduHex string, time
 		return nil, fmt.Errorf("timeout waiting for '>' prompt")
 	}
 
+	// Brief delay to allow slow modems (e.g. at 9600 baud) to finish outputting trailing
+	// space/prompt bytes and prepare their internal UART RX FIFO for the incoming PDU block.
+	select {
+	case <-ctx.Done():
+		_, _ = e.port.Write([]byte("\x1B"))
+		return nil, ctx.Err()
+	case <-time.After(100 * time.Millisecond):
+	}
+
 	slog.Debug("AT PDU payload transmitted", slog.Int("pdu_hex_len", len(pduHex)))
 
 	// 3. Write PDU and Ctrl-Z (\x1A)

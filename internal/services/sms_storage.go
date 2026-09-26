@@ -58,6 +58,12 @@ func (s *SMSService) SyncStoredMessages(ctx context.Context, storageNames ...str
 		totalSynced += syncedInStorage
 	}
 
+	// Always ensure default SIM storage ("SM") is restored after syncing multiple storages,
+	// preventing modem write/send memory (mem2) from being left in an unsupported state.
+	if len(storageNames) > 1 {
+		_, _ = s.storageMgr.SelectStorage("SM")
+	}
+
 	return totalSynced, nil
 }
 

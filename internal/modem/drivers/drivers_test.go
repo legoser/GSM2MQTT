@@ -590,7 +590,7 @@ func TestNeowayDriver_Init(t *testing.T) {
 		t.Fatalf("Neoway Init error: %v", err)
 	}
 
-	expectedCmds := []string{"AT", "ATE0", "AT+CMEE=2", "AT+CMGF=0", "AT+CNMI=2,1,0,1,0", "AT+CLIP=1", "AT+CSCS=\"IRA\""}
+	expectedCmds := []string{"AT", "ATE0", "AT+CMEE=2", "AT+CPMS=\"SM\",\"SM\",\"SM\"", "AT+CMGF=0", "AT+CNMI=2,1,0,1,0", "AT+CLIP=1", "AT+CSCS=\"IRA\""}
 	for _, expected := range expectedCmds {
 		found := false
 		for _, cmd := range runner.commands {
@@ -607,6 +607,30 @@ func TestNeowayDriver_Init(t *testing.T) {
 		if cmd == "AT+COLP=1" {
 			t.Errorf("did not expect AT+COLP=1 during Neoway Init, found in: %v", runner.commands)
 		}
+	}
+}
+
+func TestNeowayDriver_SelectStorage(t *testing.T) {
+	runner := newMockATRunner()
+	driver := NewNeowayDriver(runner)
+
+	// ME storage rejected early in software without executing hardware AT command
+	_, err := driver.SelectStorage("ME")
+	if err == nil {
+		t.Errorf("expected error selecting ME storage on Neoway, got nil")
+	}
+
+	// SM storage delegates to base driver and succeeds
+	runner.responses["AT+CPMS=\"SM\",\"SM\",\"SM\""] = &at.Response{
+		OK:    true,
+		Lines: []string{`+CPMS: "SM",0,15,"SM",0,15,"SM",0,15`},
+	}
+	st, err := driver.SelectStorage("SM")
+	if err != nil {
+		t.Fatalf("unexpected error selecting SM storage: %v", err)
+	}
+	if st.Name != "SM" || st.Total != 15 {
+		t.Errorf("unexpected storage status: %+v", st)
 	}
 }
 
