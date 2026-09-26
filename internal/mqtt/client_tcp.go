@@ -194,10 +194,37 @@ func (c *TCPClient) readLoop(conn net.Conn) {
 				ack := packets.NewControlPacket(packets.Puback).(*packets.PubackPacket)
 				ack.MessageID = p.MessageID
 				_ = c.writePacket(ack)
+			} else if p.Qos == 2 {
+				rec := packets.NewControlPacket(packets.Pubrec).(*packets.PubrecPacket)
+				rec.MessageID = p.MessageID
+				_ = c.writePacket(rec)
 			}
 			c.dispatch(p.TopicName, p.Payload)
 
 		case *packets.PubackPacket:
+			c.ackMu.Lock()
+			if ch, ok := c.pubacks[p.MessageID]; ok {
+				select {
+				case ch <- struct{}{}:
+				default:
+				}
+			}
+			c.ackMu.Unlock()
+
+		case *packets.PubrecPacket:
+			// Broker received our QoS 2 publish, reply with PUBREL
+			rel := packets.NewControlPacket(packets.Pubrel).(*packets.PubrelPacket)
+			rel.MessageID = p.MessageID
+			_ = c.writePacket(rel)
+
+		case *packets.PubrelPacket:
+			// Broker sent PUBREL for incoming QoS 2 message, reply with PUBCOMP
+			comp := packets.NewControlPacket(packets.Pubcomp).(*packets.PubcompPacket)
+			comp.MessageID = p.MessageID
+			_ = c.writePacket(comp)
+
+		case *packets.PubcompPacket:
+			// Broker finished QoS 2 handshake for our outgoing publish
 			c.ackMu.Lock()
 			if ch, ok := c.pubacks[p.MessageID]; ok {
 				select {

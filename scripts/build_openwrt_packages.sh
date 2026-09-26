@@ -157,6 +157,7 @@ build_ipk() {
              "${data_dir}/etc/init.d" \
              "${data_dir}/etc/config" \
              "${data_dir}/etc/gsm2mqtt" \
+             "${data_dir}/etc/hotplug.d/tty" \
              "${ctrl_dir}"
 
     cp "$bin_path" "${data_dir}/usr/bin/${PKG_NAME}"
@@ -168,8 +169,25 @@ build_ipk() {
     cp "${REPO_ROOT}/deployments/openwrt/files/gsm2mqtt.config" "${data_dir}/etc/config/${PKG_NAME}"
     chmod 644 "${data_dir}/etc/config/${PKG_NAME}"
 
-    cp "${REPO_ROOT}/deployments/openwrt/files/gsm2mqtt.yaml" "${data_dir}/etc/gsm2mqtt/${PKG_NAME}.yaml"
-    chmod 640 "${data_dir}/etc/gsm2mqtt/${PKG_NAME}.yaml"
+    cp "${REPO_ROOT}/deployments/openwrt/files/gsm2mqtt.yaml" "${data_dir}/etc/gsm2mqtt/${PKG_NAME}.yaml.example"
+    chmod 640 "${data_dir}/etc/gsm2mqtt/${PKG_NAME}.yaml.example"
+
+    cat << 'EOF' > "${data_dir}/etc/hotplug.d/tty/25-gsm-symlink"
+#!/bin/sh
+case "$DEVICENAME" in
+    ttyUSB*|ttyACM*)
+        if [ "$ACTION" = "add" ] && [ -e "/dev/$DEVICENAME" ]; then
+            ln -sf "/dev/$DEVICENAME" /dev/ttyGSM
+        elif [ "$ACTION" = "remove" ]; then
+            current=$(readlink /dev/ttyGSM 2>/dev/null)
+            if [ "$current" = "/dev/$DEVICENAME" ]; then
+                rm -f /dev/ttyGSM
+            fi
+        fi
+        ;;
+esac
+EOF
+    chmod 755 "${data_dir}/etc/hotplug.d/tty/25-gsm-symlink"
 
     # Control metadata
     cat << EOF > "${ctrl_dir}/control"
@@ -184,12 +202,21 @@ EOF
 
     cat << EOF > "${ctrl_dir}/conffiles"
 /etc/config/${PKG_NAME}
-/etc/gsm2mqtt/${PKG_NAME}.yaml
 EOF
 
     cat << 'EOF' > "${ctrl_dir}/postinst"
 #!/bin/sh
-mkdir -p /var/lock /var/run
+mkdir -p /var/lock /var/run /etc/gsm2mqtt
+if [ ! -f /etc/gsm2mqtt/gsm2mqtt.yaml ]; then
+    cp /etc/gsm2mqtt/gsm2mqtt.yaml.example /etc/gsm2mqtt/gsm2mqtt.yaml
+    chmod 640 /etc/gsm2mqtt/gsm2mqtt.yaml
+fi
+for dev in /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyACM0; do
+    if [ -e "$dev" ] && [ ! -e /dev/ttyGSM ]; then
+        ln -sf "$dev" /dev/ttyGSM
+        break
+    fi
+done
 [ -z "$IPKG_INSTROOT" ] && [ -x /etc/init.d/gsm2mqtt ] && {
     /etc/init.d/gsm2mqtt enable
 }
@@ -301,6 +328,7 @@ build_apk() {
              "${root_dir}/etc/init.d" \
              "${root_dir}/etc/config" \
              "${root_dir}/etc/gsm2mqtt" \
+             "${root_dir}/etc/hotplug.d/tty" \
              "${scripts_dir}"
 
     cp "$bin_path" "${root_dir}/usr/bin/${PKG_NAME}"
@@ -312,12 +340,39 @@ build_apk() {
     cp "${REPO_ROOT}/deployments/openwrt/files/gsm2mqtt.config" "${root_dir}/etc/config/${PKG_NAME}"
     chmod 644 "${root_dir}/etc/config/${PKG_NAME}"
 
-    cp "${REPO_ROOT}/deployments/openwrt/files/gsm2mqtt.yaml" "${root_dir}/etc/gsm2mqtt/${PKG_NAME}.yaml"
-    chmod 640 "${root_dir}/etc/gsm2mqtt/${PKG_NAME}.yaml"
+    cp "${REPO_ROOT}/deployments/openwrt/files/gsm2mqtt.yaml" "${root_dir}/etc/gsm2mqtt/${PKG_NAME}.yaml.example"
+    chmod 640 "${root_dir}/etc/gsm2mqtt/${PKG_NAME}.yaml.example"
+
+    cat << 'EOF' > "${root_dir}/etc/hotplug.d/tty/25-gsm-symlink"
+#!/bin/sh
+case "$DEVICENAME" in
+    ttyUSB*|ttyACM*)
+        if [ "$ACTION" = "add" ] && [ -e "/dev/$DEVICENAME" ]; then
+            ln -sf "/dev/$DEVICENAME" /dev/ttyGSM
+        elif [ "$ACTION" = "remove" ]; then
+            current=$(readlink /dev/ttyGSM 2>/dev/null)
+            if [ "$current" = "/dev/$DEVICENAME" ]; then
+                rm -f /dev/ttyGSM
+            fi
+        fi
+        ;;
+esac
+EOF
+    chmod 755 "${root_dir}/etc/hotplug.d/tty/25-gsm-symlink"
 
     cat << 'EOF' > "${scripts_dir}/post-install.sh"
 #!/bin/sh
-mkdir -p /var/lock /var/run
+mkdir -p /var/lock /var/run /etc/gsm2mqtt
+if [ ! -f /etc/gsm2mqtt/gsm2mqtt.yaml ]; then
+    cp /etc/gsm2mqtt/gsm2mqtt.yaml.example /etc/gsm2mqtt/gsm2mqtt.yaml
+    chmod 640 /etc/gsm2mqtt/gsm2mqtt.yaml
+fi
+for dev in /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyACM0; do
+    if [ -e "$dev" ] && [ ! -e /dev/ttyGSM ]; then
+        ln -sf "$dev" /dev/ttyGSM
+        break
+    fi
+done
 [ -x /etc/init.d/gsm2mqtt ] && /etc/init.d/gsm2mqtt enable
 exit 0
 EOF

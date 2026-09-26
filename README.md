@@ -250,8 +250,17 @@ GSM2MQTT provides multiple build targets tailored for different use cases and de
 |:---|:---|:---|:---|
 | `make build` | `-trimpath -ldflags "-s -w"` | Standard full-featured build (~8.3 MB) | Servers, Docker, Raspberry Pi |
 | `make build-small` | `build` + `upx --best --lzma` | Full-featured build compressed using UPX (~2.5 MB) | OpenWrt routers with limited Flash storage |
-| `make build-noapi` | `-tags no_api -trimpath ...` | Headless gateway without HTTP server / Web UI (~7.6 MB uncompressed, ~2.2 MB with UPX) | Dedicated headless gateways, routers with very tight RAM/Flash |
+| `make build-noapi` | `-tags no_api -trimpath ...` | Headless gateway without HTTP server / Web UI (~7.6 MB uncompressed, ~2.2 MB with UPX) | Dedicated headless gateways, routers with tight RAM/Flash |
+| `make build-mips` | `GOARCH=mips -tags "no_api,no_tls"` | Embedded MIPS big-endian build with pure-TCP MQTT engine (~4.8 MB uncompressed) | Atheros AR9331, QCA953x OpenWrt routers (32–64 MB RAM) |
+| `make build-mipsel` | `GOARCH=mipsle -tags "no_api,no_tls"` | Embedded MIPS little-endian build with pure-TCP MQTT engine (~4.8 MB uncompressed) | MediaTek MT7620/MT7628/MT7688 OpenWrt routers |
 | `make build-all` | Cross-compilation | Builds standard binaries for `amd64`, `arm64`, and `riscv64` | Multi-arch distributions |
+
+### Build Tags (Modular Compilation)
+
+GSM2MQTT supports fine-grained build tags for constrained embedded environments:
+
+- **`no_api`**: Completely strips the HTTP REST API server, Web UI dashboard, and `net/http` dependencies. Saves ~1 MB of binary size and reduces runtime RAM consumption.
+- **`no_tls`**: Replaces the standard Eclipse Paho MQTT client (and `crypto/tls` / `crypto/rand` dependencies) with an ultra-lightweight, pure-TCP MQTT 3.1.1 packet engine with automatic reconnection and resubscription. Eliminates early-runtime FIPS-140/`crypto/rand` crashes on legacy MIPS Linux 4.4 kernels and drastically reduces memory overhead for 32 MB RAM routers.
 
 ### Build Commands
 
@@ -265,11 +274,15 @@ make build-small
 # Headless build without HTTP API server (saves binary size and RAM)
 make build-noapi
 
-# Headless build compressed with UPX
-make build-noapi && upx --best --lzma bin/gsm2mqtt
+# Embedded build for MIPS OpenWrt routers (32 MB RAM, pure TCP MQTT without TLS)
+make build-mips
+make build-mipsel
 
 # Cross-compile standard binaries for all architectures
 make build-all
+
+# Build OpenWrt standalone packages (.ipk for OPKG and .apk for APK)
+make package-openwrt
 
 # Run test suite & linters
 make test

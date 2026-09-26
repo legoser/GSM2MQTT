@@ -64,7 +64,16 @@ func (b *mockBroker) handleConn(conn net.Conn) {
 				ack := packets.NewControlPacket(packets.Puback).(*packets.PubackPacket)
 				ack.MessageID = p.MessageID
 				_ = ack.Write(conn)
+			} else if p.Qos == 2 {
+				rec := packets.NewControlPacket(packets.Pubrec).(*packets.PubrecPacket)
+				rec.MessageID = p.MessageID
+				_ = rec.Write(conn)
 			}
+
+		case *packets.PubrelPacket:
+			comp := packets.NewControlPacket(packets.Pubcomp).(*packets.PubcompPacket)
+			comp.MessageID = p.MessageID
+			_ = comp.Write(conn)
 
 		case *packets.SubscribePacket:
 			sa := packets.NewControlPacket(packets.Suback).(*packets.SubackPacket)
@@ -140,6 +149,11 @@ func TestTCPClient_Lifecycle(t *testing.T) {
 	// Publish QoS 1
 	if err := client.Publish("test/topic", 1, false, []byte("qos1-msg")); err != nil {
 		t.Fatalf("Publish QoS 1 failed: %v", err)
+	}
+
+	// Publish QoS 2
+	if err := client.Publish("test/topic", 2, false, []byte("qos2-msg")); err != nil {
+		t.Fatalf("Publish QoS 2 failed: %v", err)
 	}
 
 	client.Disconnect(10)
