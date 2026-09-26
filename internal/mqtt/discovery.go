@@ -142,7 +142,7 @@ func BuildStatusDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
 		StateTopic:          stateTopic,
 		JSONAttributesTopic: stateTopic,
 		DeviceClass:         "enum",
-		Options:             []string{"ready", "degraded", "not_ready", "error"},
+		Options:             []string{"ready", "degraded", "not_ready", "error", "disconnected"},
 		ValueTemplate:       "{{ value_json.status }}",
 		Icon:                "mdi:chip",
 		AvailabilityTopic:   availTopic,

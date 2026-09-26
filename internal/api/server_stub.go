@@ -4,19 +4,14 @@ package api
 
 import (
 	"context"
-	"net/http"
 )
 
 // Server is a stub for when the API is disabled via build tags.
-type Server struct {
-	mux *http.ServeMux
-}
+type Server struct{}
 
 // NewServer returns a dummy server stub.
 func NewServer(cfg ServerConfig, manager ModemManager) *Server {
-	return &Server{
-		mux: http.NewServeMux(),
-	}
+	return &Server{}
 }
 
 // Start does nothing when the API is disabled.

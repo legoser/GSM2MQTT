@@ -1,3 +1,5 @@
+//go:build !no_api
+
 package api
 
 import (

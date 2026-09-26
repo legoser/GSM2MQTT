@@ -253,6 +253,76 @@ func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 	}
 }
 
+func (r *ModemRunner) publishInitialDiscovery() {
+	if r.cfg == nil || !r.cfg.MQTT.Discovery || r.mqttClient == nil || !r.mqttClient.IsConnected() {
+		return
+	}
+	gwVer := version.Version
+	if gwMsg, err := mqtt.BuildGatewayDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, gwVer); err == nil {
+		_ = r.mqttClient.Publish(gwMsg.Topic, r.qos(), true, gwMsg.Payload)
+	}
+	if mcMsg, err := mqtt.BuildGatewayModemCountDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, gwVer); err == nil {
+		_ = r.mqttClient.Publish(mcMsg.Topic, r.qos(), true, mcMsg.Payload)
+	}
+	if amMsg, err := mqtt.BuildGatewayActiveModemDiscovery(r.cfg.MQTT.DiscoveryPrefix, r.cfg.MQTT.TopicPrefix, gwVer); err == nil {
+		_ = r.mqttClient.Publish(amMsg.Topic, r.qos(), true, amMsg.Payload)
+	}
+
+	model := r.mCfg.Type
+	if model == "" {
+		model = "modem"
+	}
+	messages, err := mqtt.BuildModemDiscoveries(mqtt.ModemDiscoveryParams{
+		DiscoveryPrefix: r.cfg.MQTT.DiscoveryPrefix,
+		TopicPrefix:     r.cfg.MQTT.TopicPrefix,
+		ModemID:         r.mCfg.ID,
+		Manufacturer:    "Unknown",
+		Model:           model,
+		Currency:        r.lastCurrency,
+		SlotIndex:       r.SlotIndex(),
+	})
+	if err == nil {
+		for _, msg := range messages {
+			_ = r.mqttClient.Publish(msg.Topic, r.qos(), true, msg.Payload)
+		}
+	}
+}
+
+func (r *ModemRunner) publishDisconnectedState(status string) {
+	r.updateHealth(ModemHealth{
+		Status: status,
+		SIM:    "DISCONNECTED",
+	})
+	if r.mqttClient == nil || !r.mqttClient.IsConnected() {
+		return
+	}
+	health := ModemHealth{
+		Status:    status,
+		SIM:       "DISCONNECTED",
+		ModemID:   r.mCfg.ID,
+		Signal:    0,
+		SignalDBm: -999,
+	}
+	payload, _ := json.Marshal(health)
+	_ = r.mqttClient.Publish(r.topics.Health(), r.qos(), true, payload)
+
+	if r.cfg != nil {
+		gwModemsPayload, _ := json.Marshal(map[string]any{
+			"count":        0,
+			"active_modem": "none",
+			"modems": []map[string]any{
+				{
+					"id":     r.mCfg.ID,
+					"model":  r.mCfg.Type,
+					"port":   r.mCfg.Port,
+					"status": status,
+				},
+			},
+		})
+		_ = r.mqttClient.Publish(fmt.Sprintf("%s/gateway/modems", r.cfg.MQTT.TopicPrefix), r.qos(), true, gwModemsPayload)
+	}
+}
+
 func (r *ModemRunner) startStorageCheckLoop(ctx context.Context, smsSvc *SMSService) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()

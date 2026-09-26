@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
@@ -353,4 +354,95 @@ func TestWorkingConfig_AppliesQoSInServices(t *testing.T) {
 	}
 }
 
+type failingGatewayOpener struct{}
 
+func (f *failingGatewayOpener) Open(cfg transport.PortConfig) (transport.Port, error) {
+	return nil, errors.New("device not found")
+}
+
+func TestModemRunner_DisconnectedStatePublished(t *testing.T) {
+	mockClient := mqtt.NewMockClient()
+	_ = mockClient.Connect()
+
+	cfg := &config.Config{
+		MQTT: config.MQTTConfig{
+			TopicPrefix: "gsm2mqtt",
+			Discovery:   true,
+			QoS:         1,
+		},
+		Modems: []config.ModemConfig{
+			{
+				ID:   "m590",
+				Port: "/dev/ttyNONEXISTENT",
+				Type: "neoway",
+			},
+		},
+	}
+
+	connector := modem.NewConnector(&failingGatewayOpener{})
+	runner := NewModemRunner(cfg.Modems[0], cfg, connector, mockClient)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runner.Run(ctx)
+	}()
+
+	// Wait briefly for runner to publish initial disconnected state
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-errCh
+
+	published := mockClient.Published()
+	if len(published) == 0 {
+		t.Fatal("expected published messages for disconnected runner")
+	}
+
+	// 1. Verify health topic was published with status "disconnected" and retained
+	var foundHealth bool
+	for _, p := range published {
+		if p.Topic == "gsm2mqtt/modem/m590/health" {
+			foundHealth = true
+			if !p.Retained {
+				t.Errorf("expected health topic to be retained")
+			}
+			var h ModemHealth
+			if err := json.Unmarshal(p.Payload, &h); err != nil {
+				t.Fatalf("failed to unmarshal health payload: %v", err)
+			}
+			if h.Status != "disconnected" {
+				t.Errorf("expected health status 'disconnected', got %q", h.Status)
+			}
+			if h.SIM != "DISCONNECTED" {
+				t.Errorf("expected SIM 'DISCONNECTED', got %q", h.SIM)
+			}
+		}
+	}
+	if !foundHealth {
+		t.Error("health topic gsm2mqtt/modem/m590/health was not published")
+	}
+
+	// 2. Verify gateway/modems topic was published with count 0 and status "disconnected"
+	var foundModems bool
+	for _, p := range published {
+		if p.Topic == "gsm2mqtt/gateway/modems" {
+			foundModems = true
+			if !p.Retained {
+				t.Errorf("expected gateway/modems topic to be retained")
+			}
+			var gm map[string]any
+			if err := json.Unmarshal(p.Payload, &gm); err != nil {
+				t.Fatalf("failed to unmarshal gateway/modems payload: %v", err)
+			}
+			if count, ok := gm["count"].(float64); !ok || count != 0 {
+				t.Errorf("expected gateway/modems count 0, got %v", gm["count"])
+			}
+			if active, ok := gm["active_modem"].(string); !ok || active != "none" {
+				t.Errorf("expected active_modem 'none', got %v", gm["active_modem"])
+			}
+		}
+	}
+	if !foundModems {
+		t.Error("gateway/modems topic was not published")
+	}
+}

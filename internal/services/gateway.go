@@ -83,13 +83,19 @@ func (r *ModemRunner) Run(ctx context.Context) error {
 		maxBackoff = 60 * time.Second
 	)
 	backoff := minBackoff
+
+	r.publishInitialDiscovery()
+	r.publishDisconnectedState("disconnected")
+
 	for {
 		if ctx.Err() != nil {
+			r.publishDisconnectedState("disconnected")
 			return ctx.Err()
 		}
 		started := time.Now()
 		err := r.runOnce(ctx)
 		if ctx.Err() != nil {
+			r.publishDisconnectedState("disconnected")
 			return ctx.Err()
 		}
 		// A long-lived session means the failure is fresh: retry fast.
@@ -97,10 +103,7 @@ func (r *ModemRunner) Run(ctx context.Context) error {
 		if time.Since(started) > 5*time.Minute {
 			backoff = minBackoff
 		}
-		r.updateHealth(ModemHealth{
-			Status: "error",
-			SIM:    "DISCONNECTED",
-		})
+		r.publishDisconnectedState("disconnected")
 		slog.Warn("modem port disconnected or unavailable, retrying...",
 			slog.String("modem", r.mCfg.ID),
 			slog.String("port", r.mCfg.Port),
@@ -109,6 +112,7 @@ func (r *ModemRunner) Run(ctx context.Context) error {
 		)
 		select {
 		case <-ctx.Done():
+			r.publishDisconnectedState("disconnected")
 			return ctx.Err()
 		case <-time.After(backoff):
 		}
@@ -149,10 +153,9 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 
 	driver := r.createDriver(engine)
 	if err := driver.Init(childCtx); err != nil {
-		slog.Warn("driver init completed with warning", slog.String("modem", r.mCfg.ID), slog.Any("error", err))
-	} else {
-		slog.Info("modem driver initialized", slog.String("modem", r.mCfg.ID), slog.String("type", r.mCfg.Type))
+		return fmt.Errorf("modem driver initialization failed: %w", err)
 	}
+	slog.Info("modem driver initialized", slog.String("modem", r.mCfg.ID), slog.String("type", r.mCfg.Type))
 
 	smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc := r.wireServices(engine, driver)
 	statusSvc.SetOnDisconnect(cancel)

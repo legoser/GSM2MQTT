@@ -26,6 +26,7 @@ start_service() {
 
     procd_open_instance "gsm2mqtt"
     procd_set_param command "$PROG" --config "$config_file"
+    procd_set_param env GOMEMLIMIT="10MiB" GOGC="25" GODEBUG="madvdontneed=1"
     procd_set_param respawn 3600 5 0
     procd_set_param stdout 1
     procd_set_param stderr 1

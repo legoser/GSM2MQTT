@@ -33,12 +33,13 @@ func (d *NeowayDriver) Init(ctx context.Context) error {
 
 	// 2. Base 3GPP initialization commands
 	initCmds := []string{
-		"ATE0",              // Echo off
-		"AT+CMEE=2",         // Verbose error reporting
-		"AT+CMGF=0",         // PDU mode for SMS
-		"AT+CNMI=2,1,0,1,0", // New message notifications
-		"AT+CLIP=1",         // Enable caller ID presentation
-		"AT+CSCS=\"IRA\"",   // Standard ASCII character set for SMS and voice dialing
+		"ATE0",                         // Echo off
+		"AT+CMEE=2",                    // Verbose error reporting
+		"AT+CPMS=\"SM\",\"SM\",\"SM\"", // Neoway M590 supports only SIM memory (SM)
+		"AT+CMGF=0",                    // PDU mode for SMS
+		"AT+CNMI=2,1,0,1,0",            // New message notifications
+		"AT+CLIP=1",                    // Enable caller ID presentation
+		"AT+CSCS=\"IRA\"",              // Standard ASCII character set for SMS and voice dialing
 	}
 
 	for _, cmd := range initCmds {
@@ -207,6 +208,15 @@ func (d *NeowayDriver) CheckCallState() (string, error) {
 		}
 	}
 	return "idle", nil
+}
+
+// SelectStorage configures the active message storage area.
+// Neoway M590 supports only SIM card storage ("SM") and returns CMS ERROR if "ME" is selected.
+func (d *NeowayDriver) SelectStorage(mem string) (*modem.StorageStatus, error) {
+	if strings.EqualFold(mem, "ME") {
+		return nil, fmt.Errorf("storage ME is not supported on Neoway M590 (SIM memory SM only)")
+	}
+	return d.BaseDriver.SelectStorage(mem)
 }
 
 var _ modem.Driver = (*NeowayDriver)(nil)

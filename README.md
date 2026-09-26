@@ -8,7 +8,7 @@ Home Assistant and other MQTT-based systems via AT commands.
 
 ## Features
 
-- **SMS send/receive** — with Cyrillic support (UCS-2), transliteration, multipart, delivery reports
+- **SMS send/receive** — full Unicode, Emoji & Cyrillic support (UCS-2 / UTF-16 surrogate pairs), automatic transliteration, multipart concatenation (UDH), and delivery reports
 - **Voice calls** — dial, answer, hangup, DTMF send/receive
 - **Multi-modem Pool** — load balancing (round-robin, failover, best-signal, operator-match) with SIM redundancy
 - **Operator Presets & Tariff Accounting** — MTS, Megafon, Beeline, Tele2 balance parsing, daily/monthly SMS quotas
@@ -21,10 +21,16 @@ Home Assistant and other MQTT-based systems via AT commands.
 - **Cross-platform** — zero-CGO static binaries for Linux `amd64`, `arm64`, and `riscv64`
 - **Lightweight & Embedded Ready** — optional headless build (`-tags no_api`) and automated UPX compression (`make build-small`) for storage-constrained OpenWrt routers
 
+### Advanced SMS & Unicode Capabilities
+- **Full Emoji & Multi-Byte Unicode**: Native transmission of Supplementary Multilingual Plane (SMP) characters (e.g. 🚨, ⚠️, ⏰, 😀) using standard UTF-16 surrogate pairs (4 bytes per emoji) in UCS-2 PDU mode.
+- **Strict 3GPP PDU Segmentation**: Accurately calculates 16-bit code units (rather than naive rune counts) so multipart concatenation headers (UDH) and payload never exceed the strict 140-byte GSM limit, preventing modem buffer overruns or `+CMS ERROR: operation not supported` rejections.
+- **Multipart Concatenation (UDH)**: Automatically splits long messages up to 153 septets (GSM-7) or 67 code units (UCS-2) per segment with standard 3GPP 6-byte user data headers.
+
 ## Supported Modems
 
 | Modem | Interface | Status |
 |:---|:---|:---|
+| Neoway M590 / M590E | UART | Supported |
 | Siemens TC35/MC55/TC65 | COM (RS-232) | Supported |
 | SIM800L / SIM900 | UART | Supported |
 | Huawei USB 3G/4G | USB (stick mode) | Supported |
@@ -250,8 +256,17 @@ GSM2MQTT provides multiple build targets tailored for different use cases and de
 |:---|:---|:---|:---|
 | `make build` | `-trimpath -ldflags "-s -w"` | Standard full-featured build (~8.3 MB) | Servers, Docker, Raspberry Pi |
 | `make build-small` | `build` + `upx --best --lzma` | Full-featured build compressed using UPX (~2.5 MB) | OpenWrt routers with limited Flash storage |
-| `make build-noapi` | `-tags no_api -trimpath ...` | Headless gateway without HTTP server / Web UI (~7.6 MB uncompressed, ~2.2 MB with UPX) | Dedicated headless gateways, routers with very tight RAM/Flash |
+| `make build-noapi` | `-tags no_api -trimpath ...` | Headless gateway without HTTP server / Web UI (~7.6 MB uncompressed, ~2.2 MB with UPX) | Dedicated headless gateways, routers with tight RAM/Flash |
+| `make build-mips` | `GOARCH=mips -tags "no_api,no_tls"` | Embedded MIPS big-endian build with pure-TCP MQTT engine (~4.8 MB uncompressed) | Atheros AR9331, QCA953x OpenWrt routers (32–64 MB RAM) |
+| `make build-mipsel` | `GOARCH=mipsle -tags "no_api,no_tls"` | Embedded MIPS little-endian build with pure-TCP MQTT engine (~4.8 MB uncompressed) | MediaTek MT7620/MT7628/MT7688 OpenWrt routers |
 | `make build-all` | Cross-compilation | Builds standard binaries for `amd64`, `arm64`, and `riscv64` | Multi-arch distributions |
+
+### Build Tags (Modular Compilation)
+
+GSM2MQTT supports fine-grained build tags for constrained embedded environments:
+
+- **`no_api`**: Completely strips the HTTP REST API server, Web UI dashboard, and `net/http` dependencies. Saves ~1 MB of binary size and reduces runtime RAM consumption.
+- **`no_tls`**: Replaces the standard Eclipse Paho MQTT client (and `crypto/tls` / `crypto/rand` dependencies) with an ultra-lightweight, pure-TCP MQTT 3.1.1 packet engine with automatic reconnection and resubscription. Eliminates early-runtime FIPS-140/`crypto/rand` crashes on legacy MIPS Linux 4.4 kernels and drastically reduces memory overhead for 32 MB RAM routers.
 
 ### Build Commands
 
@@ -265,11 +280,15 @@ make build-small
 # Headless build without HTTP API server (saves binary size and RAM)
 make build-noapi
 
-# Headless build compressed with UPX
-make build-noapi && upx --best --lzma bin/gsm2mqtt
+# Embedded build for MIPS OpenWrt routers (32 MB RAM, pure TCP MQTT without TLS)
+make build-mips
+make build-mipsel
 
 # Cross-compile standard binaries for all architectures
 make build-all
+
+# Build OpenWrt standalone packages (.ipk for OPKG and .apk for APK)
+make package-openwrt
 
 # Run test suite & linters
 make test

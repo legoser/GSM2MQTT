@@ -1,6 +1,7 @@
 package pdu
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -101,6 +102,35 @@ func TestEncodeSMS_MultipartCyrillic(t *testing.T) {
 		}
 		if pdu.TotalParts != len(pdus) {
 			t.Errorf("pdu[%d] expected TotalParts %d, got %d", i, len(pdus), pdu.TotalParts)
+		}
+	}
+}
+
+func TestEncodeSMS_MultipartEmoji(t *testing.T) {
+	recipient := "+79964126670"
+	text := "🚨 *ПОЖАРНАЯ ТРЕВОГА!*\n⚠️ Сработал датчик дыма в гостиной ⏰ *Время:* 15:45:00"
+
+	pdus, err := EncodeSMS(recipient, text, EncodingAuto, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pdus) != 2 {
+		t.Fatalf("expected 2 parts, got %d", len(pdus))
+	}
+	for i, p := range pdus {
+		// CommandLength in PDU mode is (len(TPDU) / 2)
+		// For UCS-2 with UDH, TPDU is: 1 (firstOctet) + 1 (MR) + DA + 1 (PID) + 1 (DCS) + 1 (VP) + 1 (UDL) + UDL bytes.
+		// Maximum UDL must never exceed 140 (0x8C) bytes!
+		t.Logf("Part %d: CmdLen=%d, HexLen=%d, Hex=%s", i+1, p.CommandLength, len(p.Hex), p.Hex)
+		// Default SMSC is "00" (1 byte), followed by TPDU.
+		// DA for "+79964126670": 0B 91 97 69 14 62 76 F0 (8 bytes)
+		// Header up to UDL: 00 (SMSC) + 51 (1) + 00 (1) + DA (8) + 00 (1) + 08 (1) + AA (1) = 14 bytes = 28 hex chars
+		// Next byte (chars 28..30) is UDL in hex!
+		udlHex := p.Hex[28:30]
+		var udl int
+		_, _ = fmt.Sscanf(udlHex, "%02X", &udl)
+		if udl > 140 {
+			t.Errorf("part %d UDL %d (0x%s) exceeds 140-byte GSM limit!", i+1, udl, udlHex)
 		}
 	}
 }
