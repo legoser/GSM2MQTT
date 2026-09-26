@@ -48,8 +48,22 @@ func EncodeSMS(recipient, text string, enc Encoding, requestDeliveryReport bool)
 		maxMultipart = 67
 	}
 
+	// Calculate units (GSM7 septets or UCS2 uint16 code units, accounting for surrogate pairs)
+	totalUnits := 0
+	if selectedEnc == EncodingUCS2 {
+		for _, r := range runes {
+			if r > 0xFFFF {
+				totalUnits += 2 // surrogate pair consumes 2 UTF-16 code units (4 bytes)
+			} else {
+				totalUnits++
+			}
+		}
+	} else {
+		totalUnits = len(runes)
+	}
+
 	// 3. Single or multipart
-	if len(runes) <= maxSingle {
+	if totalUnits <= maxSingle {
 		pdu, err := encodeSingle(recipient, runes, selectedEnc, requestDeliveryReport)
 		if err != nil {
 			return nil, err
@@ -59,15 +73,7 @@ func EncodeSMS(recipient, text string, enc Encoding, requestDeliveryReport bool)
 
 	// Multipart
 	ref := nextRefNumber()
-	var chunks [][]rune
-	for len(runes) > 0 {
-		chunkSize := maxMultipart
-		if len(runes) < chunkSize {
-			chunkSize = len(runes)
-		}
-		chunks = append(chunks, runes[:chunkSize])
-		runes = runes[chunkSize:]
-	}
+	chunks := splitChunks(runes, selectedEnc, maxMultipart)
 
 	pdus := make([]PDU, len(chunks))
 	for i, chunk := range chunks {
@@ -163,6 +169,43 @@ func buildPDU(recipient string, firstOctet, dcs, udl byte, udHex string, hasUDH 
 
 func hexString(b []byte) string {
 	return strings.ToUpper(hex.EncodeToString(b))
+}
+
+func splitChunks(runes []rune, enc Encoding, maxUnits int) [][]rune {
+	if enc != EncodingUCS2 {
+		var chunks [][]rune
+		for len(runes) > 0 {
+			chunkSize := maxUnits
+			if len(runes) < chunkSize {
+				chunkSize = len(runes)
+			}
+			chunks = append(chunks, runes[:chunkSize])
+			runes = runes[chunkSize:]
+		}
+		return chunks
+	}
+
+	var chunks [][]rune
+	var current []rune
+	currentUnits := 0
+	for _, r := range runes {
+		units := 1
+		if r > 0xFFFF {
+			units = 2 // surrogate pair consumes 2 UTF-16 code units (4 bytes)
+		}
+		if currentUnits+units > maxUnits {
+			chunks = append(chunks, current)
+			current = []rune{r}
+			currentUnits = units
+		} else {
+			current = append(current, r)
+			currentUnits += units
+		}
+	}
+	if len(current) > 0 {
+		chunks = append(chunks, current)
+	}
+	return chunks
 }
 
 func init() {
