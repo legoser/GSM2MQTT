@@ -204,6 +204,56 @@ func TestBuildLastSMSDiscovery(t *testing.T) {
 	}
 }
 
+func TestBuildIncomingCallDiscovery(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "siemens_tc35",
+		SlotIndex:       1,
+	}
+	msg, err := BuildIncomingCallDiscovery(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if payload["payload_on"] != "ON" || payload["payload_off"] != "OFF" {
+		t.Errorf("expected payload_on='ON' and payload_off='OFF', got %v / %v", payload["payload_on"], payload["payload_off"])
+	}
+	if payload["state_topic"] != "gsm2mqtt/modem/siemens_tc35/call/incoming" {
+		t.Errorf("expected state_topic gsm2mqtt/modem/siemens_tc35/call/incoming, got %v", payload["state_topic"])
+	}
+}
+
+func TestBuildCallerNumberDiscovery(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "siemens_tc35",
+		SlotIndex:       1,
+	}
+	msg, err := BuildCallerNumberDiscovery(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if payload["unique_id"] != "gsm2mqtt_modem_1_caller_number" {
+		t.Errorf("expected unique_id gsm2mqtt_modem_1_caller_number, got %v", payload["unique_id"])
+	}
+	if payload["state_topic"] != "gsm2mqtt/modem/siemens_tc35/call/incoming" {
+		t.Errorf("expected state_topic gsm2mqtt/modem/siemens_tc35/call/incoming, got %v", payload["state_topic"])
+	}
+}
+
 func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 	params := ModemDiscoveryParams{
 		DiscoveryPrefix: "homeassistant",
@@ -218,8 +268,8 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildModemDiscoveries failed: %v", err)
 	}
-	if len(msgs) != 19 {
-		t.Fatalf("expected 19 discovery messages, got %d", len(msgs))
+	if len(msgs) != 20 {
+		t.Fatalf("expected 20 discovery messages, got %d", len(msgs))
 	}
 
 	expectedIDs := map[string]bool{
@@ -235,6 +285,7 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 		"gsm2mqtt_modem_1_btn_balance":            false,
 		"gsm2mqtt_modem_1_btn_hangup":             false,
 		"gsm2mqtt_modem_1_incoming_call":          false,
+		"gsm2mqtt_modem_1_caller_number":          false,
 		"gsm2mqtt_modem_1_new_sms":                false,
 		"gsm2mqtt_modem_1_notify":                 false,
 		"gsm2mqtt_modem_1_sms_remaining":          false,
