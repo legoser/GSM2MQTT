@@ -40,7 +40,8 @@
 | Топик | QoS | Retain | Описание и формат Payload |
 |:---|:---:|:---:|:---|
 | `<prefix>/status` | 1 | true | `online` или `offline` (Last Will and Testament, LWT). |
-| `<prefix>/modem/<id>/health` | 1 | false | JSON с полным состоянием здоровья модема: `{"status":"ready","signal":20,"signal_dbm":-73,"operator":"MegaFon RUS","network":"GSM","sim":"READY"}` |
+| `<prefix>/gateway/modems` | 1 | true | JSON со списком активных модемов и их статусом: `{"count":1,"active_modem":"neoway","modems":[{"id":"m590","port":"/dev/ttyATH0","status":"ready"}]}`. При отключении модема: `count=0`, `active_modem="none"`, `status="disconnected"`. |
+| `<prefix>/modem/<id>/health` | 1 | true | JSON с полным состоянием здоровья модема: `{"status":"ready","signal":20,"signal_dbm":-73,"operator":"MegaFon RUS","network":"GSM","sim":"READY"}`. При физическом отключении модема публикуется со статусом `"status":"disconnected"`, `"sim":"DISCONNECTED"`, обнуляя сигнал и стирая зависший статус `ready`. |
 | `<prefix>/modem/<id>/signal` | 1 | false | JSON с уровнем сигнала: `{"rssi":20,"dbm":-73}` |
 | `<prefix>/modem/<id>/balance` | 1 | false | Числовое строковое значение текущего баланса: `2.22` |
 | `<prefix>/modem/<id>/accounting/status` | 1 | false | JSON статуса тарификации: `{"balance":2.22,"currency":"RUB","modem_id":"neoway_m590","spent_today":0,"sms_sent_today":0}` |
@@ -88,9 +89,15 @@
 2. **Статус модема:**
    - **Entity ID:** `sensor.<modem_id>_status`
    - **Device Class:** `enum`
-   - **Options:** `["ready", "degraded", "error", "offline"]`
+   - **Options:** `["ready", "degraded", "not_ready", "error", "disconnected"]`
    - **State Topic:** `gsm2mqtt/modem/<id>/health`
    - **Value Template:** `{{ value_json.status }}`
+   - **Значения:**
+     - `ready`: Модем инициализирован, зарегистрирован в сети и полностью готов к работе.
+     - `degraded`: Модем на связи, но уровень сигнала слабый (`CSQ < 5`) либо нет регистрации в сети.
+     - `not_ready`: SIM-карта не готова (требуется PIN/PUK, либо заблокирована).
+     - `error`: Аппаратный сбой или ошибка исполнения AT-команд.
+     - `disconnected`: Модем физически отключен, серийный порт недоступен или питание снято (карточка Home Assistant четко показывает отключение модема, а не зависает в `ready`).
 
 3. **Баланс SIM-карты:**
    - **Entity ID:** `sensor.<modem_id>_balance`
@@ -303,6 +310,7 @@ class GSM2MQTTCard extends HTMLElement {
           .metric-val { font-size: 1.15em; font-weight: bold; margin-top: 4px; }
           .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: bold; }
           .badge-ready { background: #e8f5e9; color: #2e7d32; }
+          .badge-disconnected { background: #efebe9; color: #5d4037; }
           .badge-error { background: #ffebee; color: #c62828; }
           .input-row { display: flex; gap: 8px; margin-top: 8px; }
           input, textarea { width: 100%; padding: 8px; border: 1px solid var(--divider-color); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); }
@@ -415,6 +423,16 @@ class GSM2MQTTCard extends HTMLElement {
     const opState = this._hass.states[`sensor.${m}_operator`];
     if (opState) {
       this.querySelector('#valOperator').innerText = opState.state;
+    }
+
+    const statusState = this._hass.states[`sensor.${m}_status`];
+    if (statusState) {
+      const st = statusState.state;
+      const isReady = st === 'ready';
+      const isDisc = st === 'disconnected';
+      const cls = isReady ? 'badge-ready' : isDisc ? 'badge-disconnected' : 'badge-error';
+      const label = isReady ? 'READY' : isDisc ? 'DISCONNECTED' : st.toUpperCase();
+      this.querySelector('#valStatus').innerHTML = `<span class="badge ${cls}">${label}</span>`;
     }
 
     const smsState = this._hass.states[`sensor.${m}_last_sms`];

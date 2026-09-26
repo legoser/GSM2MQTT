@@ -144,6 +144,7 @@ A consolidated operational health indicator designed for dashboards and Home Ass
 * **`degraded`**: Modem is functioning, but operating under adverse conditions (weak signal < -100 dBm, balance below warning threshold, or monthly SMS quota nearly exhausted).
 * **`not_ready`**: Unregistered from network, roaming denied, or SIM requires PIN/PUK.
 * **`error`**: Hardware malfunction, serial interface disconnection, or unresponsive AT command interface.
+* **`disconnected`**: Physical serial interface disconnected, port not found, or modem unpowered. Resets active modems count in Home Assistant to 0 and clears stale `ready` states.
 
 ---
 

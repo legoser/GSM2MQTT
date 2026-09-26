@@ -139,7 +139,7 @@ func (r *ModemRunner) wireServices(
 		}
 		metrics.DefaultRegistry.SetGauge("gsm2mqtt_modem_status", map[string]string{"modem": r.mCfg.ID}, stVal)
 		payload, _ := json.Marshal(h)
-		_ = r.mqttClient.Publish(r.topics.Health(), r.qos(), false, payload)
+		_ = r.mqttClient.Publish(r.topics.Health(), r.qos(), true, payload)
 	})
 
 	return smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc
