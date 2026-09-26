@@ -14,6 +14,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/config"
 	"github.com/legoser/gsm2mqtt/internal/modem"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
+	"github.com/legoser/gsm2mqtt/internal/sms"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 )
@@ -444,5 +445,92 @@ func TestModemRunner_DisconnectedStatePublished(t *testing.T) {
 	}
 	if !foundModems {
 		t.Error("gateway/modems topic was not published")
+	}
+}
+
+func TestModemRunner_SMSPublishRetainDecoupling(t *testing.T) {
+	mockClient := mqtt.NewMockClient()
+	_ = mockClient.Connect()
+
+	cfg := &config.Config{
+		LogLevel: "info",
+		MQTT: config.MQTTConfig{
+			TopicPrefix: "gsm2mqtt",
+			QoS:         1,
+		},
+		SMS: config.SMSConfig{
+			Encoding:        "auto",
+			AssemblyTimeout: 30 * time.Second,
+		},
+	}
+	mCfg := config.ModemConfig{
+		ID:   "m590",
+		Type: "neoway_m590",
+		Port: "/dev/ttyUSB0",
+	}
+
+	runner := NewModemRunner(mCfg, cfg, nil, mockClient)
+	runner.receivedSMS = []ReceivedSMS{
+		{
+			ID:        "msg1",
+			ModemID:   "m590",
+			Sender:    "+79991112233",
+			Text:      "Historical SMS",
+			Timestamp: "2026-09-26T20:00:00Z",
+		},
+	}
+
+	// Verify startup retain behavior:
+	// 1. Clears sms/received
+	_ = mockClient.Publish(runner.topics.SMSReceived(), runner.qos(), true, []byte{})
+	// 2. Publishes sms/last
+	last := runner.receivedSMS[0]
+	lastPayload, _ := json.Marshal(map[string]any{
+		"from":      last.Sender,
+		"text":      last.Text,
+		"timestamp": last.Timestamp,
+	})
+	_ = mockClient.Publish(runner.topics.SMSLast(), runner.qos(), true, lastPayload)
+
+	// Now simulate live incoming SMS callback
+	liveMsg := &sms.AssembledSMS{
+		From:       "+79998887766",
+		Text:       "Live alert code 1234",
+		Timestamp:  time.Now(),
+		Segments:   1,
+		IsComplete: true,
+	}
+	payload, _ := json.Marshal(liveMsg)
+	_ = mockClient.Publish(runner.topics.SMSReceived(), runner.qos(), false, payload)
+	_ = mockClient.Publish(runner.topics.SMSLast(), runner.qos(), true, payload)
+
+	published := mockClient.Published()
+
+	// Verify live sms/received was published with retained: false
+	var foundLiveReceived bool
+	for _, p := range published {
+		if p.Topic == "gsm2mqtt/modem/m590/sms/received" && len(p.Payload) > 0 {
+			foundLiveReceived = true
+			if p.Retained {
+				t.Errorf("expected live sms/received message to have Retained = false")
+			}
+		}
+	}
+	if !foundLiveReceived {
+		t.Error("expected live sms/received to be published")
+	}
+
+	// Verify sms/last was published with retained: true
+	var foundLast bool
+	for _, p := range published {
+		if p.Topic == "gsm2mqtt/modem/m590/sms/last" {
+			foundLast = true
+			if !p.Retained {
+				t.Errorf("expected sms/last to have Retained = true")
+			}
+		}
+	}
+	if !foundLast {
+		t.Error("expected sms/last to be published")
 	}
 }

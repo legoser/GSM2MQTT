@@ -197,7 +197,7 @@ func BuildOperatorDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
 func BuildLastSMSDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
 	uniqueID := p.EntityUniqueID("last_sms")
 	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
-	stateTopic := fmt.Sprintf("%s/modem/%s/sms/received", p.TopicPrefix, p.ModemID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/sms/last", p.TopicPrefix, p.ModemID)
 	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
 
 	payload := SensorDiscoveryPayload{

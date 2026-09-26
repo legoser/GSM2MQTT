@@ -107,11 +107,12 @@ type RateLimitConfig struct {
 
 // SMSConfig holds SMS encoding and delivery settings.
 type SMSConfig struct {
-	Encoding       string               `yaml:"encoding"`
-	LongMessage    string               `yaml:"long_message"`
-	MaxSegments    int                  `yaml:"max_segments"`
-	ReportEncoding bool                 `yaml:"report_encoding"`
-	DeliveryReport DeliveryReportConfig `yaml:"delivery_report"`
+	Encoding        string               `yaml:"encoding"`
+	LongMessage     string               `yaml:"long_message"`
+	MaxSegments     int                  `yaml:"max_segments"`
+	AssemblyTimeout time.Duration        `yaml:"assembly_timeout"`
+	ReportEncoding  bool                 `yaml:"report_encoding"`
+	DeliveryReport  DeliveryReportConfig `yaml:"delivery_report"`
 }
 
 // DeliveryReportConfig holds SMS delivery report settings.

@@ -216,3 +216,195 @@ func TestAssembler_TTLExpiration(t *testing.T) {
 		t.Errorf("expected assembly to fail after TTL expired for previous parts")
 	}
 }
+
+func TestAssembler_TimeoutFlush(t *testing.T) {
+	a := NewAssembler(time.Minute, 40*time.Millisecond)
+	defer a.Close()
+
+	flushCh := make(chan *AssembledSMS, 1)
+	a.SetFlushHandler(func(msg *AssembledSMS) {
+		flushCh <- msg
+	})
+
+	now := time.Now()
+	p1 := IncomingPart{
+		From:        "+79991112233",
+		Text:        "Hello ",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0x77,
+		PartNumber:  1,
+		TotalParts:  2,
+	}
+
+	res, ok := a.AddPart(p1)
+	if ok || res != nil {
+		t.Fatal("part 1 should not complete immediately")
+	}
+
+	select {
+	case flushed := <-flushCh:
+		if flushed.Text != "[Part 1/2]: Hello " {
+			t.Errorf("expected '[Part 1/2]: Hello ', got %q", flushed.Text)
+		}
+		if flushed.Segments != 1 {
+			t.Errorf("expected 1 segment in flushed message, got %d", flushed.Segments)
+		}
+		if flushed.IsComplete {
+			t.Error("expected flushed message to have IsComplete = false")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for assembly flush callback")
+	}
+
+	// Now part 2 arrives late
+	p2 := IncomingPart{
+		From:        "+79991112233",
+		Text:        "World!",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0x77,
+		PartNumber:  2,
+		TotalParts:  2,
+	}
+
+	lateRes, lateOk := a.AddPart(p2)
+	if !lateOk || lateRes == nil {
+		t.Fatal("late arriving part 2 should complete the flushed message")
+	}
+	expected := "[Updated] Hello World!"
+	if lateRes.Text != expected {
+		t.Errorf("expected %q, got %q", expected, lateRes.Text)
+	}
+	if !lateRes.IsComplete {
+		t.Error("expected IsComplete = true on fully reassembled late message")
+	}
+	if !lateRes.IsUpdate {
+		t.Error("expected IsUpdate = true on late reassembled message")
+	}
+	if lateRes.Segments != 2 {
+		t.Errorf("expected Segments = 2, got %d", lateRes.Segments)
+	}
+}
+
+func TestAssembler_LatePartOutOfOrder(t *testing.T) {
+	a := NewAssembler(time.Minute, 40*time.Millisecond)
+	defer a.Close()
+
+	flushCh := make(chan *AssembledSMS, 1)
+	a.SetFlushHandler(func(msg *AssembledSMS) {
+		flushCh <- msg
+	})
+
+	now := time.Now()
+	// Part 2 arrives first
+	p2 := IncomingPart{
+		From:        "+79991112233",
+		Text:        "World!",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0x99,
+		PartNumber:  2,
+		TotalParts:  2,
+	}
+
+	if _, ok := a.AddPart(p2); ok {
+		t.Fatal("part 2 should not complete immediately")
+	}
+
+	select {
+	case flushed := <-flushCh:
+		if flushed.Text != "[Part 2/2]: World!" {
+			t.Errorf("expected '[Part 2/2]: World!', got %q", flushed.Text)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for assembly flush")
+	}
+
+	// Part 1 arrives late: should be inserted into correct position 1
+	p1 := IncomingPart{
+		From:        "+79991112233",
+		Text:        "Hello ",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0x99,
+		PartNumber:  1,
+		TotalParts:  2,
+	}
+
+	lateRes, lateOk := a.AddPart(p1)
+	if !lateOk || lateRes == nil {
+		t.Fatal("late part 1 should complete the message")
+	}
+	expected := "[Updated] Hello World!"
+	if lateRes.Text != expected {
+		t.Errorf("expected properly ordered %q, got %q", expected, lateRes.Text)
+	}
+}
+
+func TestAssembler_ThreePartsGapTimeoutAndLate(t *testing.T) {
+	a := NewAssembler(time.Minute, 40*time.Millisecond)
+	defer a.Close()
+
+	flushCh := make(chan *AssembledSMS, 1)
+	a.SetFlushHandler(func(msg *AssembledSMS) {
+		flushCh <- msg
+	})
+
+	now := time.Now()
+	// Parts 1 and 3 arrive; part 2 missing
+	p1 := IncomingPart{
+		From:        "+79991112233",
+		Text:        "Start.",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0xAA,
+		PartNumber:  1,
+		TotalParts:  3,
+	}
+	p3 := IncomingPart{
+		From:        "+79991112233",
+		Text:        "End.",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0xAA,
+		PartNumber:  3,
+		TotalParts:  3,
+	}
+
+	a.AddPart(p1)
+	a.AddPart(p3)
+
+	select {
+	case flushed := <-flushCh:
+		expected := "[Part 1,3/3]: Start. [...] End."
+		if flushed.Text != expected {
+			t.Errorf("expected %q, got %q", expected, flushed.Text)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for assembly flush")
+	}
+
+	// Now part 2 arrives late to fill the gap
+	p2 := IncomingPart{
+		From:        "+79991112233",
+		Text:        "Middle.",
+		Timestamp:   now,
+		IsMultipart: true,
+		Reference:   0xAA,
+		PartNumber:  2,
+		TotalParts:  3,
+	}
+
+	lateRes, lateOk := a.AddPart(p2)
+	if !lateOk || lateRes == nil {
+		t.Fatal("late part 2 should complete all 3 parts")
+	}
+	expectedFull := "[Updated] Start.Middle.End."
+	if lateRes.Text != expectedFull {
+		t.Errorf("expected %q, got %q", expectedFull, lateRes.Text)
+	}
+	if !lateRes.IsComplete || !lateRes.IsUpdate {
+		t.Error("expected IsComplete=true and IsUpdate=true")
+	}
+}

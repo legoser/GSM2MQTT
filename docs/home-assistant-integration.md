@@ -45,7 +45,8 @@
 | `<prefix>/modem/<id>/signal` | 1 | false | JSON с уровнем сигнала: `{"rssi":20,"dbm":-73}` |
 | `<prefix>/modem/<id>/balance` | 1 | false | Числовое строковое значение текущего баланса: `2.22` |
 | `<prefix>/modem/<id>/accounting/status` | 1 | false | JSON статуса тарификации: `{"balance":2.22,"currency":"RUB","modem_id":"neoway_m590","spent_today":0,"sms_sent_today":0}` |
-| `<prefix>/modem/<id>/sms/received` | 1 | false | JSON принятого SMS: `{"from":"+79991234567","text":"Hello from GSM","timestamp":"2026-09-23T11:30:00Z","segments":1,"encoding":"GSM-7"}` |
+| `<prefix>/modem/<id>/sms/received` | 1 | false | JSON принятого SMS (импульсный топик без retain для триггера автоматизаций и сенсора `new_sms`): `{"from":"+79991234567","text":"Hello from GSM","timestamp":"2026-09-26T22:30:00+07:00","segments":1,"encoding":"GSM-7","is_complete":true}` |
+| `<prefix>/modem/<id>/sms/last` | 1 | true | JSON последнего полученного SMS (сохраняется брокером с флагом retain специально для текстовой карточки в Lovelace): `{"from":"+79991234567","text":"Hello from GSM","timestamp":"2026-09-26T22:30:00+07:00","segments":1,"encoding":"GSM-7","is_complete":true}` |
 | `<prefix>/modem/<id>/sms/status` | 1 | false | JSON отчета о доставке: `{"ref":12,"recipient":"+79991234567","status":"delivered","code":0,"timestamp":"2026-09-23T11:30:05Z"}` |
 | `<prefix>/modem/<id>/call/incoming` | 1 | false | JSON входящего звонка: `{"type":"incoming","from":"+79991234567","modem_id":"neoway_m590"}` |
 | `<prefix>/modem/<id>/call/dtmf` | 1 | false | JSON нажатой цифры DTMF: `{"type":"dtmf","digit":"5","modem_id":"neoway_m590"}` |
@@ -168,9 +169,9 @@ mqtt:
     # Последнее принятое SMS
     - name: "GSM Last Incoming SMS"
       unique_id: "gsm_modem_last_sms"
-      state_topic: "gsm2mqtt/modem/neoway_m590/sms/received"
+      state_topic: "gsm2mqtt/modem/neoway_m590/sms/last"
       value_template: "{{ value_json.text }}"
-      json_attributes_topic: "gsm2mqtt/modem/neoway_m590/sms/received"
+      json_attributes_topic: "gsm2mqtt/modem/neoway_m590/sms/last"
       icon: "mdi:message-text"
 
   binary_sensor:
