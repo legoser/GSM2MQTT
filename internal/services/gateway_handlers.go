@@ -14,6 +14,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/operator"
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/sms"
+	"github.com/legoser/gsm2mqtt/internal/system"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 	"github.com/legoser/gsm2mqtt/internal/ussd"
 )
@@ -46,10 +47,23 @@ func (r *ModemRunner) wireServices(
 		DataTrafficLimitMB: r.cfg.Tariff.DataTrafficLimitMB,
 		ResetDayOfMonth:    r.cfg.Tariff.ResetDayOfMonth,
 		StorageDir:         r.cfg.Tariff.StorageDir,
+		Location:           r.location(),
 	}, func(a tariff.AlertEvent) {
 		payload, _ := json.Marshal(a)
 		_ = r.mqttClient.Publish(r.topics.AccountingAlert(), r.qos(), false, payload)
 		_ = r.mqttClient.Publish(r.topics.Alert(), r.qos(), false, []byte(a.Message))
+		r.publishEvent(NewEvent(
+			r.mCfg.ID,
+			a.Type,
+			EventCategoryTariff,
+			EventLevelWarning,
+			a.Message,
+			r.location(),
+			map[string]any{
+				"value":     a.Value,
+				"threshold": r.cfg.Tariff.MinBalanceAlert,
+			},
+		))
 	})
 
 	r.mu.Lock()
@@ -81,7 +95,11 @@ func (r *ModemRunner) wireServices(
 		_ = r.mqttClient.Publish(r.topics.SMSStatus(), r.qos(), false, payload)
 	})
 
-	assembler := sms.NewAssembler(24 * time.Hour)
+	asmTimeout := r.cfg.SMS.AssemblyTimeout
+	if asmTimeout <= 0 {
+		asmTimeout = 30 * time.Second
+	}
+	assembler := sms.NewAssembler(24*time.Hour, asmTimeout)
 	sender := &atPDUSender{engine: engine}
 
 	smsSvc := NewSMSService(SMSServiceConfig{
@@ -98,7 +116,8 @@ func (r *ModemRunner) wireServices(
 		r.recordIncomingSMS(msg)
 		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_received_total", map[string]string{"modem": r.mCfg.ID})
 		payload, _ := json.Marshal(msg)
-		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), true, payload)
+		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), false, payload)
+		_ = r.mqttClient.Publish(r.topics.SMSLast(), r.qos(), true, payload)
 
 		r.applyParsedBalance(msg.Text)
 	})
@@ -111,6 +130,34 @@ func (r *ModemRunner) wireServices(
 			minutes := math.Ceil(e.Duration.Seconds() / 60.0)
 			tariffMgr.RecordCallMinutes(minutes)
 			r.publishAccountingStatus(tariffMgr)
+		}
+
+		if e.Type == "ended" {
+			num := e.Number
+			if num == "" {
+				num = e.From
+			}
+			if num == "" {
+				num = "Unknown"
+			}
+			dir := e.Direction
+			if dir == "" {
+				dir = "incoming"
+			}
+			st := e.Status
+			if st == "" {
+				st = "completed"
+			}
+			record := CallRecord{
+				ID:        fmt.Sprintf("%s-call-%d", r.mCfg.ID, time.Now().UnixNano()),
+				ModemID:   r.mCfg.ID,
+				Number:    num,
+				Direction: dir,
+				Status:    st,
+				Duration:  int(e.Duration.Seconds()),
+				Timestamp: system.FormatLocalTime(time.Now(), r.location()),
+			}
+			r.recordCall(record)
 		}
 
 		payload, _ := json.Marshal(e)
@@ -132,6 +179,10 @@ func (r *ModemRunner) wireServices(
 		_ = r.mqttClient.Publish(r.topics.SignalStrength(), r.qos(), false, []byte(payload))
 	}, func(h ModemHealth) {
 		h.ModemID = r.mCfg.ID
+		r.mu.RLock()
+		prevStatus := r.lastHealth.Status
+		r.mu.RUnlock()
+
 		r.updateHealth(h)
 		stVal := 0.0
 		if h.Status == "ready" {
@@ -140,6 +191,17 @@ func (r *ModemRunner) wireServices(
 		metrics.DefaultRegistry.SetGauge("gsm2mqtt_modem_status", map[string]string{"modem": r.mCfg.ID}, stVal)
 		payload, _ := json.Marshal(h)
 		_ = r.mqttClient.Publish(r.topics.Health(), r.qos(), true, payload)
+
+		if prevStatus != "" && prevStatus != h.Status {
+			switch h.Status {
+			case "ready":
+				r.publishEvent(NewEvent(r.mCfg.ID, "modem_ready", EventCategoryHardware, EventLevelInfo, fmt.Sprintf("Modem %s is ready and operational", r.mCfg.ID), r.location(), nil))
+			case "degraded":
+				r.publishEvent(NewEvent(r.mCfg.ID, "modem_degraded", EventCategoryHardware, EventLevelWarning, fmt.Sprintf("Modem %s operational status degraded", r.mCfg.ID), r.location(), nil))
+			case "not_ready", "error":
+				r.publishEvent(NewEvent(r.mCfg.ID, "modem_error", EventCategoryHardware, EventLevelError, fmt.Sprintf("Modem %s error status: %s", r.mCfg.ID, h.Status), r.location(), nil))
+			}
+		}
 	})
 
 	return smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc

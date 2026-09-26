@@ -173,6 +173,10 @@ func (c *TCPClient) Connect() error {
 	go c.readLoop(conn)
 	go c.keepAliveLoop(keepAlive)
 
+	if c.cfg.OnConnect != nil {
+		go c.cfg.OnConnect(c)
+	}
+
 	return nil
 }
 

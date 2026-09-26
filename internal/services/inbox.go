@@ -63,13 +63,13 @@ func (r *ModemRunner) saveInboxLocked() {
 
 func (r *ModemRunner) recordIncomingSMS(msg *sms.AssembledSMS) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	tsStr := msg.Timestamp.Format("2006-01-02 15:04:05")
 
 	// Deduplication: check if already recorded
 	for _, existing := range r.receivedSMS {
 		if existing.Sender == msg.From && existing.Text == msg.Text && existing.Timestamp == tsStr {
+			r.mu.Unlock()
 			return
 		}
 	}
@@ -78,6 +78,7 @@ func (r *ModemRunner) recordIncomingSMS(msg *sms.AssembledSMS) {
 		ID:        fmt.Sprintf("%s-%d", r.mCfg.ID, time.Now().UnixNano()),
 		ModemID:   r.mCfg.ID,
 		Sender:    msg.From,
+		From:      msg.From,
 		Timestamp: tsStr,
 		Text:      msg.Text,
 	}
@@ -86,6 +87,9 @@ func (r *ModemRunner) recordIncomingSMS(msg *sms.AssembledSMS) {
 		r.receivedSMS = r.receivedSMS[len(r.receivedSMS)-maxInboxMessages:]
 	}
 	r.saveInboxLocked()
+	r.mu.Unlock()
+
+	r.publishSMSHistory()
 }
 
 // GetReceivedSMS returns the list of recently received SMS messages for this modem.
@@ -96,4 +100,36 @@ func (r *ModemRunner) GetReceivedSMS() []ReceivedSMS {
 	res := make([]ReceivedSMS, len(r.receivedSMS))
 	copy(res, r.receivedSMS)
 	return res
+}
+
+// ClearReceivedSMS wipes the SMS history for this modem runner and updates MQTT.
+func (r *ModemRunner) ClearReceivedSMS() {
+	r.mu.Lock()
+	r.receivedSMS = []ReceivedSMS{}
+	r.saveInboxLocked()
+	r.mu.Unlock()
+
+	r.publishSMSHistory()
+	if r.mqttClient != nil && r.mqttClient.IsConnected() {
+		_ = r.mqttClient.Publish(r.topics.SMSLast(), r.qos(), true, []byte(`{"text":"","from":"","timestamp":""}`))
+	}
+}
+
+// publishSMSHistory publishes the current list of received SMS to MQTT (retained).
+func (r *ModemRunner) publishSMSHistory() {
+	if r.mqttClient == nil || !r.mqttClient.IsConnected() {
+		return
+	}
+	r.mu.RLock()
+	msgs := make([]ReceivedSMS, len(r.receivedSMS))
+	copy(msgs, r.receivedSMS)
+	r.mu.RUnlock()
+
+	payload, err := json.Marshal(map[string]any{
+		"count": len(msgs),
+		"items": msgs,
+	})
+	if err == nil {
+		_ = r.mqttClient.Publish(r.topics.SMSHistory(), r.qos(), true, payload)
+	}
 }

@@ -6,6 +6,97 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-26
+
+### Features & Improvements
+
+- **history**: add SMS and call history subsystem with Home Assistant card controls (`0c7f062`)
+  - Introduce SMS and call history persistent storage and automatic recovery across restarts.
+  - Add MQTT topics <prefix>/modem/<id>/sms/history and <prefix>/modem/<id>/call/history with JSON list and count.
+  - Add MQTT command topics <prefix>/modem/<id>/sms/history/clear and <prefix>/modem/<id>/call/history/clear to clear logs.
+  - Add Home Assistant Auto-Discovery entities: sensor.<modem>_sms_history, sensor.<modem>_call_history, button.<modem>_clear_sms_history, and button.<modem>_clear_call_history.
+  - Enrich call lifecycle tracking with call status classification (missed, completed, rejected, busy, no_answer) and caller details.
+  - Provide REST API endpoints POST /api/sms/inbox/clear, GET /api/call/history, and POST /api/call/history/clear.
+  - Update Web UI control panel with Call History telemetry table and one-click clear buttons.
+  - Update Home Assistant Lovelace card gsm2mqtt-card.js with collapsible SMS and call history menus, counter badges, and quick dialing.
+- **call**: add incoming caller number sensor with automatic idle reset (`38ce364`)
+  - Add sensor.<modem>_caller_number Home Assistant entity showing active caller phone number.
+  - Reset caller number sensor to idle immediately upon call termination to prevent stale numbers.
+  - Switch binary_sensor.<modem>_incoming_call to explicit ON/OFF payloads for immediate turn-off on call end.
+  - Publish initial ended call status on gateway startup to ensure clean sensor state.
+  - Update Home Assistant discovery, test suite, and integration documentation.
+- **sms**: separate last SMS topic and implement multipart assembly timeout with late-part reassembly (`638de43`)
+  - Add dedicated sms/last topic with retained flag for Home Assistant UI card, keeping sms/received non-retained to prevent false trigger pulses on reboot.
+  - Clear broker retained cache on sms/received at startup to purge stale messages from prior versions.
+  - Introduce assembly_timeout configuration parameter to flush partial multipart SMS after configurable wait duration.
+  - Implement Assembler V2 with automatic reassembly of late-arriving segments into unified [Updated] messages.
+  - Update Home Assistant discovery, configuration files, and documentation for new SMS topics and settings.
+- **gateway**: add structured event stream, Home Assistant binary sensors, and gateway timezone support (`1a4df35`)
+  - Add unified <prefix>/modem/<id>/event MQTT topic with structured event schema
+  - Add Home Assistant Auto-Discovery for connected, problem, and low_balance binary sensors
+  - Add Home Assistant Auto-Discovery for event entity supporting standard alert types
+  - Add gateway host timezone auto-detection (/etc/TZ, $TZ) and system.timezone configuration
+  - Format slog console logs and MQTT event timestamps in local time with ISO 8601 offset
+  - Synchronize tariff daily and monthly reset schedules with gateway local midnight
+  - Pass system TZ to gsm2mqtt environment in OpenWrt procd init script
+- **mqtt**: add no_tls build tag and pure TCP MQTT engine for embedded targets (`7d97b35`)
+  - Introduce no_tls build tag providing a lightweight, pure-TCP MQTT 3.1.1 client that eliminates crypto/tls and crypto/rand dependencies
+  - Resolve early runtime Segmentation fault on legacy MIPS Linux 4.4 kernels caused by Go 1.24+ crypto/rand FIPS-140 initialization
+  - Decouple net/http from internal/metrics and internal/api under no_api build tag to produce completely crypto-free binaries
+  - Add build-mips and build-mipsel Makefile targets and configure OpenWrt MIPS/MIPSEL package compilation with no_api,no_tls
+  - Configure Procd init script memory limits (GOMEMLIMIT=10MiB, GOGC=25) for resource-constrained 32MB RAM routers
+- **installer**: Add universal one-line installer script for Linux and OpenWrt (`6bc438d`)
+  - Add scripts/install.sh with automated platform, architecture, and package manager detection
+  - Support native OPKG (.ipk) and APK (.apk) installation on OpenWrt with procd service registration
+  - Support systemd service installation and gsm2mqtt user provisioning on Linux distros
+  - Preserve existing user configurations at /etc/gsm2mqtt/gsm2mqtt.yaml
+  - Document one-line installation prominently in README.md and OpenWrt guide
+
+### Bug Fixes
+
+- Release automations (`b7d91bc`)
+- **mqtt**: re-publish online status and discovery on broker reconnect (`95d8785`)
+  - Add OnConnect lifecycle callback to MQTT client configuration for Paho and TCP clients.
+  - Re-publish gateway online status with QoS 1 and retained flag upon broker reconnection.
+  - Re-publish Home Assistant discovery and dynamic alert recipients state on reconnect.
+- **tariff**: ensure configuration file limits take precedence over persisted state (`ca50908`)
+  - Prevent stale JSON state from overwriting updated YAML and UCI limits on daemon startup
+  - Separate static configuration parameters from runtime accounting usage counters and balance
+  - Add LowBalance flag and MinBalanceAlert threshold to tariff UsageStatus snapshot
+- **gateway**: publish disconnected state and update Home Assistant when modem is offline (`5d1f495`)
+  - Publish retained 'disconnected' health state to gsm2mqtt/modem/<id>/health on runner startup, disconnect, and retry.
+  - Clear stale active modems count in gsm2mqtt/gateway/modems (count: 0) when modem port is closed or missing.
+  - Add 'disconnected' enum option to Home Assistant status sensor discovery payload.
+  - Ensure health telemetry updates are published with retained flag in MQTT.
+  - Document 'disconnected' modem health state, retained MQTT topics, and Lovelace card status badge in docs/home-assistant-integration.md and docs/mqtt-topics.md.
+  - Add unit test TestModemRunner_DisconnectedStatePublished verifying state transitions.
+- **sms**: fix UCS-2 PDU chunking for UTF-16 surrogate pairs and emojis (`85168f9`)
+  - Account for 4-byte surrogate pairs (emojis > 0xFFFF) in UCS-2 message length calculations
+  - Ensure user data length (UDL) never exceeds the 140-byte 3GPP limit when emojis are present
+  - Prevent AT+CMGS rejection with CMS ERROR: operation not supported on emoji messages
+- **modem**: fix Neoway M590 SMS sending and AT+CPMS storage handling (`53b298b`)
+  - Enforce SIM card storage (SM) and block unsupported ME storage queries on Neoway M590 modems
+  - Add a 100ms pacing delay after '>' prompt in AT PDU transmission for 9600 baud serial reliability
+  - Ensure primary SM storage is restored after multi-storage offline message synchronization
+- **gateway**: improve modem retry loop, support MQTT QoS 2, and safeguard OpenWrt configs (`8452676`)
+  - Trigger modem runner retry backoff when driver initialization fails instead of proceeding silently
+  - Add full MQTT 3.1.1 QoS 2 handshake (PUBREC/PUBREL/PUBCOMP) to pure-TCP client engine
+  - Protect existing /etc/gsm2mqtt/gsm2mqtt.yaml configs during OpenWrt OPKG/APK upgrades via sample templates
+  - Install automatic OpenWrt hotplug symlink script mapping USB serial devices to /dev/ttyGSM
+  - Document modular build tags (no_api, no_tls) and embedded MIPS targets in README.md
+- **packaging**: Add Raspberry Pi 3 OPKG architecture and upgrade GitHub release action to v3 (`78bb834`)
+  - Add aarch64_cortex-a53 and aarch64_cortex-a72 targets for ARM64 OpenWrt OPKG packages
+  - Upgrade softprops/action-gh-release from v2 to v3 for Node.js 24 compatibility
+  - Enforce GNU tar format and standard archive entry order in OPKG generator
+  - Update OpenWrt deployment documentation with device-specific architecture guidance
+
+### Documentation
+
+- **readme**: document full Unicode & Emoji support and Neoway M590 modem (`e1e9c90`)
+  - Add documentation for full Emoji and multi-byte SMP Unicode handling via UTF-16 surrogate pairs in UCS-2 PDU mode.
+  - Explain 3GPP 140-byte boundary segmentation preventing modem payload rejection (+CMS ERROR).
+  - Add Neoway M590 / M590E to the supported modems matrix.
+
 ## [0.1.4] - 2026-09-25
 
 ### Features & Improvements

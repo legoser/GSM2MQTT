@@ -14,6 +14,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/modem/at"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/security"
+	"github.com/legoser/gsm2mqtt/internal/system"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 )
@@ -45,6 +46,7 @@ type ModemRunner struct {
 	callSvc          *CallService
 	tariffMgr        *tariff.Manager
 	receivedSMS      []ReceivedSMS
+	callHistory      []CallRecord
 	slotIndex        int
 	recipientsMgr    *security.RecipientsManager
 	sanitizer        *security.Sanitizer
@@ -71,6 +73,7 @@ func NewModemRunner(
 		sanitizer:    security.NewSanitizer(cfg.Security.AllowRawAT, cfg.Security.AllowedATCommands),
 	}
 	r.loadInbox()
+	r.loadCallHistory()
 	return r
 }
 
@@ -175,6 +178,13 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 	go statusSvc.Start(childCtx)
 	go r.startBalanceLoop(childCtx)
 
+	if r.mqttClient != nil && r.mqttClient.IsConnected() {
+		// Clear legacy retained message on SMS received topic to prevent false binary_sensor pulses
+		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), true, []byte{})
+		// Initialize incoming call state to idle
+		_ = r.mqttClient.Publish(r.topics.CallIncoming(), r.qos(), false, []byte(`{"type":"ended"}`))
+	}
+
 	r.mu.RLock()
 	if len(r.receivedSMS) > 0 && r.mqttClient != nil && r.mqttClient.IsConnected() {
 		last := r.receivedSMS[len(r.receivedSMS)-1]
@@ -183,9 +193,12 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 			"text":      last.Text,
 			"timestamp": last.Timestamp,
 		})
-		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), true, lastPayload)
+		_ = r.mqttClient.Publish(r.topics.SMSLast(), r.qos(), true, lastPayload)
 	}
 	r.mu.RUnlock()
+
+	r.publishSMSHistory()
+	r.publishCallHistory()
 
 	go func() {
 		synced, err := smsSvc.SyncStoredMessages(childCtx, "SM", "ME")
@@ -289,6 +302,32 @@ func (r *ModemRunner) updateHealth(h ModemHealth) {
 		h.Operator = r.lastHealth.Operator
 	}
 	r.lastHealth = h
+}
+
+func (r *ModemRunner) location() *time.Location {
+	if r.cfg != nil && r.cfg.System.Timezone != "" {
+		if loc, err := system.ResolveLocation(r.cfg.System.Timezone); err == nil {
+			return loc
+		}
+	}
+	return time.Local
+}
+
+func (r *ModemRunner) publishEvent(event EventPayload) {
+	if r.mqttClient == nil || !r.mqttClient.IsConnected() {
+		return
+	}
+	if event.ModemID == "" {
+		event.ModemID = r.mCfg.ID
+	}
+	if event.Timestamp == "" {
+		event.Timestamp = system.FormatLocalTime(time.Now(), r.location())
+	}
+	payload, err := event.Marshal()
+	if err != nil {
+		return
+	}
+	_ = r.mqttClient.Publish(r.topics.Event(), r.qos(), false, payload)
 }
 
 func (r *ModemRunner) urcLoop(

@@ -25,6 +25,9 @@ type mockModemManager struct {
 	tariffStatus *tariff.UsageStatus
 	tariffConfig tariff.Config
 	tariffReset  bool
+	calls        []CallRecord
+	inboxCleared bool
+	callsCleared bool
 }
 
 func (m *mockModemManager) GetModems() []ModemSummary {
@@ -71,6 +74,22 @@ func (m *mockModemManager) SendRawAT(ctx context.Context, modemID, cmd string) (
 
 func (m *mockModemManager) GetReceivedSMS() []ReceivedSMS {
 	return m.inbox
+}
+
+func (m *mockModemManager) ClearReceivedSMS(modemID string) error {
+	m.inbox = nil
+	m.inboxCleared = true
+	return nil
+}
+
+func (m *mockModemManager) GetCallHistory(modemID string) []CallRecord {
+	return m.calls
+}
+
+func (m *mockModemManager) ClearCallHistory(modemID string) error {
+	m.calls = nil
+	m.callsCleared = true
+	return nil
 }
 
 func (m *mockModemManager) GetMQTTStatus() MQTTStatus {
@@ -480,5 +499,65 @@ func TestServer_TariffReset(t *testing.T) {
 	}
 	if !mock.tariffReset {
 		t.Errorf("expected tariffReset to be true")
+	}
+}
+
+func TestServer_ClearInbox(t *testing.T) {
+	mock := &mockModemManager{
+		inbox: []ReceivedSMS{
+			{ID: "sms-1", Text: "Hello"},
+		},
+	}
+	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080, Token: "test"}, mock)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sms/inbox/clear", bytes.NewReader([]byte(`{"modem_id":"modem1"}`)))
+	req.Header.Set("Authorization", "Bearer test")
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !mock.inboxCleared {
+		t.Errorf("expected inboxCleared to be true")
+	}
+}
+
+func TestServer_CallHistory(t *testing.T) {
+	mock := &mockModemManager{
+		calls: []CallRecord{
+			{ID: "call-1", Number: "+79991112233", Status: "missed"},
+		},
+	}
+	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080, Token: "test"}, mock)
+
+	// 1. GET /api/call/history
+	req := httptest.NewRequest(http.MethodGet, "/api/call/history?modem_id=modem1", nil)
+	req.Header.Set("Authorization", "Bearer test")
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var res []CallRecord
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(res) != 1 || res[0].Number != "+79991112233" {
+		t.Errorf("unexpected call history response: %+v", res)
+	}
+
+	// 2. POST /api/call/history/clear
+	clearReq := httptest.NewRequest(http.MethodPost, "/api/call/history/clear", bytes.NewReader([]byte(`{"modem_id":"modem1"}`)))
+	clearReq.Header.Set("Authorization", "Bearer test")
+	wClear := httptest.NewRecorder()
+	server.Handler().ServeHTTP(wClear, clearReq)
+
+	if wClear.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", wClear.Code, wClear.Body.String())
+	}
+	if !mock.callsCleared {
+		t.Errorf("expected callsCleared to be true")
 	}
 }

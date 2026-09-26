@@ -40,6 +40,9 @@ func Load(path string) (*Config, error) {
 func Defaults() *Config {
 	return &Config{
 		LogLevel: "info",
+		System: SystemConfig{
+			Timezone: "auto",
+		},
 		MQTT: MQTTConfig{
 			Broker:               "localhost",
 			Port:                 1883,
@@ -100,10 +103,11 @@ func Defaults() *Config {
 			FallbackCall:   true,
 		},
 		SMS: SMSConfig{
-			Encoding:       "auto",
-			LongMessage:    "split",
-			MaxSegments:    4,
-			ReportEncoding: true,
+			Encoding:        "auto",
+			LongMessage:     "split",
+			MaxSegments:     4,
+			AssemblyTimeout: 30 * time.Second,
+			ReportEncoding:  true,
 			DeliveryReport: DeliveryReportConfig{
 				Enabled:        true,
 				Timeout:        5 * time.Minute,

@@ -97,3 +97,25 @@ func TestMockClient_PubSub(t *testing.T) {
 		t.Errorf("expected ErrNotConnected, got %v", err)
 	}
 }
+
+func TestMockClient_OnConnect(t *testing.T) {
+	mock := NewMockClient()
+	called := false
+	mock.SetOnConnect(func(c MQTTClient) {
+		called = true
+		_ = c.Publish("status", 1, true, []byte("online"))
+	})
+
+	if err := mock.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	if !called {
+		t.Error("expected onConnect callback to be invoked on Connect()")
+	}
+
+	pub := mock.Published()
+	if len(pub) != 1 || string(pub[0].Payload) != "online" {
+		t.Errorf("expected 1 published message with 'online', got %+v", pub)
+	}
+}

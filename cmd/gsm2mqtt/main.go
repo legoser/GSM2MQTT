@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
+	_ "time/tzdata"
 
 	"github.com/legoser/gsm2mqtt/internal/api"
 	"github.com/legoser/gsm2mqtt/internal/config"
@@ -18,6 +20,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/pool"
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/services"
+	"github.com/legoser/gsm2mqtt/internal/system"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 	verPkg "github.com/legoser/gsm2mqtt/internal/version"
 )
@@ -37,6 +40,18 @@ func init() {
 	}
 }
 
+func newLogger(level slog.Level, loc *time.Location) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey && a.Value.Kind() == slog.KindTime {
+				return slog.String(slog.TimeKey, system.FormatLocalTime(a.Value.Time(), loc))
+			}
+			return a
+		},
+	}))
+}
+
 func main() {
 	os.Exit(run())
 }
@@ -48,9 +63,11 @@ func run() int {
 		return 0
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	initialLoc, _ := system.ResolveLocation("")
+	if initialLoc != nil {
+		time.Local = initialLoc
+	}
+	logger := newLogger(slog.LevelInfo, initialLoc)
 	slog.SetDefault(logger)
 
 	logger.Info("starting gsm2mqtt",
@@ -65,11 +82,25 @@ func run() int {
 		return 1
 	}
 
-	logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: parseLogLevel(cfg.LogLevel),
-	}))
+	loc, err := system.ResolveLocation(cfg.System.Timezone)
+	if err != nil {
+		logger.Warn("invalid timezone configured, falling back to system timezone",
+			slog.String("timezone", cfg.System.Timezone),
+			slog.String("error", err.Error()),
+		)
+		loc = initialLoc
+	}
+	if loc != nil {
+		time.Local = loc
+	}
+
+	logger = newLogger(parseLogLevel(cfg.LogLevel), loc)
 	slog.SetDefault(logger)
-	logger.Info("config loaded", slog.String("path", cfgPath), slog.Int("modems", len(cfg.Modems)))
+	logger.Info("config loaded",
+		slog.String("path", cfgPath),
+		slog.Int("modems", len(cfg.Modems)),
+		slog.String("timezone", loc.String()),
+	)
 
 	ctx, cancel := setupSignalContext(logger)
 	defer cancel()
@@ -78,13 +109,6 @@ func run() int {
 }
 
 func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) int {
-	mqttClient, err := initMQTT(cfg)
-	if err != nil {
-		logger.Error("failed to initialize MQTT", slog.String("error", err.Error()))
-		return 1
-	}
-	defer mqttClient.Disconnect(250)
-
 	recipientsPath := cfg.Security.RecipientsFile
 	if recipientsPath == "" {
 		recipientsPath = "data/recipients.json"
@@ -93,6 +117,25 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 
 	manager := services.NewGatewayManager()
 	manager.InitRecipients(recipientsMgr)
+
+	onConnect := func(client mqtt.MQTTClient) {
+		statusTopic := fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix)
+		if err := client.Publish(statusTopic, byte(cfg.MQTT.QoS), true, []byte("online")); err != nil {
+			logger.Warn("failed to publish online status on connect", slog.Any("error", err))
+		} else {
+			logger.Info("published online status to MQTT", slog.String("topic", statusTopic))
+		}
+		manager.PublishDiscovery()
+		manager.PublishRecipientsState()
+	}
+
+	mqttClient, err := initMQTT(cfg, onConnect)
+	if err != nil {
+		logger.Error("failed to initialize MQTT", slog.String("error", err.Error()))
+		return 1
+	}
+	defer mqttClient.Disconnect(250)
+
 	manager.SetMQTT(mqttClient, &cfg.MQTT)
 
 	modemPool := initPool(ctx, cfg, mqttClient, logger)
@@ -157,7 +200,7 @@ func startAPIServer(ctx context.Context, cfg *config.Config, manager *services.G
 	}()
 }
 
-func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {
+func initMQTT(cfg *config.Config, onConnect func(client mqtt.MQTTClient)) (mqtt.MQTTClient, error) {
 	brokerURI := cfg.MQTT.Broker
 	if cfg.MQTT.Port > 0 && !strings.Contains(brokerURI, ":") {
 		scheme := "tcp"
@@ -185,6 +228,7 @@ func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {
 		LWTRetained:          true,
 		TLSEnabled:           cfg.MQTT.TLS.Enabled,
 		InsecureTLS:          cfg.MQTT.TLS.InsecureSkipVerify,
+		OnConnect:            onConnect,
 	})
 	if err != nil {
 		return nil, err
@@ -194,7 +238,6 @@ func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {
 		return nil, fmt.Errorf("connect to broker %s: %w", brokerURI, err)
 	}
 
-	_ = client.Publish(fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix), byte(cfg.MQTT.QoS), true, []byte("online"))
 	return client, nil
 }
 

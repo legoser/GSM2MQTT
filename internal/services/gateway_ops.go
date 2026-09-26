@@ -172,6 +172,16 @@ func (r *ModemRunner) SetRecipientsManager(mgr *security.RecipientsManager) {
 	r.recipientsMgr = mgr
 }
 
+// PublishDiscovery republishes discovery configs for the runner if driver is initialized.
+func (r *ModemRunner) PublishDiscovery() {
+	r.mu.RLock()
+	driver := r.driver
+	r.mu.RUnlock()
+	if driver != nil {
+		r.publishDiscovery(driver)
+	}
+}
+
 func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 	if !r.cfg.MQTT.Discovery {
 		return
@@ -305,6 +315,7 @@ func (r *ModemRunner) publishDisconnectedState(status string) {
 	}
 	payload, _ := json.Marshal(health)
 	_ = r.mqttClient.Publish(r.topics.Health(), r.qos(), true, payload)
+	r.publishEvent(NewEvent(r.mCfg.ID, "modem_disconnected", EventCategoryHardware, EventLevelCritical, fmt.Sprintf("Modem %s disconnected: %s", r.mCfg.ID, status), r.location(), nil))
 
 	if r.cfg != nil {
 		gwModemsPayload, _ := json.Marshal(map[string]any{

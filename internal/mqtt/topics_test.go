@@ -31,6 +31,21 @@ func TestTopics_Generation(t *testing.T) {
 			expected: "gsm2mqtt/modem/siemens_tc35/sms/received",
 		},
 		{
+			name:     "SMS Last topic",
+			actual:   topics.SMSLast(),
+			expected: "gsm2mqtt/modem/siemens_tc35/sms/last",
+		},
+		{
+			name:     "SMS History topic",
+			actual:   topics.SMSHistory(),
+			expected: "gsm2mqtt/modem/siemens_tc35/sms/history",
+		},
+		{
+			name:     "SMS History Clear topic",
+			actual:   topics.SMSHistoryClear(),
+			expected: "gsm2mqtt/modem/siemens_tc35/sms/history/clear",
+		},
+		{
 			name:     "Call Dial topic",
 			actual:   topics.CallDial(),
 			expected: "gsm2mqtt/modem/siemens_tc35/call/dial",
@@ -44,6 +59,16 @@ func TestTopics_Generation(t *testing.T) {
 			name:     "Call Incoming topic",
 			actual:   topics.CallIncoming(),
 			expected: "gsm2mqtt/modem/siemens_tc35/call/incoming",
+		},
+		{
+			name:     "Call History topic",
+			actual:   topics.CallHistory(),
+			expected: "gsm2mqtt/modem/siemens_tc35/call/history",
+		},
+		{
+			name:     "Call History Clear topic",
+			actual:   topics.CallHistoryClear(),
+			expected: "gsm2mqtt/modem/siemens_tc35/call/history/clear",
 		},
 		{
 			name:     "Call DTMF topic",
@@ -84,6 +109,11 @@ func TestTopics_Generation(t *testing.T) {
 			name:     "Alert topic",
 			actual:   topics.Alert(),
 			expected: "gsm2mqtt/modem/siemens_tc35/alert",
+		},
+		{
+			name:     "Event topic",
+			actual:   topics.Event(),
+			expected: "gsm2mqtt/modem/siemens_tc35/event",
 		},
 		{
 			name:     "Diagnostic topic",

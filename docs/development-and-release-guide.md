@@ -211,6 +211,11 @@ make prepare-release VERSION=v0.1.4
 make prepare-release BUMP=minor
 ```
 
+> **Guard:** the release pipelines (Forgejo + GitHub mirror) publish only tags
+> contained in `main`. A tag pushed from any other branch fails fast with
+> `refusing to release` — merge to `main` first (then re-run the workflow
+> if needed).
+
 #### What `make prepare-release` does automatically:
 1. Validates that the working tree is clean.
 2. Identifies the previous release tag (`v0.1.3`).

@@ -9,6 +9,9 @@ type Config struct {
 	// LogLevel controls the logging verbosity: debug, info, warn, error.
 	LogLevel string `yaml:"log_level"`
 
+	// System holds system-level options like timezone.
+	System SystemConfig `yaml:"system"`
+
 	// MQTT holds the MQTT broker connection settings.
 	MQTT MQTTConfig `yaml:"mqtt"`
 
@@ -104,11 +107,12 @@ type RateLimitConfig struct {
 
 // SMSConfig holds SMS encoding and delivery settings.
 type SMSConfig struct {
-	Encoding       string               `yaml:"encoding"`
-	LongMessage    string               `yaml:"long_message"`
-	MaxSegments    int                  `yaml:"max_segments"`
-	ReportEncoding bool                 `yaml:"report_encoding"`
-	DeliveryReport DeliveryReportConfig `yaml:"delivery_report"`
+	Encoding        string               `yaml:"encoding"`
+	LongMessage     string               `yaml:"long_message"`
+	MaxSegments     int                  `yaml:"max_segments"`
+	AssemblyTimeout time.Duration        `yaml:"assembly_timeout"`
+	ReportEncoding  bool                 `yaml:"report_encoding"`
+	DeliveryReport  DeliveryReportConfig `yaml:"delivery_report"`
 }
 
 // DeliveryReportConfig holds SMS delivery report settings.
@@ -153,4 +157,9 @@ type PoolConfig struct {
 	Enabled      bool   `yaml:"enabled"`
 	Strategy     string `yaml:"strategy"` // round-robin, failover, best-signal, operator-match
 	DefaultModem string `yaml:"default_modem"`
+}
+
+// SystemConfig holds system-level options like timezone.
+type SystemConfig struct {
+	Timezone string `yaml:"timezone"`
 }

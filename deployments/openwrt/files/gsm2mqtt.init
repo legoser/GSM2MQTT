@@ -24,9 +24,12 @@ start_service() {
     # Ensure runtime directories exist
     mkdir -p /var/run/gsm2mqtt
 
+    local sys_tz
+    [ -f /etc/TZ ] && sys_tz="$(cat /etc/TZ 2>/dev/null)" || sys_tz="UTC"
+
     procd_open_instance "gsm2mqtt"
     procd_set_param command "$PROG" --config "$config_file"
-    procd_set_param env GOMEMLIMIT="10MiB" GOGC="25" GODEBUG="madvdontneed=1"
+    procd_set_param env GOMEMLIMIT="10MiB" GOGC="25" GODEBUG="madvdontneed=1" TZ="$sys_tz"
     procd_set_param respawn 3600 5 0
     procd_set_param stdout 1
     procd_set_param stderr 1

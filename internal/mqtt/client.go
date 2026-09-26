@@ -29,6 +29,7 @@ type ClientConfig struct {
 	LWTRetained          bool
 	TLSEnabled           bool
 	InsecureTLS          bool
+	OnConnect            func(client MQTTClient)
 }
 
 // Validate checks essential MQTT client configuration parameters.
@@ -65,6 +66,7 @@ type MockClient struct {
 	connected   bool
 	subscribers map[string][]MessageHandler
 	published   []PublishedMessage
+	onConnect   func(client MQTTClient)
 }
 
 // NewMockClient creates a new mock MQTT client.
@@ -74,11 +76,22 @@ func NewMockClient() *MockClient {
 	}
 }
 
+// SetOnConnect sets the callback invoked when the client connects.
+func (m *MockClient) SetOnConnect(fn func(client MQTTClient)) {
+	m.mu.Lock()
+	m.onConnect = fn
+	m.mu.Unlock()
+}
+
 // Connect simulates client connection.
 func (m *MockClient) Connect() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.connected = true
+	fn := m.onConnect
+	m.mu.Unlock()
+	if fn != nil {
+		fn(m)
+	}
 	return nil
 }
 

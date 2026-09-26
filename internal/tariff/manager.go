@@ -46,10 +46,21 @@ func NewManager(modemID string, cfg Config, onAlert func(alert AlertEvent)) *Man
 		lastDailyCheck:   time.Now(),
 		lastMonthlyCheck: time.Now(),
 	}
+	if cfg.Location != nil {
+		m.lastDailyCheck = time.Now().In(cfg.Location)
+		m.lastMonthlyCheck = time.Now().In(cfg.Location)
+	}
 	if cfg.StorageDir != "" {
 		m.SetStore(NewFileStore(cfg.StorageDir))
 	}
 	return m
+}
+
+func (m *Manager) now() time.Time {
+	if m.cfg.Location != nil {
+		return time.Now().In(m.cfg.Location)
+	}
+	return time.Now()
 }
 
 // SetStore assigns a persistence store and restores state if available.
@@ -240,7 +251,7 @@ func (m *Manager) ResetDaily() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.smsDayCount = 0
-	m.lastDailyResetDate = time.Now().UTC().Format("2006-01-02")
+	m.lastDailyResetDate = m.now().Format("2006-01-02")
 	m.persistLocked()
 }
 
@@ -257,7 +268,7 @@ func (m *Manager) ResetMonthly() {
 	m.dataBytesUsed = 0
 	m.warnedData90 = false
 	m.warnedDataExceeded = false
-	m.lastMonthlyResetMonth = time.Now().UTC().Format("2006-01")
+	m.lastMonthlyResetMonth = m.now().Format("2006-01")
 	m.persistLocked()
 }
 
@@ -291,9 +302,13 @@ func (m *Manager) Status() UsageStatus {
 		}
 	}
 
+	lowBalance := m.cfg.MinBalanceAlert > 0 && m.balance < m.cfg.MinBalanceAlert
+
 	return UsageStatus{
 		Balance:              m.balance,
 		Currency:             m.currency,
+		LowBalance:           lowBalance,
+		MinBalanceAlert:      m.cfg.MinBalanceAlert,
 		SMSDayCount:          m.smsDayCount,
 		SMSMonthCount:        m.smsMonthCount,
 		SMSLimit:             m.cfg.SMSLimit,

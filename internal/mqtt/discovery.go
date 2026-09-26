@@ -61,7 +61,23 @@ type BinarySensorDiscoveryPayload struct {
 	StateTopic          string      `json:"state_topic"`
 	ValueTemplate       string      `json:"value_template,omitempty"`
 	PayloadOn           string      `json:"payload_on,omitempty"`
+	PayloadOff          string      `json:"payload_off,omitempty"`
+	DeviceClass         string      `json:"device_class,omitempty"`
 	OffDelay            int         `json:"off_delay,omitempty"`
+	Icon                string      `json:"icon,omitempty"`
+	AvailabilityTopic   string      `json:"availability_topic,omitempty"`
+	PayloadAvailable    string      `json:"payload_available,omitempty"`
+	PayloadNotAvailable string      `json:"payload_not_available,omitempty"`
+	Device              *DeviceInfo `json:"device"`
+}
+
+// EventDiscoveryPayload represents Home Assistant MQTT event entity configuration.
+type EventDiscoveryPayload struct {
+	Name                string      `json:"name"`
+	UniqueID            string      `json:"unique_id"`
+	ObjectID            string      `json:"object_id,omitempty"`
+	StateTopic          string      `json:"state_topic"`
+	EventTypes          []string    `json:"event_types"`
 	Icon                string      `json:"icon,omitempty"`
 	AvailabilityTopic   string      `json:"availability_topic,omitempty"`
 	PayloadAvailable    string      `json:"payload_available,omitempty"`
@@ -181,7 +197,7 @@ func BuildOperatorDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
 func BuildLastSMSDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
 	uniqueID := p.EntityUniqueID("last_sms")
 	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
-	stateTopic := fmt.Sprintf("%s/modem/%s/sms/received", p.TopicPrefix, p.ModemID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/sms/last", p.TopicPrefix, p.ModemID)
 	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
 
 	payload := SensorDiscoveryPayload{
