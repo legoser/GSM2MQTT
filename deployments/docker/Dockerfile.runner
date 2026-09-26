@@ -1,0 +1,63 @@
+# CI runner image for the Forgejo `release` label (linux/amd64, jobs run as root).
+#
+# Why this image exists:
+# - actions/setup-go downloads the Go toolchain (~100 MB, ~5 min on our link)
+#   on EVERY run because the job container's tool cache is ephemeral.
+# - This image pre-seeds Go into the hostedtoolcache layout, so setup-go
+#   finds it with "Found in cache" and skips the download entirely.
+# - Module and build caches are pre-warmed, so the first run is already warm
+#   even before the actions/cache service delivers fresher deltas.
+#
+# Version contract (must stay in sync, otherwise setup-go re-downloads):
+# - GO_VERSION below == version resolved from go.mod by actions/setup-go
+#   (go.mod pins an exact version, e.g. `go 1.25.0` -> go1.25.0).
+# - GOTOOLCHAIN=local forbids silent toolchain downloads: a version drift
+#   fails fast with a clear error instead of a slow download.
+#
+# Rebuild when: go.mod/go.sum change, Go patch bump, or base image update:
+#   docker build -f deployments/docker/Dockerfile.runner \
+#     --build-arg GO_VERSION=1.25.0 -t gsm2mqtt-ci-runner:latest .
+# Then repoint the runner label on the runner host and restart it:
+#   release:docker://gsm2mqtt-ci-runner:latest
+# Rollback: point the label back to catthehacker/ubuntu:act-latest.
+#
+# Base image is kept identical to the previous label on purpose: it is proven
+# to run Node-based JS actions (checkout/setup-go/cache) on this runner.
+FROM catthehacker/ubuntu:act-latest
+
+ARG GO_VERSION=1.25.0
+ARG DEBIAN_FRONTEND=noninteractive
+
+# CI tools used by the pipelines. zstd is REQUIRED for actions/cache restore:
+# a container without zstd cannot decompress the cache and skips it silently.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git jq python3 zstd \
+ && rm -rf /var/lib/apt/lists/*
+
+# Go toolchain in the hostedtoolcache layout (+ .complete marker),
+# exactly like GitHub-hosted runners have it preinstalled.
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz \
+ && mkdir -p "/opt/hostedtoolcache/go/${GO_VERSION}" \
+ && tar -xzf /tmp/go.tgz -C /tmp \
+ && mv /tmp/go "/opt/hostedtoolcache/go/${GO_VERSION}/x64" \
+ && touch "/opt/hostedtoolcache/go/${GO_VERSION}/x64.complete" \
+ && rm -f /tmp/go.tgz \
+ && "/opt/hostedtoolcache/go/${GO_VERSION}/x64/bin/go" version
+
+ENV GOROOT=/opt/hostedtoolcache/go/${GO_VERSION}/x64 \
+    GOPATH=/root/go \
+    GOMODCACHE=/root/go/pkg/mod \
+    GOCACHE=/root/.cache/go-build \
+    GOTOOLCHAIN=local \
+    PATH=/opt/hostedtoolcache/go/${GO_VERSION}/x64/bin:/root/go/bin:${PATH}
+
+# Warm module + build caches. Only Go sources are copied (no .git/bin/dist),
+# so the layer stays small. Stale entries are harmless: the go command
+# validates cache content by hash and actions/cache overlays fresher deltas.
+WORKDIR /root/gsm2mqtt-warmup
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd ./cmd
+COPY internal ./internal
+RUN go build ./... && go vet ./...
+WORKDIR /

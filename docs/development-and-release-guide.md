@@ -239,6 +239,26 @@ Once pushed, Forgejo and GitHub Actions automatically:
 5. Extract release notes from `CHANGELOG.md`.
 6. Publish the release with all binary and package assets attached.
 
+### CI Runner Image (Forgejo `release` Label)
+
+Job containers are ephemeral, so `actions/setup-go` re-downloads the Go
+toolchain on every run. `deployments/docker/Dockerfile.runner` bakes Go
+(pre-seeded into the hostedtoolcache layout), CI tools (`zstd` is required
+for `actions/cache` restore) and warm module/build caches into the image.
+`GO_VERSION` must match the version resolved from `go.mod`
+(`GOTOOLCHAIN=local` fails fast on drift instead of slow downloading).
+
+```bash
+# On the NAS (same Docker daemon as the runner):
+docker build -f deployments/docker/Dockerfile.runner \
+  --build-arg GO_VERSION=1.25.0 -t gsm2mqtt-ci-runner:latest .
+```
+
+Then point the runner label at it (`release:docker://gsm2mqtt-ci-runner:latest`)
+and restart the runner. Rollback: point the label back to
+`catthehacker/ubuntu:act-latest`. Rebuild the image when `go.mod`/`go.sum`
+change, on Go patch bumps, or on base image updates.
+
 ---
 
 ## 5. Command Reference Cheat Sheet
