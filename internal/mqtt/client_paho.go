@@ -74,8 +74,13 @@ func NewPahoClient(cfg ClientConfig) (*PahoClient, error) {
 		opts.SetMaxReconnectInterval(cfg.MaxReconnectInterval)
 	}
 
+	pahoClient := &PahoClient{cfg: cfg}
+
 	opts.SetOnConnectHandler(func(_ paho.Client) {
 		slog.Info("connected to MQTT broker", slog.String("broker", cfg.Broker), slog.String("client_id", cfg.ClientID))
+		if cfg.OnConnect != nil {
+			go cfg.OnConnect(pahoClient)
+		}
 	})
 	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
 		slog.Warn("connection lost to MQTT broker", slog.String("broker", cfg.Broker), slog.Any("error", err))
@@ -85,7 +90,8 @@ func NewPahoClient(cfg ClientConfig) (*PahoClient, error) {
 	})
 
 	client := paho.NewClient(opts)
-	return &PahoClient{client: client, cfg: cfg}, nil
+	pahoClient.client = client
+	return pahoClient, nil
 }
 
 // Connect connects to the MQTT broker.

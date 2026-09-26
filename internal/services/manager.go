@@ -244,3 +244,22 @@ func (m *GatewayManager) qos() byte {
 	defer m.mu.RUnlock()
 	return byte(m.mqttCfg.QoS)
 }
+
+// PublishDiscovery republishes discovery for all registered modem runners.
+func (m *GatewayManager) PublishDiscovery() {
+	m.mu.RLock()
+	runners := make([]*ModemRunner, 0, len(m.runners))
+	for _, r := range m.runners {
+		runners = append(runners, r)
+	}
+	m.mu.RUnlock()
+
+	for _, r := range runners {
+		r.PublishDiscovery()
+	}
+}
+
+// PublishRecipientsState republishes current recipient list to MQTT.
+func (m *GatewayManager) PublishRecipientsState() {
+	m.publishRecipientsState(m.GetRecipients())
+}
