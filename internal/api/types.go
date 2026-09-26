@@ -20,6 +20,9 @@ type ModemSummary = services.ModemSummary
 // ReceivedSMS is an alias to services.ReceivedSMS for API presentation.
 type ReceivedSMS = services.ReceivedSMS
 
+// CallRecord is an alias to services.CallRecord for API presentation.
+type CallRecord = services.CallRecord
+
 // CallStatus is an alias to services.CallStatus for API presentation.
 type CallStatus = services.CallStatus
 
@@ -36,6 +39,9 @@ type ModemManager interface {
 	GetCallStatus(modemID string) CallStatus
 	SendRawAT(ctx context.Context, modemID, cmd string) (string, error)
 	GetReceivedSMS() []ReceivedSMS
+	ClearReceivedSMS(modemID string) error
+	GetCallHistory(modemID string) []CallRecord
+	ClearCallHistory(modemID string) error
 	GetMQTTStatus() MQTTStatus
 	UpdateTariffConfig(modemID string, cfg tariff.Config) error
 	SetTariffUsage(modemID string, update tariff.UsageUpdate) error

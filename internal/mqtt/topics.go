@@ -37,6 +37,16 @@ func (t *Topics) SMSLast() string {
 	return fmt.Sprintf("%s/modem/%s/sms/last", t.prefix, t.modemID)
 }
 
+// SMSHistory returns the topic for publishing SMS inbox history.
+func (t *Topics) SMSHistory() string {
+	return fmt.Sprintf("%s/modem/%s/sms/history", t.prefix, t.modemID)
+}
+
+// SMSHistoryClear returns the command topic for clearing SMS history.
+func (t *Topics) SMSHistoryClear() string {
+	return fmt.Sprintf("%s/modem/%s/sms/history/clear", t.prefix, t.modemID)
+}
+
 // CallDial returns the topic for requesting an outgoing call.
 func (t *Topics) CallDial() string {
 	return fmt.Sprintf("%s/modem/%s/call/dial", t.prefix, t.modemID)
@@ -50,6 +60,16 @@ func (t *Topics) CallHangup() string {
 // CallIncoming returns the topic for announcing incoming calls.
 func (t *Topics) CallIncoming() string {
 	return fmt.Sprintf("%s/modem/%s/call/incoming", t.prefix, t.modemID)
+}
+
+// CallHistory returns the topic for publishing call history.
+func (t *Topics) CallHistory() string {
+	return fmt.Sprintf("%s/modem/%s/call/history", t.prefix, t.modemID)
+}
+
+// CallHistoryClear returns the command topic for clearing call history.
+func (t *Topics) CallHistoryClear() string {
+	return fmt.Sprintf("%s/modem/%s/call/history/clear", t.prefix, t.modemID)
 }
 
 // CallDTMF returns the topic for reporting received DTMF tones.

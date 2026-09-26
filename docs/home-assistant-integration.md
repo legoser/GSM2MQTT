@@ -47,8 +47,10 @@
 | `<prefix>/modem/<id>/accounting/status` | 1 | false | JSON статуса тарификации: `{"balance":2.22,"currency":"RUB","modem_id":"neoway_m590","spent_today":0,"sms_sent_today":0}` |
 | `<prefix>/modem/<id>/sms/received` | 1 | false | JSON принятого SMS (импульсный топик без retain для триггера автоматизаций и сенсора `new_sms`): `{"from":"+79991234567","text":"Hello from GSM","timestamp":"2026-09-26T22:30:00+07:00","segments":1,"encoding":"GSM-7","is_complete":true}` |
 | `<prefix>/modem/<id>/sms/last` | 1 | true | JSON последнего полученного SMS (сохраняется брокером с флагом retain специально для текстовой карточки в Lovelace): `{"from":"+79991234567","text":"Hello from GSM","timestamp":"2026-09-26T22:30:00+07:00","segments":1,"encoding":"GSM-7","is_complete":true}` |
+| `<prefix>/modem/<id>/sms/history` | 1 | true | JSON истории принятых SMS (счетчик и массив сообщений в атрибутах): `{"count":3,"items":[{"id":"m590-1","sender":"+79991234567","timestamp":"2026-09-26 22:30:00","text":"Привет"}]}` |
 | `<prefix>/modem/<id>/sms/status` | 1 | false | JSON отчета о доставке: `{"ref":12,"recipient":"+79991234567","status":"delivered","code":0,"timestamp":"2026-09-23T11:30:05Z"}` |
 | `<prefix>/modem/<id>/call/incoming` | 1 | false | JSON входящего звонка: `{"type":"incoming","from":"+79991234567","modem_id":"neoway_m590"}` |
+| `<prefix>/modem/<id>/call/history` | 1 | true | JSON истории звонков (счетчик и массив звонков в атрибутах): `{"count":2,"items":[{"id":"m590-call-1","number":"+79991234567","direction":"incoming","status":"missed","duration":0,"timestamp":"2026-09-26 22:45:00"}]}` |
 | `<prefix>/modem/<id>/call/dtmf` | 1 | false | JSON нажатой цифры DTMF: `{"type":"dtmf","digit":"5","modem_id":"neoway_m590"}` |
 | `<prefix>/modem/<id>/ussd/response` | 1 | false | JSON ответа на USSD: `{"code":"*100#","response":"Ваш баланс: 2.22 руб.","modem_id":"neoway_m590"}` |
 | `<prefix>/modem/<id>/alert` | 1 | false | Текстовое описание аварии (слабый сигнал, ошибка SIM, нет сети). |
@@ -60,8 +62,10 @@
 | Топик | Формат Payload | Описание действия |
 |:---|:---|:---|
 | `<prefix>/modem/<id>/sms/send` | JSON: `{"to":"+79991234567","text":"Alert message","request_report":true}` | Отправка SMS через указанный модем. Поддерживает GSM-7 и кириллицу (UCS-2 или translit). |
+| `<prefix>/modem/<id>/sms/history/clear` | Любой payload (например, `CLEAR`) | Очистка истории принятых SMS на диске и в памяти модема runner. |
 | `<prefix>/modem/<id>/call/dial` | JSON: `{"number":"+79991234567"}` или строка: `+79991234567` | Тревожный дозвон Call-Drop. Автоматически сбрасывает звонок при ответе абонента. |
 | `<prefix>/modem/<id>/call/hangup` | Любой payload | Принудительное завершение любого активного вызова. |
+| `<prefix>/modem/<id>/call/history/clear` | Любой payload (например, `CLEAR`) | Очистка сохраненной истории звонков на диске и в памяти модема runner. |
 | `<prefix>/modem/<id>/ussd/send` | Строка кода (например, `*100#`) или JSON `{"code":"*100#"}` | Выполнение произвольного USSD-запроса. |
 | `<prefix>/modem/<id>/command/raw` | Строка команды (например, `AT+CSQ`) | Прямая отправка команды модему для диагностики. |
 
@@ -148,6 +152,34 @@
    - **Value Template:** `{{ 'ON' if value_json.type == 'incoming' else 'OFF' }}`
    - **Payload On:** `ON` / **Payload Off:** `OFF` (мгновенно выключается при отбое, с 30-секундным `off_delay` таймаут-фоллбэком).
 
+10. **История принятых SMS (SMS History):**
+    - **Entity ID:** `sensor.<modem_id>_sms_history`
+    - **Icon:** `mdi:message-text-clock`
+    - **State Topic:** `gsm2mqtt/modem/<id>/sms/history`
+    - **Value Template:** `{{ value_json.count }}`
+    - **Unit:** `messages`
+    - **JSON Attributes Topic:** `gsm2mqtt/modem/<id>/sms/history` (содержит массив объектов сообщений `items`: `id`, `sender`, `timestamp`, `text`).
+
+11. **Очистка истории SMS (Clear SMS History):**
+    - **Entity ID:** `button.<modem_id>_clear_sms_history`
+    - **Icon:** `mdi:message-minus-outline`
+    - **Command Topic:** `gsm2mqtt/modem/<id>/sms/history/clear`
+    - **Payload Press:** `CLEAR`
+
+12. **История звонков (Call History):**
+    - **Entity ID:** `sensor.<modem_id>_call_history`
+    - **Icon:** `mdi:phone-log`
+    - **State Topic:** `gsm2mqtt/modem/<id>/call/history`
+    - **Value Template:** `{{ value_json.count }}`
+    - **Unit:** `calls`
+    - **JSON Attributes Topic:** `gsm2mqtt/modem/<id>/call/history` (содержит массив объектов звонков `items`: `id`, `number`, `direction`, `status`, `duration`, `timestamp`).
+
+13. **Очистка истории звонков (Clear Call History):**
+    - **Entity ID:** `button.<modem_id>_clear_call_history`
+    - **Icon:** `mdi:phone-remove-outline`
+    - **Command Topic:** `gsm2mqtt/modem/<id>/call/history/clear`
+    - **Payload Press:** `CLEAR`
+
 ---
 
 ## 4. Ручная настройка сущностей в `configuration.yaml`
@@ -194,6 +226,39 @@ mqtt:
       state_topic: "gsm2mqtt/modem/neoway_m590/call/incoming"
       value_template: "{% if value_json.type == 'incoming' %}{{ value_json.from if value_json.from is defined and value_json.from != '' else 'Unknown' }}{% else %}idle{% endif %}"
       icon: "mdi:phone-incoming"
+
+    # История SMS (сообщения доступны в атрибутах)
+    - name: "GSM SMS History"
+      unique_id: "gsm_modem_sms_history"
+      state_topic: "gsm2mqtt/modem/neoway_m590/sms/history"
+      value_template: "{{ value_json.count }}"
+      json_attributes_topic: "gsm2mqtt/modem/neoway_m590/sms/history"
+      unit_of_measurement: "messages"
+      icon: "mdi:message-text-clock"
+
+    # История звонков (звонки доступны в атрибутах)
+    - name: "GSM Call History"
+      unique_id: "gsm_modem_call_history"
+      state_topic: "gsm2mqtt/modem/neoway_m590/call/history"
+      value_template: "{{ value_json.count }}"
+      json_attributes_topic: "gsm2mqtt/modem/neoway_m590/call/history"
+      unit_of_measurement: "calls"
+      icon: "mdi:phone-log"
+
+  button:
+    # Очистка истории SMS
+    - name: "GSM Clear SMS History"
+      unique_id: "gsm_modem_btn_clear_sms_history"
+      command_topic: "gsm2mqtt/modem/neoway_m590/sms/history/clear"
+      payload_press: "CLEAR"
+      icon: "mdi:message-minus-outline"
+
+    # Очистка истории звонков
+    - name: "GSM Clear Call History"
+      unique_id: "gsm_modem_btn_clear_call_history"
+      command_topic: "gsm2mqtt/modem/neoway_m590/call/history/clear"
+      payload_press: "CLEAR"
+      icon: "mdi:phone-remove-outline"
 
   binary_sensor:
     # Входящий звонок
@@ -319,12 +384,16 @@ automation:
 │         Символов: 28 (1 SMS, GSM-7)                    │
 │  [ Отправить SMS ]                                     │
 ├────────────────────────────────────────────────────────┤
-│  📞 Звонок-сброс (Call-Drop)                           │
+│  📞 Звонок-Сброс (Call-Drop)                           │
 │  [ +79001234567         ]  [ Позвонить ] [ Сброс ]     │
 ├────────────────────────────────────────────────────────┤
-│  📥 Входящие SMS (Последние 5 сообщений)              │
+│  ▼ 📥 История SMS (5)                     [ Очистить ] │
 │  • 11:21 +79964126670: "Ваш баланс: 2.22 руб."        │
 │  • 09:15 MegaFon: "Вам поступил платеж"               │
+├────────────────────────────────────────────────────────┤
+│  ▼ 📞 История звонков (3)                 [ Очистить ] │
+│  • 12:40 ↗️ +79964126670 (35с) [completed]             │
+│  • 11:05 ❌ +79110000000 [missed]                      │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -413,11 +482,37 @@ class GSM2MQTTCard extends HTMLElement {
             <button id="hangupBtn" style="background:#c62828">Сброс</button>
           </div>
 
-          <!-- Inbox -->
-          <div class="section-title">📥 Последнее сообщение</div>
-          <div id="lastSMSBox" style="font-size:0.85em; padding:8px; background:var(--secondary-background-color); border-radius:6px; min-height:36px;">
-            Нет входящих сообщений
-          </div>
+          <!-- SMS History Collapsible -->
+          <details id="smsHistoryDetails" style="margin-top: 12px; background: var(--secondary-background-color); border-radius: 6px; padding: 6px 10px;">
+            <summary style="cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 0.9em;">
+              <span>📥 История SMS (<span id="smsHistoryCount">0</span>)</span>
+              <span style="font-size: 0.8em; color: var(--primary-color);">Сообщения ▾</span>
+            </summary>
+            <div style="margin-top: 8px;">
+              <div id="smsHistoryList" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 0.85em;">
+                <div style="color: var(--secondary-text-color); padding: 4px;">Нет входящих сообщений</div>
+              </div>
+              <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+                <button id="clearSMSHistoryBtn" class="quick-btn" style="color: #c62828;">🗑️ Очистить SMS</button>
+              </div>
+            </div>
+          </details>
+
+          <!-- Call History Collapsible -->
+          <details id="callHistoryDetails" style="margin-top: 8px; background: var(--secondary-background-color); border-radius: 6px; padding: 6px 10px;">
+            <summary style="cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 0.9em;">
+              <span>📞 История звонков (<span id="callHistoryCount">0</span>)</span>
+              <span style="font-size: 0.8em; color: var(--primary-color);">Звонки ▾</span>
+            </summary>
+            <div style="margin-top: 8px;">
+              <div id="callHistoryList" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 0.85em;">
+                <div style="color: var(--secondary-text-color); padding: 4px;">Нет записей о звонках</div>
+              </div>
+              <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+                <button id="clearCallHistoryBtn" class="quick-btn" style="color: #c62828;">🗑️ Очистить звонки</button>
+              </div>
+            </div>
+          </details>
         </div>
       </ha-card>
     `;
@@ -453,6 +548,14 @@ class GSM2MQTTCard extends HTMLElement {
     this.querySelector('#hangupBtn').onclick = () => {
       pub('call/hangup', '{}');
     };
+
+    this.querySelector('#clearSMSHistoryBtn').onclick = () => {
+      if (confirm('Очистить историю SMS?')) pub('sms/history/clear', 'CLEAR');
+    };
+
+    this.querySelector('#clearCallHistoryBtn').onclick = () => {
+      if (confirm('Очистить историю звонков?')) pub('call/history/clear', 'CLEAR');
+    };
   }
 
   updateCard() {
@@ -486,10 +589,50 @@ class GSM2MQTTCard extends HTMLElement {
       this.querySelector('#valStatus').innerHTML = `<span class="badge ${cls}">${label}</span>`;
     }
 
-    const smsState = this._hass.states[`sensor.${m}_last_sms`];
-    if (smsState && smsState.state !== 'unknown') {
-      const from = smsState.attributes.from || 'Отправитель';
-      this.querySelector('#lastSMSBox').innerHTML = `<strong>${from}:</strong> ${smsState.state}`;
+    const smsHist = this._hass.states[`sensor.${m}_sms_history`];
+    if (smsHist) {
+      this.querySelector('#smsHistoryCount').innerText = smsHist.state || '0';
+      const items = smsHist.attributes.items || [];
+      const listEl = this.querySelector('#smsHistoryList');
+      if (items.length === 0) {
+        listEl.innerHTML = '<div style="color: var(--secondary-text-color); padding: 4px;">Нет входящих сообщений</div>';
+      } else {
+        listEl.innerHTML = items.slice().reverse().map(item => `
+          <div style="border-bottom: 1px solid var(--divider-color); padding: 4px 0;">
+            <div style="display: flex; justify-content: space-between; font-weight: 600;">
+              <span style="cursor: pointer; color: var(--primary-color);" onclick="document.getElementById('smsTo').value='${item.sender || item.from || ''}'">${item.sender || item.from || 'Неизвестный'}</span>
+              <span style="font-size: 0.8em; color: var(--secondary-text-color);">${item.timestamp}</span>
+            </div>
+            <div style="margin-top: 2px;">${item.text}</div>
+          </div>
+        `).join('');
+      }
+    }
+
+    const callHist = this._hass.states[`sensor.${m}_call_history`];
+    if (callHist) {
+      this.querySelector('#callHistoryCount').innerText = callHist.state || '0';
+      const items = callHist.attributes.items || [];
+      const listEl = this.querySelector('#callHistoryList');
+      if (items.length === 0) {
+        listEl.innerHTML = '<div style="color: var(--secondary-text-color); padding: 4px;">Нет записей о звонках</div>';
+      } else {
+        listEl.innerHTML = items.slice().reverse().map(item => {
+          const isOut = item.direction === 'outgoing';
+          const icon = isOut ? '↗️' : (item.status === 'missed' ? '❌' : '↙️');
+          const dur = item.duration ? ` (${item.duration}с)` : '';
+          return `
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--divider-color); padding: 4px 0;">
+              <div>
+                <span>${icon}</span>
+                <span style="font-weight: 600; cursor: pointer; color: var(--primary-color);" onclick="document.getElementById('callNumber').value='${item.number || ''}'">${item.number || 'Unknown'}</span>
+                <span style="font-size: 0.8em; color: var(--secondary-text-color);">${dur} [${item.status}]</span>
+              </div>
+              <span style="font-size: 0.8em; color: var(--secondary-text-color);">${item.timestamp}</span>
+            </div>
+          `;
+        }).join('');
+      }
     }
   }
 

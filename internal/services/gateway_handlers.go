@@ -14,6 +14,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/operator"
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/sms"
+	"github.com/legoser/gsm2mqtt/internal/system"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 	"github.com/legoser/gsm2mqtt/internal/ussd"
 )
@@ -129,6 +130,34 @@ func (r *ModemRunner) wireServices(
 			minutes := math.Ceil(e.Duration.Seconds() / 60.0)
 			tariffMgr.RecordCallMinutes(minutes)
 			r.publishAccountingStatus(tariffMgr)
+		}
+
+		if e.Type == "ended" {
+			num := e.Number
+			if num == "" {
+				num = e.From
+			}
+			if num == "" {
+				num = "Unknown"
+			}
+			dir := e.Direction
+			if dir == "" {
+				dir = "incoming"
+			}
+			st := e.Status
+			if st == "" {
+				st = "completed"
+			}
+			record := CallRecord{
+				ID:        fmt.Sprintf("%s-call-%d", r.mCfg.ID, time.Now().UnixNano()),
+				ModemID:   r.mCfg.ID,
+				Number:    num,
+				Direction: dir,
+				Status:    st,
+				Duration:  int(e.Duration.Seconds()),
+				Timestamp: system.FormatLocalTime(time.Now(), r.location()),
+			}
+			r.recordCall(record)
 		}
 
 		payload, _ := json.Marshal(e)

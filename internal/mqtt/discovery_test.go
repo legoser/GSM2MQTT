@@ -268,8 +268,8 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildModemDiscoveries failed: %v", err)
 	}
-	if len(msgs) != 20 {
-		t.Fatalf("expected 20 discovery messages, got %d", len(msgs))
+	if len(msgs) != 24 {
+		t.Fatalf("expected 24 discovery messages, got %d", len(msgs))
 	}
 
 	expectedIDs := map[string]bool{
@@ -293,6 +293,10 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 		"gsm2mqtt_modem_1_btn_tariff_reset":       false,
 		"gsm2mqtt_modem_1_data_traffic_remaining": false,
 		"gsm2mqtt_modem_1_low_balance":            false,
+		"gsm2mqtt_modem_1_sms_history":            false,
+		"gsm2mqtt_modem_1_btn_clear_sms_history":  false,
+		"gsm2mqtt_modem_1_call_history":           false,
+		"gsm2mqtt_modem_1_btn_clear_call_history": false,
 	}
 
 	for _, msg := range msgs {
@@ -463,5 +467,84 @@ func TestBuildTariffLowBalanceBinaryDiscovery(t *testing.T) {
 	}
 	if payload["device_class"] != "problem" {
 		t.Errorf("expected device_class 'problem', got %v", payload["device_class"])
+	}
+}
+
+func TestBuildHistoryDiscoveries(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "modem1",
+		SlotIndex:       1,
+	}
+
+	// 1. SMS History sensor
+	smsMsg, err := BuildSMSHistoryDiscovery(params)
+	if err != nil {
+		t.Fatalf("BuildSMSHistoryDiscovery failed: %v", err)
+	}
+	if smsMsg.Topic != "homeassistant/sensor/gsm2mqtt_modem_1_sms_history/config" {
+		t.Errorf("unexpected topic: %s", smsMsg.Topic)
+	}
+	var smsPayload map[string]interface{}
+	if err := json.Unmarshal(smsMsg.Payload, &smsPayload); err != nil {
+		t.Fatal(err)
+	}
+	if smsPayload["state_topic"] != "gsm2mqtt/modem/modem1/sms/history" {
+		t.Errorf("expected state_topic 'gsm2mqtt/modem/modem1/sms/history', got %v", smsPayload["state_topic"])
+	}
+	if smsPayload["json_attributes_topic"] != "gsm2mqtt/modem/modem1/sms/history" {
+		t.Errorf("expected json_attributes_topic 'gsm2mqtt/modem/modem1/sms/history', got %v", smsPayload["json_attributes_topic"])
+	}
+
+	// 2. Clear SMS History button
+	clearSMSMsg, err := BuildClearSMSHistoryButtonDiscovery(params)
+	if err != nil {
+		t.Fatalf("BuildClearSMSHistoryButtonDiscovery failed: %v", err)
+	}
+	if clearSMSMsg.Topic != "homeassistant/button/gsm2mqtt_modem_1_btn_clear_sms_history/config" {
+		t.Errorf("unexpected topic: %s", clearSMSMsg.Topic)
+	}
+	var clearSMSPayload map[string]interface{}
+	if err := json.Unmarshal(clearSMSMsg.Payload, &clearSMSPayload); err != nil {
+		t.Fatal(err)
+	}
+	if clearSMSPayload["command_topic"] != "gsm2mqtt/modem/modem1/sms/history/clear" {
+		t.Errorf("expected command_topic 'gsm2mqtt/modem/modem1/sms/history/clear', got %v", clearSMSPayload["command_topic"])
+	}
+
+	// 3. Call History sensor
+	callMsg, err := BuildCallHistoryDiscovery(params)
+	if err != nil {
+		t.Fatalf("BuildCallHistoryDiscovery failed: %v", err)
+	}
+	if callMsg.Topic != "homeassistant/sensor/gsm2mqtt_modem_1_call_history/config" {
+		t.Errorf("unexpected topic: %s", callMsg.Topic)
+	}
+	var callPayload map[string]interface{}
+	if err := json.Unmarshal(callMsg.Payload, &callPayload); err != nil {
+		t.Fatal(err)
+	}
+	if callPayload["state_topic"] != "gsm2mqtt/modem/modem1/call/history" {
+		t.Errorf("expected state_topic 'gsm2mqtt/modem/modem1/call/history', got %v", callPayload["state_topic"])
+	}
+	if callPayload["json_attributes_topic"] != "gsm2mqtt/modem/modem1/call/history" {
+		t.Errorf("expected json_attributes_topic 'gsm2mqtt/modem/modem1/call/history', got %v", callPayload["json_attributes_topic"])
+	}
+
+	// 4. Clear Call History button
+	clearCallMsg, err := BuildClearCallHistoryButtonDiscovery(params)
+	if err != nil {
+		t.Fatalf("BuildClearCallHistoryButtonDiscovery failed: %v", err)
+	}
+	if clearCallMsg.Topic != "homeassistant/button/gsm2mqtt_modem_1_btn_clear_call_history/config" {
+		t.Errorf("unexpected topic: %s", clearCallMsg.Topic)
+	}
+	var clearCallPayload map[string]interface{}
+	if err := json.Unmarshal(clearCallMsg.Payload, &clearCallPayload); err != nil {
+		t.Fatal(err)
+	}
+	if clearCallPayload["command_topic"] != "gsm2mqtt/modem/modem1/call/history/clear" {
+		t.Errorf("expected command_topic 'gsm2mqtt/modem/modem1/call/history/clear', got %v", clearCallPayload["command_topic"])
 	}
 }

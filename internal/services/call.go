@@ -53,11 +53,14 @@ type CallStatus struct {
 
 // CallEvent represents an incoming or state-changed call event.
 type CallEvent struct {
-	Type     string        `json:"type"` // incoming, answered, ended, dtmf
-	From     string        `json:"from,omitempty"`
-	Digit    string        `json:"digit,omitempty"`
-	ModemID  string        `json:"modem_id"`
-	Duration time.Duration `json:"duration,omitempty"` // For ended events
+	Type      string        `json:"type"` // incoming, answered, ended, dtmf
+	From      string        `json:"from,omitempty"`
+	Number    string        `json:"number,omitempty"`
+	Direction string        `json:"direction,omitempty"` // "incoming" or "outgoing"
+	Status    string        `json:"status,omitempty"`    // "completed", "missed", "rejected", "failed", "busy", "no_answer"
+	Digit     string        `json:"digit,omitempty"`
+	ModemID   string        `json:"modem_id"`
+	Duration  time.Duration `json:"duration,omitempty"` // For ended events
 }
 
 // CallService coordinates voice call interactions with the modem.
@@ -126,6 +129,8 @@ func (s *CallService) onAutoDropTimeout() {
 	s.status.State = CallStateFailed
 	s.status.Message = "Call timed out (no answer)"
 	s.status.EndedAt = time.Now()
+	num := s.status.Number
+	dir := s.status.Direction
 	s.addLogLocked("Call timed out (no answer)")
 	if s.monitorStop != nil {
 		close(s.monitorStop)
@@ -135,7 +140,14 @@ func (s *CallService) onAutoDropTimeout() {
 
 	_ = s.caller.Hangup()
 	if s.onEvent != nil {
-		s.onEvent(CallEvent{Type: "ended", ModemID: s.modemID})
+		s.onEvent(CallEvent{
+			Type:      "ended",
+			ModemID:   s.modemID,
+			Number:    num,
+			From:      num,
+			Direction: dir,
+			Status:    "no_answer",
+		})
 	}
 }
 
@@ -237,10 +249,18 @@ func (s *CallService) Answer(ctx context.Context) error {
 	s.status.Message = "Call active"
 	s.status.AnsweredAt = time.Now()
 	s.addLogLocked("Call answered (active)")
+	num := s.status.Number
+	dir := s.status.Direction
 	s.mu.Unlock()
 
 	if s.onEvent != nil {
-		s.onEvent(CallEvent{Type: "answered", ModemID: s.modemID})
+		s.onEvent(CallEvent{
+			Type:      "answered",
+			ModemID:   s.modemID,
+			Number:    num,
+			From:      num,
+			Direction: dir,
+		})
 	}
 
 	slog.Info("modem voice call answered", slog.String("modem", s.modemID))
@@ -257,6 +277,16 @@ func (s *CallService) Hangup(ctx context.Context) error {
 	if wasAnswered && !s.status.AnsweredAt.IsZero() {
 		duration = time.Since(s.status.AnsweredAt)
 	}
+	num := s.status.Number
+	dir := s.status.Direction
+	statusStr := "completed"
+	if !wasAnswered {
+		if dir == "incoming" {
+			statusStr = "rejected"
+		} else {
+			statusStr = "cancelled"
+		}
+	}
 	s.status.State = CallStateCompleted
 	s.status.Message = "Call terminated"
 	s.status.EndedAt = time.Now()
@@ -270,7 +300,15 @@ func (s *CallService) Hangup(ctx context.Context) error {
 	}
 
 	if s.onEvent != nil {
-		s.onEvent(CallEvent{Type: "ended", ModemID: s.modemID, Duration: duration})
+		s.onEvent(CallEvent{
+			Type:      "ended",
+			ModemID:   s.modemID,
+			Duration:  duration,
+			Number:    num,
+			From:      num,
+			Direction: dir,
+			Status:    statusStr,
+		})
 	}
 
 	slog.Info("modem voice call terminated", slog.String("modem", s.modemID))
