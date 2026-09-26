@@ -37,21 +37,27 @@ func (s *CallService) handleClipURC(urc string) {
 	from := parseClipNumber(urc)
 	s.mu.Lock()
 	s.stopDropTimer()
+	startedAt := time.Now()
+	if s.status.State == CallStateRinging && !s.status.StartedAt.IsZero() {
+		startedAt = s.status.StartedAt
+	}
 	s.status = CallStatus{
 		State:     CallStateRinging,
 		Number:    from,
 		Direction: "incoming",
 		Message:   "Incoming call from " + from,
-		StartedAt: time.Now(),
+		StartedAt: startedAt,
 	}
 	s.mu.Unlock()
 
 	slog.Info("modem incoming call ringing", slog.String("modem", s.modemID), slog.String("from", from))
 	if s.onEvent != nil {
 		s.onEvent(CallEvent{
-			Type:    "incoming",
-			From:    from,
-			ModemID: s.modemID,
+			Type:      "incoming",
+			From:      from,
+			Number:    from,
+			Direction: "incoming",
+			ModemID:   s.modemID,
 		})
 	}
 }
@@ -80,11 +86,19 @@ func (s *CallService) handleNoCarrierURC() {
 	if wasAnswered && !s.status.AnsweredAt.IsZero() {
 		duration = time.Since(s.status.AnsweredAt)
 	}
+	num := s.status.Number
+	dir := s.status.Direction
+	statusStr := "completed"
 	if wasAnswered {
 		s.status.State = CallStateCompleted
 		s.status.Message = "Call finished"
 		s.addLogLocked("Call finished (NO CARRIER)")
 	} else {
+		if dir == "incoming" {
+			statusStr = "missed"
+		} else {
+			statusStr = "failed"
+		}
 		s.status.State = CallStateFailed
 		s.status.Message = "Call ended (no answer / disconnected)"
 		s.addLogLocked("Call ended: NO CARRIER (no answer / disconnected)")
@@ -94,9 +108,13 @@ func (s *CallService) handleNoCarrierURC() {
 
 	if s.onEvent != nil {
 		s.onEvent(CallEvent{
-			Type:     "ended",
-			ModemID:  s.modemID,
-			Duration: duration,
+			Type:      "ended",
+			ModemID:   s.modemID,
+			Duration:  duration,
+			Number:    num,
+			From:      num,
+			Direction: dir,
+			Status:    statusStr,
 		})
 	}
 }
@@ -105,6 +123,12 @@ func (s *CallService) handleBusyURC() {
 	slog.Info("modem call busy event", slog.String("modem", s.modemID), slog.String("event", "BUSY"))
 	s.mu.Lock()
 	s.stopDropTimer()
+	num := s.status.Number
+	dir := s.status.Direction
+	statusStr := "busy"
+	if dir == "incoming" {
+		statusStr = "rejected"
+	}
 	s.status.State = CallStateBusy
 	s.status.Message = "Line busy / Rejected"
 	s.status.EndedAt = time.Now()
@@ -113,8 +137,12 @@ func (s *CallService) handleBusyURC() {
 
 	if s.onEvent != nil {
 		s.onEvent(CallEvent{
-			Type:    "ended",
-			ModemID: s.modemID,
+			Type:      "ended",
+			ModemID:   s.modemID,
+			Number:    num,
+			From:      num,
+			Direction: dir,
+			Status:    statusStr,
 		})
 	}
 }
@@ -167,11 +195,18 @@ func (s *CallService) handleCallAnsweredDrop() {
 	s.status.State = CallStateAnswered
 	s.status.AnsweredAt = time.Now()
 	s.status.Message = "Answered! Auto-hanging up (call-drop)..."
-	s.addLogLocked("Call answered by recipient! Initiating auto-hangup (call-drop)...")
+	num := s.status.Number
+	dir := s.status.Direction
 	s.mu.Unlock()
 
 	if s.onEvent != nil {
-		s.onEvent(CallEvent{Type: "answered", ModemID: s.modemID})
+		s.onEvent(CallEvent{
+			Type:      "answered",
+			ModemID:   s.modemID,
+			Number:    num,
+			From:      num,
+			Direction: dir,
+		})
 	}
 
 	_ = s.caller.Hangup()
@@ -185,6 +220,14 @@ func (s *CallService) handleCallAnsweredDrop() {
 	s.mu.Unlock()
 
 	if s.onEvent != nil {
-		s.onEvent(CallEvent{Type: "ended", ModemID: s.modemID, Duration: duration})
+		s.onEvent(CallEvent{
+			Type:      "ended",
+			ModemID:   s.modemID,
+			Duration:  duration,
+			Number:    num,
+			From:      num,
+			Direction: dir,
+			Status:    "completed",
+		})
 	}
 }

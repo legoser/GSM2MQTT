@@ -123,6 +123,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/mqtt/status", s.auth(s.handleMQTTStatus))
 	s.mux.HandleFunc("POST /api/at/send", s.auth(s.handleSendAT))
 	s.mux.HandleFunc("GET /api/sms/inbox", s.auth(s.handleGetInbox))
+	s.mux.HandleFunc("POST /api/sms/inbox/clear", s.auth(s.handleClearInbox))
+	s.mux.HandleFunc("GET /api/call/history", s.auth(s.handleGetCallHistory))
+	s.mux.HandleFunc("POST /api/call/history/clear", s.auth(s.handleClearCallHistory))
 	s.mux.HandleFunc("GET /api/tariff/status", s.auth(s.handleTariffStatus))
 	s.mux.HandleFunc("POST /api/tariff/config", s.auth(s.handleTariffConfig))
 	s.mux.HandleFunc("POST /api/tariff/reset", s.auth(s.handleTariffReset))
@@ -295,6 +298,61 @@ func (s *Server) handleGetInbox(w http.ResponseWriter, r *http.Request) {
 	msgs := s.manager.GetReceivedSMS()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(msgs)
+}
+
+func (s *Server) handleClearInbox(w http.ResponseWriter, r *http.Request) {
+	if !limitBody(w, r) {
+		return
+	}
+	var req struct {
+		ModemID string `json:"modem_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.ModemID == "" {
+		req.ModemID = r.URL.Query().Get("modem_id")
+	}
+
+	err := s.manager.ClearReceivedSMS(req.ModemID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+}
+
+func (s *Server) handleGetCallHistory(w http.ResponseWriter, r *http.Request) {
+	modemID := r.URL.Query().Get("modem_id")
+	calls := s.manager.GetCallHistory(modemID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(calls)
+}
+
+func (s *Server) handleClearCallHistory(w http.ResponseWriter, r *http.Request) {
+	if !limitBody(w, r) {
+		return
+	}
+	var req struct {
+		ModemID string `json:"modem_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.ModemID == "" {
+		req.ModemID = r.URL.Query().Get("modem_id")
+	}
+
+	err := s.manager.ClearCallHistory(req.ModemID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 }
 
 func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {

@@ -69,4 +69,16 @@ func TestModemRunner_InboxPersistenceAndDeduplication(t *testing.T) {
 	if inboxRestored[0].Text != "Hello world" || inboxRestored[1].Text != "Second message" {
 		t.Errorf("unexpected restored message contents: %+v", inboxRestored)
 	}
+
+	// 5. Test ClearReceivedSMS
+	r2.ClearReceivedSMS()
+	if len(r2.GetReceivedSMS()) != 0 {
+		t.Fatalf("expected empty inbox after ClearReceivedSMS, got %d", len(r2.GetReceivedSMS()))
+	}
+
+	// Verify persistence of cleared inbox
+	r3 := NewModemRunner(mCfg, cfg, nil, nil)
+	if len(r3.GetReceivedSMS()) != 0 {
+		t.Fatalf("expected empty inbox after restart following clear, got %d", len(r3.GetReceivedSMS()))
+	}
 }

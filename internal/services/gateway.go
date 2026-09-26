@@ -46,6 +46,7 @@ type ModemRunner struct {
 	callSvc          *CallService
 	tariffMgr        *tariff.Manager
 	receivedSMS      []ReceivedSMS
+	callHistory      []CallRecord
 	slotIndex        int
 	recipientsMgr    *security.RecipientsManager
 	sanitizer        *security.Sanitizer
@@ -72,6 +73,7 @@ func NewModemRunner(
 		sanitizer:    security.NewSanitizer(cfg.Security.AllowRawAT, cfg.Security.AllowedATCommands),
 	}
 	r.loadInbox()
+	r.loadCallHistory()
 	return r
 }
 
@@ -194,6 +196,9 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 		_ = r.mqttClient.Publish(r.topics.SMSLast(), r.qos(), true, lastPayload)
 	}
 	r.mu.RUnlock()
+
+	r.publishSMSHistory()
+	r.publishCallHistory()
 
 	go func() {
 		synced, err := smsSvc.SyncStoredMessages(childCtx, "SM", "ME")

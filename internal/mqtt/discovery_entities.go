@@ -252,6 +252,102 @@ func BuildEventsDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
 	return marshalDiscovery(topic, payload)
 }
 
+// BuildSMSHistoryDiscovery generates discovery for SMS inbox history count and attributes sensor.
+func BuildSMSHistoryDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("sms_history")
+	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/sms/history", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	payload := SensorDiscoveryPayload{
+		Name:                "SMS History",
+		UniqueID:            uniqueID,
+		ObjectID:            p.EntityObjectID("sms_history"),
+		StateTopic:          stateTopic,
+		ValueTemplate:       "{{ value_json.count }}",
+		JSONAttributesTopic: stateTopic,
+		UnitOfMeasurement:   "messages",
+		Icon:                "mdi:message-text-clock",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}
+
+// BuildClearSMSHistoryButtonDiscovery generates discovery for clearing SMS history button.
+func BuildClearSMSHistoryButtonDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("btn_clear_sms_history")
+	topic := fmt.Sprintf("%s/button/%s/config", p.DiscoveryPrefix, uniqueID)
+	cmdTopic := fmt.Sprintf("%s/modem/%s/sms/history/clear", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	payload := ButtonDiscoveryPayload{
+		Name:                "Clear SMS History",
+		UniqueID:            uniqueID,
+		ObjectID:            p.EntityObjectID("clear_sms_history"),
+		CommandTopic:        cmdTopic,
+		PayloadPress:        "CLEAR",
+		Icon:                "mdi:message-minus-outline",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}
+
+// BuildCallHistoryDiscovery generates discovery for call history count and attributes sensor.
+func BuildCallHistoryDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("call_history")
+	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/call/history", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	payload := SensorDiscoveryPayload{
+		Name:                "Call History",
+		UniqueID:            uniqueID,
+		ObjectID:            p.EntityObjectID("call_history"),
+		StateTopic:          stateTopic,
+		ValueTemplate:       "{{ value_json.count }}",
+		JSONAttributesTopic: stateTopic,
+		UnitOfMeasurement:   "calls",
+		Icon:                "mdi:phone-log",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}
+
+// BuildClearCallHistoryButtonDiscovery generates discovery for clearing call history button.
+func BuildClearCallHistoryButtonDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("btn_clear_call_history")
+	topic := fmt.Sprintf("%s/button/%s/config", p.DiscoveryPrefix, uniqueID)
+	cmdTopic := fmt.Sprintf("%s/modem/%s/call/history/clear", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	payload := ButtonDiscoveryPayload{
+		Name:                "Clear Call History",
+		UniqueID:            uniqueID,
+		ObjectID:            p.EntityObjectID("clear_call_history"),
+		CommandTopic:        cmdTopic,
+		PayloadPress:        "CLEAR",
+		Icon:                "mdi:phone-remove-outline",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}
+
 // BuildModemDiscoveries builds the complete set of Home Assistant Auto-Discovery messages for a modem.
 func BuildModemDiscoveries(p ModemDiscoveryParams) ([]*DiscoveryMessage, error) {
 	builders := []func() (*DiscoveryMessage, error){
@@ -314,6 +410,18 @@ func BuildModemDiscoveries(p ModemDiscoveryParams) ([]*DiscoveryMessage, error) 
 		},
 		func() (*DiscoveryMessage, error) {
 			return BuildTariffLowBalanceBinaryDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildSMSHistoryDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildClearSMSHistoryButtonDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildCallHistoryDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildClearCallHistoryButtonDiscovery(p)
 		},
 	}
 

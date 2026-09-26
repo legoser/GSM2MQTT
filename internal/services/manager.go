@@ -68,6 +68,7 @@ type ReceivedSMS struct {
 	ID        string `json:"id"`
 	ModemID   string `json:"modem_id"`
 	Sender    string `json:"sender"`
+	From      string `json:"from,omitempty"`
 	Timestamp string `json:"timestamp"`
 	Text      string `json:"text"`
 }
@@ -111,6 +112,67 @@ func (m *GatewayManager) GetReceivedSMS() []ReceivedSMS {
 		}
 	}
 	return all
+}
+
+// ClearReceivedSMS wipes the received SMS inbox for a specific modem or all modems if modemID is empty or "all".
+func (m *GatewayManager) ClearReceivedSMS(modemID string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if modemID != "" && modemID != "all" {
+		r, ok := m.runners[modemID]
+		if !ok {
+			return fmt.Errorf("modem %s not found", modemID)
+		}
+		r.ClearReceivedSMS()
+		return nil
+	}
+
+	for _, r := range m.runners {
+		r.ClearReceivedSMS()
+	}
+	return nil
+}
+
+// GetCallHistory collects recorded voice calls across all modems or for a specific modem.
+func (m *GatewayManager) GetCallHistory(modemID string) []CallRecord {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if modemID != "" && modemID != "all" {
+		if r, ok := m.runners[modemID]; ok {
+			return r.GetCallHistory()
+		}
+		return []CallRecord{}
+	}
+
+	all := make([]CallRecord, 0)
+	for _, id := range m.order {
+		if r, ok := m.runners[id]; ok {
+			all = append(all, r.GetCallHistory()...)
+		}
+	}
+	return all
+}
+
+// ClearCallHistory wipes recorded voice calls for a specific modem or all modems if modemID is empty or "all".
+func (m *GatewayManager) ClearCallHistory(modemID string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if modemID != "" && modemID != "all" {
+		r, ok := m.runners[modemID]
+		if !ok {
+			return fmt.Errorf("modem %s not found", modemID)
+		}
+		r.ClearCallHistory()
+		return nil
+	}
+
+	for _, r := range m.runners {
+		r.ClearCallHistory()
+	}
+	return nil
 }
 
 // SendUSSD dispatches a USSD query through the requested (or first available) modem.

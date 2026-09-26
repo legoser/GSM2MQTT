@@ -70,6 +70,15 @@ func (r *ModemRunner) subscribeSMS(ctx context.Context,
 	if r.SlotIndex() == 1 {
 		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/sms/send", r.cfg.MQTT.TopicPrefix), r.qos(), handler)
 	}
+
+	clearSMSHandler := func(_ string, _ []byte) {
+		slog.Info("clearing SMS history via MQTT command", slog.String("modem", r.mCfg.ID))
+		r.ClearReceivedSMS()
+	}
+	_ = r.mqttClient.Subscribe(r.topics.SMSHistoryClear(), r.qos(), clearSMSHandler)
+	if r.SlotIndex() == 1 {
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/sms/history/clear", r.cfg.MQTT.TopicPrefix), r.qos(), clearSMSHandler)
+	}
 }
 
 func (r *ModemRunner) sendAndReportSMS(ctx context.Context,
@@ -158,6 +167,15 @@ func (r *ModemRunner) subscribeCall(ctx context.Context, callSvc *CallService) {
 	if r.SlotIndex() == 1 {
 		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/call/dial", r.cfg.MQTT.TopicPrefix), r.qos(), dialHandler)
 		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/call/hangup", r.cfg.MQTT.TopicPrefix), r.qos(), hangupHandler)
+	}
+
+	clearCallsHandler := func(_ string, _ []byte) {
+		slog.Info("clearing call history via MQTT command", slog.String("modem", r.mCfg.ID))
+		r.ClearCallHistory()
+	}
+	_ = r.mqttClient.Subscribe(r.topics.CallHistoryClear(), r.qos(), clearCallsHandler)
+	if r.SlotIndex() == 1 {
+		_ = r.mqttClient.Subscribe(fmt.Sprintf("%s/modem/gsm_modem/call/history/clear", r.cfg.MQTT.TopicPrefix), r.qos(), clearCallsHandler)
 	}
 }
 

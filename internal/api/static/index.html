@@ -193,8 +193,11 @@ button { flex: 1; padding: 0.65rem 1rem; border: none; border-radius: 6px; font-
   </details>
 </div>
 
-<div class="card">
-  <h2><span>📥</span> Received SMS Inbox</h2>
+<div class="card" style="margin-bottom: 1.5rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+    <h2 style="margin: 0;"><span>📥</span> Received SMS Inbox</h2>
+    <button class="btn-danger" style="padding: 0.35rem 0.75rem; font-size: 0.85rem;" onclick="clearSMSHistory()">🗑️ Clear Inbox</button>
+  </div>
   <div class="inbox-table">
     <table>
       <thead>
@@ -202,6 +205,23 @@ button { flex: 1; padding: 0.65rem 1rem; border: none; border-radius: 6px; font-
       </thead>
       <tbody id="inboxBody">
         <tr><td colspan="4" style="text-align:center; color:#888;">No messages received yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+    <h2 style="margin: 0;"><span>📞</span> Call History</h2>
+    <button class="btn-danger" style="padding: 0.35rem 0.75rem; font-size: 0.85rem;" onclick="clearCallHistory()">🗑️ Clear History</button>
+  </div>
+  <div class="inbox-table">
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Number</th><th>Direction</th><th>Status</th><th>Duration</th><th>Modem</th></tr>
+      </thead>
+      <tbody id="callHistoryBody">
+        <tr><td colspan="6" style="text-align:center; color:#888;">No calls recorded yet</td></tr>
       </tbody>
     </table>
   </div>
@@ -318,6 +338,58 @@ function fetchInbox() {
       '</tr>').join('');
     })
     .catch(e => console.error('failed fetching inbox', e));
+}
+
+function clearSMSHistory() {
+  if (!confirm('Clear all received SMS history?')) return;
+  apiFetch('/api/sms/inbox/clear', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({})
+  })
+  .then(() => fetchInbox())
+  .catch(e => alert('Failed to clear inbox: ' + e));
+}
+
+function fetchCallHistory() {
+  apiFetch('/api/call/history')
+    .then(r => r.json())
+    .then(list => {
+      let body = document.getElementById('callHistoryBody');
+      if (!body) return;
+      if (!list || list.length === 0) {
+        body.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#888;">No calls recorded yet</td></tr>';
+        return;
+      }
+      body.innerHTML = list.map(c => {
+        let stClass = 'badge badge-ready';
+        let stText = c.status || 'unknown';
+        if (stText === 'missed' || stText === 'failed') stClass = 'badge badge-error';
+        else if (stText === 'busy' || stText === 'rejected') stClass = 'badge badge-warning';
+        let dur = c.duration ? (c.duration + 's') : '-';
+        let dirIcon = c.direction === 'outgoing' ? '↗️ Out' : '↙️ In';
+        return '<tr>' +
+          '<td>' + escapeHtml(c.timestamp) + '</td>' +
+          '<td><strong>' + escapeHtml(c.number) + '</strong></td>' +
+          '<td>' + dirIcon + '</td>' +
+          '<td><span class="' + stClass + '">' + escapeHtml(stText.toUpperCase()) + '</span></td>' +
+          '<td>' + dur + '</td>' +
+          '<td>' + escapeHtml(c.modem_id) + '</td>' +
+        '</tr>';
+      }).join('');
+    })
+    .catch(e => console.error('failed fetching call history', e));
+}
+
+function clearCallHistory() {
+  if (!confirm('Clear all recorded call history?')) return;
+  apiFetch('/api/call/history/clear', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({})
+  })
+  .then(() => fetchCallHistory())
+  .catch(e => alert('Failed to clear call history: ' + e));
 }
 
 function sendUSSD() {
@@ -561,6 +633,7 @@ function fetchMQTTStatus() {
 function refreshAll() {
   fetchModems();
   fetchInbox();
+  fetchCallHistory();
   fetchMQTTStatus();
 }
 
