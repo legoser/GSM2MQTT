@@ -63,10 +63,34 @@ func BuildIncomingCallDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, erro
 		UniqueID:            uniqueID,
 		ObjectID:            p.EntityObjectID("incoming_call"),
 		StateTopic:          stateTopic,
-		ValueTemplate:       "{{ value_json.type }}",
-		PayloadOn:           "incoming",
+		ValueTemplate:       "{{ 'ON' if value_json.type == 'incoming' else 'OFF' }}",
+		PayloadOn:           "ON",
+		PayloadOff:          "OFF",
 		OffDelay:            30,
 		Icon:                "mdi:phone-ring",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}
+
+// BuildCallerNumberDiscovery generates discovery for active incoming caller phone number sensor.
+func BuildCallerNumberDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("caller_number")
+	topic := fmt.Sprintf("%s/sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/call/incoming", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	payload := SensorDiscoveryPayload{
+		Name:                "Caller Number",
+		UniqueID:            uniqueID,
+		ObjectID:            p.EntityObjectID("caller_number"),
+		StateTopic:          stateTopic,
+		ValueTemplate:       "{% if value_json.type == 'incoming' %}{{ value_json.from if value_json.from is defined and value_json.from != '' else 'Unknown' }}{% else %}idle{% endif %}",
+		Icon:                "mdi:phone-incoming",
 		AvailabilityTopic:   availTopic,
 		PayloadAvailable:    avail,
 		PayloadNotAvailable: notAvail,
@@ -266,6 +290,9 @@ func BuildModemDiscoveries(p ModemDiscoveryParams) ([]*DiscoveryMessage, error) 
 		},
 		func() (*DiscoveryMessage, error) {
 			return BuildIncomingCallDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildCallerNumberDiscovery(p)
 		},
 		func() (*DiscoveryMessage, error) {
 			return BuildNewSMSBinaryDiscovery(p)

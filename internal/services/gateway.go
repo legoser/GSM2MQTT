@@ -179,6 +179,8 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 	if r.mqttClient != nil && r.mqttClient.IsConnected() {
 		// Clear legacy retained message on SMS received topic to prevent false binary_sensor pulses
 		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), true, []byte{})
+		// Initialize incoming call state to idle
+		_ = r.mqttClient.Publish(r.topics.CallIncoming(), r.qos(), false, []byte(`{"type":"ended"}`))
 	}
 
 	r.mu.RLock()

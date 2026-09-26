@@ -134,6 +134,20 @@
    - **State Topic:** `gsm2mqtt/modem/<id>/event`
    - **Event Types:** `low_balance`, `sms_limit_warning`, `sms_limit_exceeded`, `call_minutes_warning`, `call_minutes_exceeded`, `data_limit_warning`, `data_limit_exceeded`, `modem_disconnected`, `modem_degraded`, `modem_ready`, `modem_error`, `sms_send_failed`.
 
+8. **Номер входящего звонящего (Caller Number):**
+   - **Entity ID:** `sensor.<modem_id>_caller_number`
+   - **Icon:** `mdi:phone-incoming`
+   - **State Topic:** `gsm2mqtt/modem/<id>/call/incoming`
+   - **Value Template:** `{% if value_json.type == 'incoming' %}{{ value_json.from if value_json.from is defined and value_json.from != '' else 'Unknown' }}{% else %}idle{% endif %}`
+   - **Поведение:** При входящем звонке принимает номер абонента (или `Unknown`, если номер скрыт оператором). При отбое/завершении звонка автоматически сбрасывается в чистое состояние `idle`.
+
+9. **Индикатор входящего звонка (Incoming Call):**
+   - **Entity ID:** `binary_sensor.<modem_id>_incoming_call`
+   - **Icon:** `mdi:phone-ring`
+   - **State Topic:** `gsm2mqtt/modem/<id>/call/incoming`
+   - **Value Template:** `{{ 'ON' if value_json.type == 'incoming' else 'OFF' }}`
+   - **Payload On:** `ON` / **Payload Off:** `OFF` (мгновенно выключается при отбое, с 30-секундным `off_delay` таймаут-фоллбэком).
+
 ---
 
 ## 4. Ручная настройка сущностей в `configuration.yaml`
@@ -174,13 +188,21 @@ mqtt:
       json_attributes_topic: "gsm2mqtt/modem/neoway_m590/sms/last"
       icon: "mdi:message-text"
 
+    # Номер входящего звонящего (сбрасывается в idle при отбое)
+    - name: "GSM Caller Number"
+      unique_id: "gsm_modem_caller_number"
+      state_topic: "gsm2mqtt/modem/neoway_m590/call/incoming"
+      value_template: "{% if value_json.type == 'incoming' %}{{ value_json.from if value_json.from is defined and value_json.from != '' else 'Unknown' }}{% else %}idle{% endif %}"
+      icon: "mdi:phone-incoming"
+
   binary_sensor:
     # Входящий звонок
     - name: "GSM Incoming Call"
       unique_id: "gsm_incoming_call"
       state_topic: "gsm2mqtt/modem/neoway_m590/call/incoming"
-      payload_on: "incoming"
-      value_template: "{{ value_json.type }}"
+      payload_on: "ON"
+      payload_off: "OFF"
+      value_template: "{{ 'ON' if value_json.type == 'incoming' else 'OFF' }}"
       off_delay: 30
       icon: "mdi:phone-ring"
 ```
