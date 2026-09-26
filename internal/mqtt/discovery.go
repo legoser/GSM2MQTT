@@ -61,7 +61,23 @@ type BinarySensorDiscoveryPayload struct {
 	StateTopic          string      `json:"state_topic"`
 	ValueTemplate       string      `json:"value_template,omitempty"`
 	PayloadOn           string      `json:"payload_on,omitempty"`
+	PayloadOff          string      `json:"payload_off,omitempty"`
+	DeviceClass         string      `json:"device_class,omitempty"`
 	OffDelay            int         `json:"off_delay,omitempty"`
+	Icon                string      `json:"icon,omitempty"`
+	AvailabilityTopic   string      `json:"availability_topic,omitempty"`
+	PayloadAvailable    string      `json:"payload_available,omitempty"`
+	PayloadNotAvailable string      `json:"payload_not_available,omitempty"`
+	Device              *DeviceInfo `json:"device"`
+}
+
+// EventDiscoveryPayload represents Home Assistant MQTT event entity configuration.
+type EventDiscoveryPayload struct {
+	Name                string      `json:"name"`
+	UniqueID            string      `json:"unique_id"`
+	ObjectID            string      `json:"object_id,omitempty"`
+	StateTopic          string      `json:"state_topic"`
+	EventTypes          []string    `json:"event_types"`
 	Icon                string      `json:"icon,omitempty"`
 	AvailabilityTopic   string      `json:"availability_topic,omitempty"`
 	PayloadAvailable    string      `json:"payload_available,omitempty"`

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
+	_ "time/tzdata"
 
 	"github.com/legoser/gsm2mqtt/internal/api"
 	"github.com/legoser/gsm2mqtt/internal/config"
@@ -18,6 +20,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/pool"
 	"github.com/legoser/gsm2mqtt/internal/security"
 	"github.com/legoser/gsm2mqtt/internal/services"
+	"github.com/legoser/gsm2mqtt/internal/system"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 	verPkg "github.com/legoser/gsm2mqtt/internal/version"
 )
@@ -37,6 +40,18 @@ func init() {
 	}
 }
 
+func newLogger(level slog.Level, loc *time.Location) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey && a.Value.Kind() == slog.KindTime {
+				return slog.String(slog.TimeKey, system.FormatLocalTime(a.Value.Time(), loc))
+			}
+			return a
+		},
+	}))
+}
+
 func main() {
 	os.Exit(run())
 }
@@ -48,9 +63,11 @@ func run() int {
 		return 0
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	initialLoc, _ := system.ResolveLocation("")
+	if initialLoc != nil {
+		time.Local = initialLoc
+	}
+	logger := newLogger(slog.LevelInfo, initialLoc)
 	slog.SetDefault(logger)
 
 	logger.Info("starting gsm2mqtt",
@@ -65,11 +82,25 @@ func run() int {
 		return 1
 	}
 
-	logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: parseLogLevel(cfg.LogLevel),
-	}))
+	loc, err := system.ResolveLocation(cfg.System.Timezone)
+	if err != nil {
+		logger.Warn("invalid timezone configured, falling back to system timezone",
+			slog.String("timezone", cfg.System.Timezone),
+			slog.String("error", err.Error()),
+		)
+		loc = initialLoc
+	}
+	if loc != nil {
+		time.Local = loc
+	}
+
+	logger = newLogger(parseLogLevel(cfg.LogLevel), loc)
 	slog.SetDefault(logger)
-	logger.Info("config loaded", slog.String("path", cfgPath), slog.Int("modems", len(cfg.Modems)))
+	logger.Info("config loaded",
+		slog.String("path", cfgPath),
+		slog.Int("modems", len(cfg.Modems)),
+		slog.String("timezone", loc.String()),
+	)
 
 	ctx, cancel := setupSignalContext(logger)
 	defer cancel()

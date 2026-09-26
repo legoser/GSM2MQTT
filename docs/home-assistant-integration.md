@@ -51,6 +51,7 @@
 | `<prefix>/modem/<id>/call/dtmf` | 1 | false | JSON нажатой цифры DTMF: `{"type":"dtmf","digit":"5","modem_id":"neoway_m590"}` |
 | `<prefix>/modem/<id>/ussd/response` | 1 | false | JSON ответа на USSD: `{"code":"*100#","response":"Ваш баланс: 2.22 руб.","modem_id":"neoway_m590"}` |
 | `<prefix>/modem/<id>/alert` | 1 | false | Текстовое описание аварии (слабый сигнал, ошибка SIM, нет сети). |
+| `<prefix>/modem/<id>/event` | 1 | false | JSON структурированных событий (low_balance, quota_warning, quota_exceeded, modem_disconnected, modem_degraded, modem_ready, modem_error, sms_send_failed). Совместим с платформой HA Event. |
 | `<prefix>/modem/<id>/command/response` | 1 | false | Текстовый ответ модема на ручную AT-команду. |
 
 ### 2.2. Командные топики (Подписка в GSM2MQTT из Home Assistant)
@@ -104,6 +105,33 @@
    - **Device Class:** `monetary`
    - **Unit:** `RUB`
    - **State Topic:** `gsm2mqtt/modem/<id>/balance`
+
+4. **Физическое подключение модема:**
+   - **Entity ID:** `binary_sensor.<modem_id>_connected`
+   - **Device Class:** `connectivity`
+   - **Icon:** `mdi:connection`
+   - **State Topic:** `gsm2mqtt/modem/<id>/health`
+   - **Value Template:** `{{ 'OFF' if value_json.status == 'disconnected' else 'ON' }}`
+
+5. **Аппаратная проблема модема:**
+   - **Entity ID:** `binary_sensor.<modem_id>_problem`
+   - **Device Class:** `problem`
+   - **Icon:** `mdi:alert-circle-outline`
+   - **State Topic:** `gsm2mqtt/modem/<id>/health`
+   - **Value Template:** `{{ 'ON' if value_json.status in ['error', 'not_ready', 'disconnected'] else 'OFF' }}`
+
+6. **Предупреждение о низком балансе:**
+   - **Entity ID:** `binary_sensor.<modem_id>_low_balance`
+   - **Device Class:** `problem`
+   - **Icon:** `mdi:cash-alert`
+   - **State Topic:** `gsm2mqtt/modem/<id>/accounting/status`
+   - **Value Template:** `{{ 'ON' if value_json.low_balance else 'OFF' }}`
+
+7. **Поток событий (Home Assistant Event Entity):**
+   - **Entity ID:** `event.<modem_id>_events`
+   - **Icon:** `mdi:bell-badge-outline`
+   - **State Topic:** `gsm2mqtt/modem/<id>/event`
+   - **Event Types:** `low_balance`, `sms_limit_warning`, `sms_limit_exceeded`, `call_minutes_warning`, `call_minutes_exceeded`, `data_limit_warning`, `data_limit_exceeded`, `modem_disconnected`, `modem_degraded`, `modem_ready`, `modem_error`, `sms_send_failed`.
 
 ---
 

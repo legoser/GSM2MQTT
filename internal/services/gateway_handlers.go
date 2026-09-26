@@ -46,10 +46,23 @@ func (r *ModemRunner) wireServices(
 		DataTrafficLimitMB: r.cfg.Tariff.DataTrafficLimitMB,
 		ResetDayOfMonth:    r.cfg.Tariff.ResetDayOfMonth,
 		StorageDir:         r.cfg.Tariff.StorageDir,
+		Location:           r.location(),
 	}, func(a tariff.AlertEvent) {
 		payload, _ := json.Marshal(a)
 		_ = r.mqttClient.Publish(r.topics.AccountingAlert(), r.qos(), false, payload)
 		_ = r.mqttClient.Publish(r.topics.Alert(), r.qos(), false, []byte(a.Message))
+		r.publishEvent(NewEvent(
+			r.mCfg.ID,
+			a.Type,
+			EventCategoryTariff,
+			EventLevelWarning,
+			a.Message,
+			r.location(),
+			map[string]any{
+				"value":     a.Value,
+				"threshold": r.cfg.Tariff.MinBalanceAlert,
+			},
+		))
 	})
 
 	r.mu.Lock()
@@ -132,6 +145,10 @@ func (r *ModemRunner) wireServices(
 		_ = r.mqttClient.Publish(r.topics.SignalStrength(), r.qos(), false, []byte(payload))
 	}, func(h ModemHealth) {
 		h.ModemID = r.mCfg.ID
+		r.mu.RLock()
+		prevStatus := r.lastHealth.Status
+		r.mu.RUnlock()
+
 		r.updateHealth(h)
 		stVal := 0.0
 		if h.Status == "ready" {
@@ -140,6 +157,17 @@ func (r *ModemRunner) wireServices(
 		metrics.DefaultRegistry.SetGauge("gsm2mqtt_modem_status", map[string]string{"modem": r.mCfg.ID}, stVal)
 		payload, _ := json.Marshal(h)
 		_ = r.mqttClient.Publish(r.topics.Health(), r.qos(), true, payload)
+
+		if prevStatus != "" && prevStatus != h.Status {
+			switch h.Status {
+			case "ready":
+				r.publishEvent(NewEvent(r.mCfg.ID, "modem_ready", EventCategoryHardware, EventLevelInfo, fmt.Sprintf("Modem %s is ready and operational", r.mCfg.ID), r.location(), nil))
+			case "degraded":
+				r.publishEvent(NewEvent(r.mCfg.ID, "modem_degraded", EventCategoryHardware, EventLevelWarning, fmt.Sprintf("Modem %s operational status degraded", r.mCfg.ID), r.location(), nil))
+			case "not_ready", "error":
+				r.publishEvent(NewEvent(r.mCfg.ID, "modem_error", EventCategoryHardware, EventLevelError, fmt.Sprintf("Modem %s error status: %s", r.mCfg.ID, h.Status), r.location(), nil))
+			}
+		}
 	})
 
 	return smsSvc, callSvc, ussdSvc, statusSvc, tariffMgr, diagSvc

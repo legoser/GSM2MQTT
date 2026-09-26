@@ -124,6 +124,7 @@ func TestAllHierarchicalOverrides(t *testing.T) {
 	t.Setenv("GSM2MQTT_TARIFF_DATA_TRAFFIC_LIMIT_MB", "5000")
 	t.Setenv("GSM2MQTT_TARIFF_RESET_DAY_OF_MONTH", "15")
 	t.Setenv("GSM2MQTT_TARIFF_STORAGE_DIR", "/custom/data")
+	t.Setenv("GSM2MQTT_TIMEZONE", "+05:00")
 
 	cfg, err := Load(cfgFile)
 	if err != nil {
@@ -133,6 +134,9 @@ func TestAllHierarchicalOverrides(t *testing.T) {
 	// Assertions
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel = %q, want 'debug'", cfg.LogLevel)
+	}
+	if cfg.System.Timezone != "+05:00" {
+		t.Errorf("System.Timezone = %q, want '+05:00'", cfg.System.Timezone)
 	}
 	if cfg.MQTT.Broker != "192.168.57.254" {
 		t.Errorf("MQTT.Broker = %q, want '192.168.57.254'", cfg.MQTT.Broker)
@@ -344,4 +348,3 @@ func TestMQTTConnectionOverrides(t *testing.T) {
 		t.Errorf("expected MaxReconnectInterval 5m, got %v", cfg.MQTT.MaxReconnectInterval)
 	}
 }
-

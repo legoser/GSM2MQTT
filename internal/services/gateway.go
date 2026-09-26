@@ -14,6 +14,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/modem/at"
 	"github.com/legoser/gsm2mqtt/internal/mqtt"
 	"github.com/legoser/gsm2mqtt/internal/security"
+	"github.com/legoser/gsm2mqtt/internal/system"
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 	"github.com/legoser/gsm2mqtt/internal/transport"
 )
@@ -289,6 +290,32 @@ func (r *ModemRunner) updateHealth(h ModemHealth) {
 		h.Operator = r.lastHealth.Operator
 	}
 	r.lastHealth = h
+}
+
+func (r *ModemRunner) location() *time.Location {
+	if r.cfg != nil && r.cfg.System.Timezone != "" {
+		if loc, err := system.ResolveLocation(r.cfg.System.Timezone); err == nil {
+			return loc
+		}
+	}
+	return time.Local
+}
+
+func (r *ModemRunner) publishEvent(event EventPayload) {
+	if r.mqttClient == nil || !r.mqttClient.IsConnected() {
+		return
+	}
+	if event.ModemID == "" {
+		event.ModemID = r.mCfg.ID
+	}
+	if event.Timestamp == "" {
+		event.Timestamp = system.FormatLocalTime(time.Now(), r.location())
+	}
+	payload, err := event.Marshal()
+	if err != nil {
+		return
+	}
+	_ = r.mqttClient.Publish(r.topics.Event(), r.qos(), false, payload)
 }
 
 func (r *ModemRunner) urcLoop(

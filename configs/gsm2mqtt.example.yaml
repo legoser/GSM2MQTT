@@ -9,6 +9,12 @@
 log_level: info
 
 # ------------------------------------------------------------
+# System Settings
+# ------------------------------------------------------------
+system:
+  timezone: "auto"                     # GSM2MQTT_TIMEZONE — Timezone: "auto" (reads host /etc/TZ or $TZ), fixed offset "+03:00", or "Europe/Moscow"
+
+# ------------------------------------------------------------
 # MQTT Broker Connection
 # ------------------------------------------------------------
 mqtt:

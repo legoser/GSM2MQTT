@@ -140,6 +140,94 @@ func BuildNotifyDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
 	return marshalDiscovery(topic, payload)
 }
 
+// BuildConnectedBinaryDiscovery generates discovery for modem connectivity binary sensor.
+func BuildConnectedBinaryDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("connected")
+	topic := fmt.Sprintf("%s/binary_sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/health", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	payload := BinarySensorDiscoveryPayload{
+		Name:                "Modem Connected",
+		UniqueID:            uniqueID,
+		ObjectID:            p.EntityObjectID("connected"),
+		StateTopic:          stateTopic,
+		ValueTemplate:       "{{ 'OFF' if value_json.status == 'disconnected' else 'ON' }}",
+		PayloadOn:           "ON",
+		PayloadOff:          "OFF",
+		DeviceClass:         "connectivity",
+		Icon:                "mdi:connection",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}
+
+// BuildProblemBinaryDiscovery generates discovery for modem operational problem binary sensor.
+func BuildProblemBinaryDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("problem")
+	topic := fmt.Sprintf("%s/binary_sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/health", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	payload := BinarySensorDiscoveryPayload{
+		Name:                "Modem Problem",
+		UniqueID:            uniqueID,
+		ObjectID:            p.EntityObjectID("problem"),
+		StateTopic:          stateTopic,
+		ValueTemplate:       "{{ 'ON' if value_json.status in ['error', 'not_ready', 'disconnected'] else 'OFF' }}",
+		PayloadOn:           "ON",
+		PayloadOff:          "OFF",
+		DeviceClass:         "problem",
+		Icon:                "mdi:alert-circle-outline",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}
+
+// BuildEventsDiscovery generates discovery for modem event stream entity.
+func BuildEventsDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("events")
+	topic := fmt.Sprintf("%s/event/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/event", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	payload := EventDiscoveryPayload{
+		Name:       "Modem Events",
+		UniqueID:   uniqueID,
+		ObjectID:   p.EntityObjectID("events"),
+		StateTopic: stateTopic,
+		EventTypes: []string{
+			"low_balance",
+			"sms_limit_warning",
+			"sms_limit_exceeded",
+			"call_minutes_warning",
+			"call_minutes_exceeded",
+			"data_limit_warning",
+			"data_limit_exceeded",
+			"modem_disconnected",
+			"modem_degraded",
+			"modem_ready",
+			"modem_error",
+			"sms_send_failed",
+		},
+		Icon:                "mdi:bell-badge-outline",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}
+
 // BuildModemDiscoveries builds the complete set of Home Assistant Auto-Discovery messages for a modem.
 func BuildModemDiscoveries(p ModemDiscoveryParams) ([]*DiscoveryMessage, error) {
 	builders := []func() (*DiscoveryMessage, error){
@@ -151,6 +239,15 @@ func BuildModemDiscoveries(p ModemDiscoveryParams) ([]*DiscoveryMessage, error) 
 		},
 		func() (*DiscoveryMessage, error) {
 			return BuildStatusDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildConnectedBinaryDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildProblemBinaryDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildEventsDiscovery(p)
 		},
 		func() (*DiscoveryMessage, error) {
 			return BuildOperatorDiscovery(p)
@@ -187,6 +284,9 @@ func BuildModemDiscoveries(p ModemDiscoveryParams) ([]*DiscoveryMessage, error) 
 		},
 		func() (*DiscoveryMessage, error) {
 			return BuildTariffDataTrafficDiscovery(p)
+		},
+		func() (*DiscoveryMessage, error) {
+			return BuildTariffLowBalanceBinaryDiscovery(p)
 		},
 	}
 

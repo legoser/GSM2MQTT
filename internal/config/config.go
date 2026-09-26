@@ -9,6 +9,9 @@ type Config struct {
 	// LogLevel controls the logging verbosity: debug, info, warn, error.
 	LogLevel string `yaml:"log_level"`
 
+	// System holds system-level options like timezone.
+	System SystemConfig `yaml:"system"`
+
 	// MQTT holds the MQTT broker connection settings.
 	MQTT MQTTConfig `yaml:"mqtt"`
 
@@ -153,4 +156,9 @@ type PoolConfig struct {
 	Enabled      bool   `yaml:"enabled"`
 	Strategy     string `yaml:"strategy"` // round-robin, failover, best-signal, operator-match
 	DefaultModem string `yaml:"default_modem"`
+}
+
+// SystemConfig holds system-level options like timezone.
+type SystemConfig struct {
+	Timezone string `yaml:"timezone"`
 }

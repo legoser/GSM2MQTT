@@ -196,14 +196,17 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildModemDiscoveries failed: %v", err)
 	}
-	if len(msgs) != 15 {
-		t.Fatalf("expected 15 discovery messages, got %d", len(msgs))
+	if len(msgs) != 19 {
+		t.Fatalf("expected 19 discovery messages, got %d", len(msgs))
 	}
 
 	expectedIDs := map[string]bool{
 		"gsm2mqtt_modem_1_signal":                 false,
 		"gsm2mqtt_modem_1_balance":                false,
 		"gsm2mqtt_modem_1_status":                 false,
+		"gsm2mqtt_modem_1_connected":              false,
+		"gsm2mqtt_modem_1_problem":                false,
+		"gsm2mqtt_modem_1_events":                 false,
 		"gsm2mqtt_modem_1_operator":               false,
 		"gsm2mqtt_modem_1_last_sms":               false,
 		"gsm2mqtt_modem_1_ussd_response":          false,
@@ -216,6 +219,7 @@ func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 		"gsm2mqtt_modem_1_call_minutes_remaining": false,
 		"gsm2mqtt_modem_1_btn_tariff_reset":       false,
 		"gsm2mqtt_modem_1_data_traffic_remaining": false,
+		"gsm2mqtt_modem_1_low_balance":            false,
 	}
 
 	for _, msg := range msgs {
@@ -289,5 +293,102 @@ func TestBuildModemDiscoveries_OptionB_Slot2(t *testing.T) {
 		if dev["name"] != "GSM Modem 2" {
 			t.Errorf("expected device name 'GSM Modem 2', got %v", dev["name"])
 		}
+	}
+}
+
+func TestBuildConnectedBinaryDiscovery(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "modem1",
+		SlotIndex:       1,
+	}
+	msg, err := BuildConnectedBinaryDiscovery(params)
+	if err != nil {
+		t.Fatalf("BuildConnectedBinaryDiscovery failed: %v", err)
+	}
+	expectedTopic := "homeassistant/binary_sensor/gsm2mqtt_modem_1_connected/config"
+	if msg.Topic != expectedTopic {
+		t.Errorf("expected topic %s, got %s", expectedTopic, msg.Topic)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["device_class"] != "connectivity" {
+		t.Errorf("expected device_class 'connectivity', got %v", payload["device_class"])
+	}
+}
+
+func TestBuildProblemBinaryDiscovery(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "modem1",
+		SlotIndex:       1,
+	}
+	msg, err := BuildProblemBinaryDiscovery(params)
+	if err != nil {
+		t.Fatalf("BuildProblemBinaryDiscovery failed: %v", err)
+	}
+	expectedTopic := "homeassistant/binary_sensor/gsm2mqtt_modem_1_problem/config"
+	if msg.Topic != expectedTopic {
+		t.Errorf("expected topic %s, got %s", expectedTopic, msg.Topic)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["device_class"] != "problem" {
+		t.Errorf("expected device_class 'problem', got %v", payload["device_class"])
+	}
+}
+
+func TestBuildEventsDiscovery(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "modem1",
+		SlotIndex:       1,
+	}
+	msg, err := BuildEventsDiscovery(params)
+	if err != nil {
+		t.Fatalf("BuildEventsDiscovery failed: %v", err)
+	}
+	expectedTopic := "homeassistant/event/gsm2mqtt_modem_1_events/config"
+	if msg.Topic != expectedTopic {
+		t.Errorf("expected topic %s, got %s", expectedTopic, msg.Topic)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	eventTypes, ok := payload["event_types"].([]interface{})
+	if !ok || len(eventTypes) == 0 {
+		t.Errorf("expected non-empty event_types array, got %v", payload["event_types"])
+	}
+}
+
+func TestBuildTariffLowBalanceBinaryDiscovery(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "modem1",
+		SlotIndex:       1,
+	}
+	msg, err := BuildTariffLowBalanceBinaryDiscovery(params)
+	if err != nil {
+		t.Fatalf("BuildTariffLowBalanceBinaryDiscovery failed: %v", err)
+	}
+	expectedTopic := "homeassistant/binary_sensor/gsm2mqtt_modem_1_low_balance/config"
+	if msg.Topic != expectedTopic {
+		t.Errorf("expected topic %s, got %s", expectedTopic, msg.Topic)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["device_class"] != "problem" {
+		t.Errorf("expected device_class 'problem', got %v", payload["device_class"])
 	}
 }
