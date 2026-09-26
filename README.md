@@ -8,7 +8,7 @@ Home Assistant and other MQTT-based systems via AT commands.
 
 ## Features
 
-- **SMS send/receive** — with Cyrillic support (UCS-2), transliteration, multipart, delivery reports
+- **SMS send/receive** — full Unicode, Emoji & Cyrillic support (UCS-2 / UTF-16 surrogate pairs), automatic transliteration, multipart concatenation (UDH), and delivery reports
 - **Voice calls** — dial, answer, hangup, DTMF send/receive
 - **Multi-modem Pool** — load balancing (round-robin, failover, best-signal, operator-match) with SIM redundancy
 - **Operator Presets & Tariff Accounting** — MTS, Megafon, Beeline, Tele2 balance parsing, daily/monthly SMS quotas
@@ -21,10 +21,16 @@ Home Assistant and other MQTT-based systems via AT commands.
 - **Cross-platform** — zero-CGO static binaries for Linux `amd64`, `arm64`, and `riscv64`
 - **Lightweight & Embedded Ready** — optional headless build (`-tags no_api`) and automated UPX compression (`make build-small`) for storage-constrained OpenWrt routers
 
+### Advanced SMS & Unicode Capabilities
+- **Full Emoji & Multi-Byte Unicode**: Native transmission of Supplementary Multilingual Plane (SMP) characters (e.g. 🚨, ⚠️, ⏰, 😀) using standard UTF-16 surrogate pairs (4 bytes per emoji) in UCS-2 PDU mode.
+- **Strict 3GPP PDU Segmentation**: Accurately calculates 16-bit code units (rather than naive rune counts) so multipart concatenation headers (UDH) and payload never exceed the strict 140-byte GSM limit, preventing modem buffer overruns or `+CMS ERROR: operation not supported` rejections.
+- **Multipart Concatenation (UDH)**: Automatically splits long messages up to 153 septets (GSM-7) or 67 code units (UCS-2) per segment with standard 3GPP 6-byte user data headers.
+
 ## Supported Modems
 
 | Modem | Interface | Status |
 |:---|:---|:---|
+| Neoway M590 / M590E | UART | Supported |
 | Siemens TC35/MC55/TC65 | COM (RS-232) | Supported |
 | SIM800L / SIM900 | UART | Supported |
 | Huawei USB 3G/4G | USB (stick mode) | Supported |
