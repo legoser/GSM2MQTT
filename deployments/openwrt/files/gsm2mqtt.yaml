@@ -110,6 +110,9 @@ sms:
   long_message: "split"
   max_segments: 4                      # Maximum number of concatenated SMS parts allowed
 
+  # Maximum duration to await incomplete multipart SMS parts before flushing available segments
+  assembly_timeout: 30s
+
   # Include encoding metadata in MQTT delivery confirmations
   report_encoding: true
 

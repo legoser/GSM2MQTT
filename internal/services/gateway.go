@@ -176,6 +176,11 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 	go statusSvc.Start(childCtx)
 	go r.startBalanceLoop(childCtx)
 
+	if r.mqttClient != nil && r.mqttClient.IsConnected() {
+		// Clear legacy retained message on SMS received topic to prevent false binary_sensor pulses
+		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), true, []byte{})
+	}
+
 	r.mu.RLock()
 	if len(r.receivedSMS) > 0 && r.mqttClient != nil && r.mqttClient.IsConnected() {
 		last := r.receivedSMS[len(r.receivedSMS)-1]
@@ -184,7 +189,7 @@ func (r *ModemRunner) runOnce(ctx context.Context) error {
 			"text":      last.Text,
 			"timestamp": last.Timestamp,
 		})
-		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), true, lastPayload)
+		_ = r.mqttClient.Publish(r.topics.SMSLast(), r.qos(), true, lastPayload)
 	}
 	r.mu.RUnlock()
 

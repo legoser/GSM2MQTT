@@ -109,13 +109,6 @@ func run() int {
 }
 
 func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) int {
-	mqttClient, err := initMQTT(cfg)
-	if err != nil {
-		logger.Error("failed to initialize MQTT", slog.String("error", err.Error()))
-		return 1
-	}
-	defer mqttClient.Disconnect(250)
-
 	recipientsPath := cfg.Security.RecipientsFile
 	if recipientsPath == "" {
 		recipientsPath = "data/recipients.json"
@@ -124,6 +117,25 @@ func startGateway(ctx context.Context, cfg *config.Config, logger *slog.Logger) 
 
 	manager := services.NewGatewayManager()
 	manager.InitRecipients(recipientsMgr)
+
+	onConnect := func(client mqtt.MQTTClient) {
+		statusTopic := fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix)
+		if err := client.Publish(statusTopic, byte(cfg.MQTT.QoS), true, []byte("online")); err != nil {
+			logger.Warn("failed to publish online status on connect", slog.Any("error", err))
+		} else {
+			logger.Info("published online status to MQTT", slog.String("topic", statusTopic))
+		}
+		manager.PublishDiscovery()
+		manager.PublishRecipientsState()
+	}
+
+	mqttClient, err := initMQTT(cfg, onConnect)
+	if err != nil {
+		logger.Error("failed to initialize MQTT", slog.String("error", err.Error()))
+		return 1
+	}
+	defer mqttClient.Disconnect(250)
+
 	manager.SetMQTT(mqttClient, &cfg.MQTT)
 
 	modemPool := initPool(ctx, cfg, mqttClient, logger)
@@ -188,7 +200,7 @@ func startAPIServer(ctx context.Context, cfg *config.Config, manager *services.G
 	}()
 }
 
-func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {
+func initMQTT(cfg *config.Config, onConnect func(client mqtt.MQTTClient)) (mqtt.MQTTClient, error) {
 	brokerURI := cfg.MQTT.Broker
 	if cfg.MQTT.Port > 0 && !strings.Contains(brokerURI, ":") {
 		scheme := "tcp"
@@ -216,6 +228,7 @@ func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {
 		LWTRetained:          true,
 		TLSEnabled:           cfg.MQTT.TLS.Enabled,
 		InsecureTLS:          cfg.MQTT.TLS.InsecureSkipVerify,
+		OnConnect:            onConnect,
 	})
 	if err != nil {
 		return nil, err
@@ -225,7 +238,6 @@ func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {
 		return nil, fmt.Errorf("connect to broker %s: %w", brokerURI, err)
 	}
 
-	_ = client.Publish(fmt.Sprintf("%s/status", cfg.MQTT.TopicPrefix), byte(cfg.MQTT.QoS), true, []byte("online"))
 	return client, nil
 }
 

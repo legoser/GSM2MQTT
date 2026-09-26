@@ -79,7 +79,7 @@ func NewSMSService(
 	if cfg.DefaultPrefix == "" {
 		cfg.DefaultPrefix = "+7"
 	}
-	return &SMSService{
+	s := &SMSService{
 		cfg:        cfg,
 		sender:     sender,
 		filter:     filter,
@@ -88,6 +88,10 @@ func NewSMSService(
 		assembler:  assembler,
 		onReceived: onReceived,
 	}
+	if assembler != nil && onReceived != nil {
+		assembler.SetFlushHandler(onReceived)
+	}
+	return s
 }
 
 // Send validates, encodes, and transmits an SMS message.

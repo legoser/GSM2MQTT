@@ -172,6 +172,16 @@ func (r *ModemRunner) SetRecipientsManager(mgr *security.RecipientsManager) {
 	r.recipientsMgr = mgr
 }
 
+// PublishDiscovery republishes discovery configs for the runner if driver is initialized.
+func (r *ModemRunner) PublishDiscovery() {
+	r.mu.RLock()
+	driver := r.driver
+	r.mu.RUnlock()
+	if driver != nil {
+		r.publishDiscovery(driver)
+	}
+}
+
 func (r *ModemRunner) publishDiscovery(driver modem.Driver) {
 	if !r.cfg.MQTT.Discovery {
 		return

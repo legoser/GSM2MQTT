@@ -31,6 +31,11 @@ func TestTopics_Generation(t *testing.T) {
 			expected: "gsm2mqtt/modem/siemens_tc35/sms/received",
 		},
 		{
+			name:     "SMS Last topic",
+			actual:   topics.SMSLast(),
+			expected: "gsm2mqtt/modem/siemens_tc35/sms/last",
+		},
+		{
 			name:     "Call Dial topic",
 			actual:   topics.CallDial(),
 			expected: "gsm2mqtt/modem/siemens_tc35/call/dial",

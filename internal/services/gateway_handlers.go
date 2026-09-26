@@ -94,7 +94,11 @@ func (r *ModemRunner) wireServices(
 		_ = r.mqttClient.Publish(r.topics.SMSStatus(), r.qos(), false, payload)
 	})
 
-	assembler := sms.NewAssembler(24 * time.Hour)
+	asmTimeout := r.cfg.SMS.AssemblyTimeout
+	if asmTimeout <= 0 {
+		asmTimeout = 30 * time.Second
+	}
+	assembler := sms.NewAssembler(24*time.Hour, asmTimeout)
 	sender := &atPDUSender{engine: engine}
 
 	smsSvc := NewSMSService(SMSServiceConfig{
@@ -111,7 +115,8 @@ func (r *ModemRunner) wireServices(
 		r.recordIncomingSMS(msg)
 		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_received_total", map[string]string{"modem": r.mCfg.ID})
 		payload, _ := json.Marshal(msg)
-		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), true, payload)
+		_ = r.mqttClient.Publish(r.topics.SMSReceived(), r.qos(), false, payload)
+		_ = r.mqttClient.Publish(r.topics.SMSLast(), r.qos(), true, payload)
 
 		r.applyParsedBalance(msg.Text)
 	})

@@ -32,6 +32,11 @@ func (t *Topics) SMSReceived() string {
 	return fmt.Sprintf("%s/modem/%s/sms/received", t.prefix, t.modemID)
 }
 
+// SMSLast returns the topic for publishing the last received SMS (retained for UI cards).
+func (t *Topics) SMSLast() string {
+	return fmt.Sprintf("%s/modem/%s/sms/last", t.prefix, t.modemID)
+}
+
 // CallDial returns the topic for requesting an outgoing call.
 func (t *Topics) CallDial() string {
 	return fmt.Sprintf("%s/modem/%s/call/dial", t.prefix, t.modemID)

@@ -103,10 +103,11 @@ func Defaults() *Config {
 			FallbackCall:   true,
 		},
 		SMS: SMSConfig{
-			Encoding:       "auto",
-			LongMessage:    "split",
-			MaxSegments:    4,
-			ReportEncoding: true,
+			Encoding:        "auto",
+			LongMessage:     "split",
+			MaxSegments:     4,
+			AssemblyTimeout: 30 * time.Second,
+			ReportEncoding:  true,
 			DeliveryReport: DeliveryReportConfig{
 				Enabled:        true,
 				Timeout:        5 * time.Minute,

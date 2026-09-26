@@ -182,6 +182,28 @@ func TestBuildSignalDiscovery(t *testing.T) {
 	}
 }
 
+func TestBuildLastSMSDiscovery(t *testing.T) {
+	params := ModemDiscoveryParams{
+		DiscoveryPrefix: "homeassistant",
+		TopicPrefix:     "gsm2mqtt",
+		ModemID:         "siemens_tc35",
+		SlotIndex:       1,
+	}
+	msg, err := BuildLastSMSDiscovery(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if payload["state_topic"] != "gsm2mqtt/modem/siemens_tc35/sms/last" {
+		t.Errorf("expected state_topic gsm2mqtt/modem/siemens_tc35/sms/last, got %v", payload["state_topic"])
+	}
+}
+
 func TestBuildModemDiscoveries_OptionB_Slot1(t *testing.T) {
 	params := ModemDiscoveryParams{
 		DiscoveryPrefix: "homeassistant",
