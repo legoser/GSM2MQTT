@@ -305,6 +305,7 @@ func (r *ModemRunner) publishDisconnectedState(status string) {
 	}
 	payload, _ := json.Marshal(health)
 	_ = r.mqttClient.Publish(r.topics.Health(), r.qos(), true, payload)
+	r.publishEvent(NewEvent(r.mCfg.ID, "modem_disconnected", EventCategoryHardware, EventLevelCritical, fmt.Sprintf("Modem %s disconnected: %s", r.mCfg.ID, status), r.location(), nil))
 
 	if r.cfg != nil {
 		gwModemsPayload, _ := json.Marshal(map[string]any{

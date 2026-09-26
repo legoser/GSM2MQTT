@@ -17,7 +17,6 @@ import (
 // maxRequestBodyBytes caps JSON request bodies on mutating endpoints (DoS guard).
 const maxRequestBodyBytes = 64 << 10 // 64 KiB
 
-
 // Server provides Web UI and REST API endpoints for GSM2MQTT.
 type Server struct {
 	cfg     ServerConfig

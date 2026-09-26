@@ -86,6 +86,11 @@ func TestTopics_Generation(t *testing.T) {
 			expected: "gsm2mqtt/modem/siemens_tc35/alert",
 		},
 		{
+			name:     "Event topic",
+			actual:   topics.Event(),
+			expected: "gsm2mqtt/modem/siemens_tc35/event",
+		},
+		{
 			name:     "Diagnostic topic",
 			actual:   topics.Diagnostic(),
 			expected: "gsm2mqtt/modem/siemens_tc35/diagnostic",

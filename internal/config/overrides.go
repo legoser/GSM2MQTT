@@ -21,6 +21,9 @@ func applyServiceOverrides(cfg *Config, dotEnv map[string]string) {
 	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_LOG_LEVEL", "LOG_LEVEL"); v != "" {
 		cfg.LogLevel = v
 	}
+	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_TIMEZONE", "TIMEZONE"); v != "" {
+		cfg.System.Timezone = v
+	}
 	if v := getHierarchicalValue(dotEnv, "GSM2MQTT_API_ENABLED", "API_ENABLED"); v != "" {
 		cfg.API.Enabled = parseBool(v, cfg.API.Enabled)
 	}

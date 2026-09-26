@@ -14,7 +14,7 @@ import (
 	"github.com/legoser/gsm2mqtt/internal/tariff"
 )
 
-func (r *ModemRunner) subscribeMQTT(ctx context.Context, 
+func (r *ModemRunner) subscribeMQTT(ctx context.Context,
 	smsSvc *SMSService,
 	callSvc *CallService,
 	ussdSvc *USSDService,
@@ -29,7 +29,7 @@ func (r *ModemRunner) subscribeMQTT(ctx context.Context,
 	r.subscribeTariff(tariffMgr)
 }
 
-func (r *ModemRunner) subscribeSMS(ctx context.Context, 
+func (r *ModemRunner) subscribeSMS(ctx context.Context,
 	smsSvc *SMSService,
 	callSvc *CallService,
 	tariffMgr *tariff.Manager,
@@ -72,7 +72,7 @@ func (r *ModemRunner) subscribeSMS(ctx context.Context,
 	}
 }
 
-func (r *ModemRunner) sendAndReportSMS(ctx context.Context, 
+func (r *ModemRunner) sendAndReportSMS(ctx context.Context,
 	smsSvc *SMSService,
 	callSvc *CallService,
 	tariffMgr *tariff.Manager,
@@ -89,6 +89,10 @@ func (r *ModemRunner) sendAndReportSMS(ctx context.Context,
 	if err != nil {
 		metrics.DefaultRegistry.IncCounter("gsm2mqtt_sms_sent_total", map[string]string{"modem": r.mCfg.ID, "status": "failed"})
 		slog.Error("sms send failure", slog.String("modem", r.mCfg.ID), slog.String("target", target), slog.Any("error", err))
+		r.publishEvent(NewEvent(r.mCfg.ID, "sms_send_failed", EventCategorySMS, EventLevelError, fmt.Sprintf("Failed to send SMS to %s: %v", target, err), r.location(), map[string]any{
+			"target": target,
+			"error":  err.Error(),
+		}))
 		if r.cfg.Tariff.AutoCheckOnError {
 			rep, _ := diagSvc.RunDiagnostic(ctx, "sms_send_failure")
 			if rep != nil {

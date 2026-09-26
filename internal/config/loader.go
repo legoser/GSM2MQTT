@@ -40,6 +40,9 @@ func Load(path string) (*Config, error) {
 func Defaults() *Config {
 	return &Config{
 		LogLevel: "info",
+		System: SystemConfig{
+			Timezone: "auto",
+		},
 		MQTT: MQTTConfig{
 			Broker:               "localhost",
 			Port:                 1883,

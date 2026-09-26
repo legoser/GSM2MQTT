@@ -87,6 +87,11 @@ func (t *Topics) Alert() string {
 	return fmt.Sprintf("%s/modem/%s/alert", t.prefix, t.modemID)
 }
 
+// Event returns the topic for publishing structured lifecycle and warning events.
+func (t *Topics) Event() string {
+	return fmt.Sprintf("%s/modem/%s/event", t.prefix, t.modemID)
+}
+
 // Diagnostic returns the topic for detailed failure diagnostics.
 func (t *Topics) Diagnostic() string {
 	return fmt.Sprintf("%s/modem/%s/diagnostic", t.prefix, t.modemID)

@@ -104,3 +104,29 @@ func BuildTariffDataTrafficDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage,
 
 	return marshalDiscovery(topic, payload)
 }
+
+// BuildTariffLowBalanceBinaryDiscovery generates discovery for low balance warning binary sensor.
+func BuildTariffLowBalanceBinaryDiscovery(p ModemDiscoveryParams) (*DiscoveryMessage, error) {
+	uniqueID := p.EntityUniqueID("low_balance")
+	topic := fmt.Sprintf("%s/binary_sensor/%s/config", p.DiscoveryPrefix, uniqueID)
+	stateTopic := fmt.Sprintf("%s/modem/%s/accounting/status", p.TopicPrefix, p.ModemID)
+	availTopic, avail, notAvail := buildAvailability(p.TopicPrefix)
+
+	payload := BinarySensorDiscoveryPayload{
+		Name:                "Low Balance Warning",
+		UniqueID:            uniqueID,
+		ObjectID:            p.EntityObjectID("low_balance"),
+		StateTopic:          stateTopic,
+		ValueTemplate:       "{{ 'ON' if value_json.low_balance else 'OFF' }}",
+		PayloadOn:           "ON",
+		PayloadOff:          "OFF",
+		DeviceClass:         "problem",
+		Icon:                "mdi:cash-alert",
+		AvailabilityTopic:   availTopic,
+		PayloadAvailable:    avail,
+		PayloadNotAvailable: notAvail,
+		Device:              buildDeviceInfo(p),
+	}
+
+	return marshalDiscovery(topic, payload)
+}

@@ -472,6 +472,3 @@ mqtt:
 		t.Errorf("expected MaxReconnectInterval 2m, got %v", cfg.MQTT.MaxReconnectInterval)
 	}
 }
-
-
-
