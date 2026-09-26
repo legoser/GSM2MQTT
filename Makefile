@@ -3,7 +3,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-s -w -X github.com/legoser/gsm2mqtt/internal/version.Version=$(VERSION) -X github.com/legoser/gsm2mqtt/internal/version.BuildTime=$(BUILD_TIME) -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)"
 
-.PHONY: build build-all build-riscv64 package-openwrt package-opkg package-apk changelog release-notes test test-cover lint vet docker clean help
+.PHONY: build build-small build-noapi build-all build-riscv64 build-mips build-mipsel package-openwrt package-opkg package-apk changelog release-notes test test-cover lint vet docker clean help
 
 ## build: Build for current platform
 build:
@@ -35,6 +35,14 @@ build-all:
 ## build-riscv64: Cross-compile for Linux RISC-V 64-bit
 build-riscv64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=riscv64 go build -trimpath $(LDFLAGS) -o bin/$(APP_NAME)-linux-riscv64 ./cmd/gsm2mqtt/
+
+## build-mips: Cross-compile for Linux MIPS big-endian (softfloat, headless no_api + pure TCP no_tls)
+build-mips:
+	CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat go build -tags "no_api,no_tls" -trimpath $(LDFLAGS) -o bin/$(APP_NAME)-linux-mips ./cmd/gsm2mqtt/
+
+## build-mipsel: Cross-compile for Linux MIPS little-endian (softfloat, headless no_api + pure TCP no_tls)
+build-mipsel:
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -tags "no_api,no_tls" -trimpath $(LDFLAGS) -o bin/$(APP_NAME)-linux-mipsel ./cmd/gsm2mqtt/
 
 ## package-openwrt: Build OpenWrt packages (both OPKG and APK for all architectures)
 package-openwrt:

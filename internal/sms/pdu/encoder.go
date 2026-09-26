@@ -1,10 +1,10 @@
 package pdu
 
 import (
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 )
 
 var refCounter byte = 1
@@ -166,8 +166,8 @@ func hexString(b []byte) string {
 }
 
 func init() {
-	var b [1]byte
-	if _, err := rand.Read(b[:]); err == nil {
-		refCounter = b[0]
+	refCounter = byte(time.Now().UnixNano() & 0xFF)
+	if refCounter == 0 {
+		refCounter = 1
 	}
 }

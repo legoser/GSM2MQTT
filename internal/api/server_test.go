@@ -1,3 +1,5 @@
+//go:build !no_api
+
 package api
 
 import (
@@ -113,7 +115,7 @@ func TestServer_Health(t *testing.T) {
 	server := NewServer(ServerConfig{Port: 8080, Token: "test"}, mock)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -146,7 +148,7 @@ func TestServer_GetModems(t *testing.T) {
 	server := NewServer(ServerConfig{Port: 8080, Token: "test"}, mock)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/modems", nil)
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -173,7 +175,7 @@ func TestServer_SendSMS(t *testing.T) {
 		"text":     "Web test message",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/sms/send", bytes.NewReader(body))
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
@@ -195,7 +197,7 @@ func TestServer_SendUSSD(t *testing.T) {
 		"code":     "*100#",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/ussd/send", bytes.NewReader(body))
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
@@ -213,7 +215,7 @@ func TestServer_RootUI(t *testing.T) {
 	server := NewServer(ServerConfig{Port: 8080, Token: "test"}, mock)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -237,7 +239,7 @@ func TestServer_Metrics(t *testing.T) {
 	server := NewServer(ServerConfig{Port: 8080, Token: "test"}, mock)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -259,7 +261,7 @@ func TestServer_CallDial(t *testing.T) {
 		"number":   "+79001234567",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/call/dial", bytes.NewReader(body))
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -279,7 +281,7 @@ func TestServer_CallHangup(t *testing.T) {
 		"modem_id": "modem1",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/call/hangup", bytes.NewReader(body))
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -306,7 +308,7 @@ func TestServer_GetInbox(t *testing.T) {
 	server := NewServer(ServerConfig{Port: 8080, Token: "test"}, mock)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sms/inbox", nil)
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -332,7 +334,7 @@ func TestServer_SendAT(t *testing.T) {
 		"command":  "AT+CSQ",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/at/send", bytes.NewReader(body))
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -354,7 +356,7 @@ func TestServer_GetCallStatus(t *testing.T) {
 	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080, Token: "test"}, mock)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/call/status?modem_id=test_modem", nil)
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -379,7 +381,7 @@ func TestServer_Favicon(t *testing.T) {
 	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080, Token: "test"}, mock)
 
 	req := httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -400,7 +402,7 @@ func TestServer_GetMQTTStatus(t *testing.T) {
 	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080, Token: "test"}, mock)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/mqtt/status", nil)
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -425,7 +427,7 @@ func TestServer_TariffStatus(t *testing.T) {
 	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080, Token: "test"}, mock)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tariff/status?modem_id=modem1", nil)
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -452,7 +454,7 @@ func TestServer_TariffConfig(t *testing.T) {
 		"sms_limit": smsLimit,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/tariff/config", bytes.NewReader(reqBody))
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -469,7 +471,7 @@ func TestServer_TariffReset(t *testing.T) {
 	server := NewServer(ServerConfig{Host: "127.0.0.1", Port: 8080, Token: "test"}, mock)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tariff/reset", bytes.NewReader([]byte(`{"modem_id":"modem1"}`)))
-		req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 

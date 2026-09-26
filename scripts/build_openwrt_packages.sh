@@ -129,10 +129,10 @@ compile_binary() {
             CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "$ldflags" -o "$bin_path" "${REPO_ROOT}/cmd/gsm2mqtt/"
             ;;
         mipsel)
-            CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -ldflags "$ldflags" -o "$bin_path" "${REPO_ROOT}/cmd/gsm2mqtt/"
+            CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -tags "no_api,no_tls" -trimpath -ldflags "$ldflags" -o "$bin_path" "${REPO_ROOT}/cmd/gsm2mqtt/"
             ;;
         mips)
-            CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat go build -trimpath -ldflags "$ldflags" -o "$bin_path" "${REPO_ROOT}/cmd/gsm2mqtt/"
+            CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat go build -tags "no_api,no_tls" -trimpath -ldflags "$ldflags" -o "$bin_path" "${REPO_ROOT}/cmd/gsm2mqtt/"
             ;;
         *)
             echo "Unknown architecture: $arch" >&2

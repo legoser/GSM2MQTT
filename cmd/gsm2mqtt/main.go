@@ -167,7 +167,7 @@ func initMQTT(cfg *config.Config) (mqtt.MQTTClient, error) {
 		brokerURI = fmt.Sprintf("%s://%s:%d", scheme, brokerURI, cfg.MQTT.Port)
 	}
 
-	client, err := mqtt.NewPahoClient(mqtt.ClientConfig{
+	client, err := mqtt.NewClient(mqtt.ClientConfig{
 		Broker:               brokerURI,
 		Port:                 cfg.MQTT.Port,
 		Username:             cfg.MQTT.Username,
