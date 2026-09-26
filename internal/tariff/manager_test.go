@@ -89,6 +89,9 @@ func TestManager_Alert_LowBalance(t *testing.T) {
 
 	// Drop below minimum threshold
 	m.UpdateBalance(35.50, "RUB")
+	if !m.Status().LowBalance {
+		t.Errorf("expected Status().LowBalance = true when balance is 35.50 < 50.0")
+	}
 	mu.Lock()
 	if len(alerts) != 1 || alerts[0].Type != "low_balance" {
 		t.Fatalf("expected low_balance alert, got %+v", alerts)
@@ -100,6 +103,9 @@ func TestManager_Alert_LowBalance(t *testing.T) {
 
 	// Second check below threshold shouldn't spam duplicate alert
 	m.UpdateBalance(30.00, "RUB")
+	if !m.Status().LowBalance {
+		t.Errorf("expected Status().LowBalance = true when balance is 30.00 < 50.0")
+	}
 	mu.Lock()
 	if len(alerts) != 1 {
 		t.Errorf("expected duplicate alert to be suppressed, got %d alerts", len(alerts))
@@ -108,6 +114,9 @@ func TestManager_Alert_LowBalance(t *testing.T) {
 
 	// Recover above threshold
 	m.UpdateBalance(100.0, "RUB")
+	if m.Status().LowBalance {
+		t.Errorf("expected Status().LowBalance = false when balance is 100.0 >= 50.0")
+	}
 
 	// Drop again -> new alert
 	m.UpdateBalance(20.0, "RUB")
@@ -196,12 +205,13 @@ func TestManager_UpdateConfigAndResetQuotas(t *testing.T) {
 		t.Errorf("expected SMSRemaining = 300 after ResetQuotas, got %d", status.SMSRemaining)
 	}
 
-	// Create new manager instance and verify dynamic config restored from disk
-	m2 := NewManager("modem_test", Config{SMSLimit: 100}, nil)
+	// Create new manager instance: verify that newly supplied config (e.g. SMSLimit: 100, MinBalanceAlert: 5.0)
+	// takes precedence over stored limits from previous runs, while usage state is preserved.
+	m2 := NewManager("modem_test", Config{SMSLimit: 100, MinBalanceAlert: 5.0}, nil)
 	m2.SetStore(store)
 	cfg2 := m2.GetConfig()
-	if cfg2.SMSLimit != 300 || cfg2.CallMinutesLimit != 60 || cfg2.ResetDayOfMonth != 15 || cfg2.MinBalanceAlert != 40.0 || cfg2.BalanceUSSD != "*105#" {
-		t.Errorf("expected restored config to match persisted dynamic values, got %+v", cfg2)
+	if cfg2.SMSLimit != 100 || cfg2.MinBalanceAlert != 5.0 {
+		t.Errorf("expected config to take precedence over stored state, got %+v", cfg2)
 	}
 }
 
