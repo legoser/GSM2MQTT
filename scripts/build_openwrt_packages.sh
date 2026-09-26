@@ -266,6 +266,14 @@ setup_apk_tool() {
         return 0
     fi
 
+    # 2b. Persistent user cache (survives ephemeral CI runners via actions/cache
+    # on ~/.cache — see the "Cache Go build cache and apk tool" workflow step).
+    local apk_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/gsm2mqtt"
+    if [[ -x "${apk_cache_dir}/apk.static" ]] && "${apk_cache_dir}/apk.static" --version 2>/dev/null | grep -q 'apk-tools 3\.'; then
+        APK_CMD="${apk_cache_dir}/apk.static"
+        return 0
+    fi
+
     # 3. Auto-download standalone apk.static for host architecture
     local host_arch=""
     case "$(uname -m)" in
@@ -295,6 +303,9 @@ setup_apk_tool() {
             mkdir -p "${BIN_DIR}"
             cp "${tmp_apk_dir}/sbin/apk.static" "${BIN_DIR}/apk.static"
             chmod 755 "${BIN_DIR}/apk.static"
+            # Also seed the persistent user cache for future CI runs.
+            mkdir -p "${apk_cache_dir}" 2>/dev/null || true
+            cp "${tmp_apk_dir}/sbin/apk.static" "${apk_cache_dir}/apk.static" 2>/dev/null || true
             rm -rf "$tmp_apk_dir"
             APK_CMD="${BIN_DIR}/apk.static"
             echo "=> Installed standalone apk.static to ${BIN_DIR}/apk.static"
